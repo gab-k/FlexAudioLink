@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name "CC8831RHAT")(type "KiCad")(uri "${KIPRJMOD}/CC8531RHAT")(options "")(descr ""))
+)

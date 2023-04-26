@@ -1,0 +1,9 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP CC8531RHAT
+D PurePath Wireless 2.4 GHz RF SoC for wireless digital audio streaming
+K
+F http://www.ti.com/lit/gpn/cc8531
+$ENDCMP
+#
+#End Doc Library

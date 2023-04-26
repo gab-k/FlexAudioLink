@@ -1,0 +1,5 @@
+KiCad/wireless-headset-backups
+KiCad/*.bak
+KiCad/fp-info-cache
+KiCad/_autosave-*
+KiCad/*.kicad_prl
