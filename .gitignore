@@ -3,3 +3,5 @@ KiCad/*.bak
 KiCad/fp-info-cache
 KiCad/_autosave-*
 KiCad/*.kicad_prl
+python/test_recording.wav
+test_recording.wav
