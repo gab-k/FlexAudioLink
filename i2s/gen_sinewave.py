@@ -4,9 +4,9 @@ import struct
 
 # --- Configuration ---
 SAMPLE_RATE      = 48000
-NUM_SAMPLES      = 2000       # The number of stereo sample frames (L/R pairs)
-FREQUENCY_LEFT   = 4800.0
-FREQUENCY_RIGHT  = 240.0
+NUM_SAMPLES      = 336       # The number of stereo sample frames (L/R pairs)
+FREQUENCY_LEFT   = 142.8571
+FREQUENCY_RIGHT  = 1428.571
 AMPLITUDE        = 32767.0   # Max amplitude for a 16-bit signed integer
 OUTPUT_FILENAME  = "generated_sine.pcm"
 
