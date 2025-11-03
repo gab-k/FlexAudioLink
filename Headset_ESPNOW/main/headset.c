@@ -17,7 +17,7 @@ static const char *TAG = "ESPNOW_RX";
 // Set the GPIO pin to toggle on receive
 #define GPIO_OUTPUT_PIN     GPIO_NUM_15
 
-// MAC address of the Dongle (TX)
+// MAC address of the Dongle
 static uint8_t peer_mac_address[] = {0x40, 0x4C, 0xCA, 0x56, 0x26, 0xAC};
 
 // I2S port and GPIOs
@@ -160,6 +160,7 @@ void i2s_playback_task(void *args) {
                     //ESP_LOGI(TAG, "Preload complete. Starting playback.");
                     ESP_ERROR_CHECK(i2s_channel_enable(i2s_tx_handle));
                     is_playing = true; // Transition to the "playing" state
+                    ESP_LOGI(TAG, "is_playing: %u", is_playing);
                 } else {
                     // This is unlikely but a good safeguard
                     ESP_LOGW(TAG, "Failed to get data for preloading, will try again.");
@@ -174,7 +175,6 @@ void i2s_playback_task(void *args) {
 
         // --- STATE 2: PLAYING (NORMAL OPERATION) ---
         if (is_playing) {
-            //ESP_LOGI(TAG, "Entering playing state!");
             // Wait for the NEXT chunk of data from the buffer
             audio_data = (uint8_t *)xRingbufferReceive(audio_ring_buffer, &item_size, pdMS_TO_TICKS(100));
 
@@ -194,30 +194,14 @@ void i2s_playback_task(void *args) {
                 ESP_LOGW(TAG, "Buffer underrun! Pausing playback.");
                 ESP_ERROR_CHECK(i2s_channel_disable(i2s_tx_handle));
                 is_playing = false; // Go back to the pre-buffering state
+                ESP_LOGI(TAG, "is_playing: %u", is_playing);
             }
         }
     }
 }
 
 
-void app_main(void) {
-    // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    // Initialize networking stack
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
+void headset_init(void) {
     // Initialize I2S
     ESP_LOGI(TAG, "Initializing I2S driver...");
     if (i2s_driver_init() != ESP_OK) {
@@ -261,9 +245,6 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(esp_now_set_peer_rate_config(peer_mac_address, &rate_config));
     ESP_LOGI(TAG, "Setup complete. Waiting for packets...");
-
-    
-    
 }
 
   

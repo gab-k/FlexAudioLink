@@ -7,6 +7,7 @@
 #include "esp_mac.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
+#include "common.h"
 
 static const char *TAG = "ESPNOW_TX";
 
@@ -18,11 +19,6 @@ static const char *TAG = "ESPNOW_TX";
 static uint8_t peer_mac_address[] = {0x40, 0x4C, 0xCA, 0x4F, 0x3E, 0x18};
 // ===================================================
 
-// Define a simple data structure for the packet
-typedef struct {
-    uint32_t count;
-    uint8_t  payload[1344]; // 7ms audio 48kHz Stereo 16 Bit
-} audio_packet_t;
 
 // Callback function for when a packet is sent
 void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
@@ -147,24 +143,7 @@ static const uint8_t sine_wave_pcm[] = {
     0xd3, 0xf8, 0xe7, 0xbb, 0x37, 0xfb, 0x3d, 0xd1, 0x9c, 0xfd, 0x34, 0xe8,
 };
 
-void app_main(void) {
-    // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    // Initialize networking stack
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    
+void dongle_init(void) {
     // Initialize GPIO
     gpio_reset_pin(GPIO_OUTPUT_PIN);
     gpio_set_direction(GPIO_OUTPUT_PIN, GPIO_MODE_OUTPUT);
