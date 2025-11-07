@@ -1,0 +1,74 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Appli Debug",
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+            "runEntry": "SystemCoreClockUpdate",
+            "deviceName": "STM32H7S3L8H",
+            "deviceCore": "Cortex-M7",
+            "imagesAndSymbols": [
+                {
+                    "imageFileName": "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf"
+                },
+                {
+                    "imageFileName": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf"
+                }
+            ],
+            "serverExtLoader": [
+                {
+                    "loader": "${workspaceFolder}/Loaders/MX25UW25645G_NUCLEO-H7S3L8.stldr",
+                    "initialize": false
+                }
+            ],
+            "verbose": false
+        },
+        {
+            "name": "Boot Debug",
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+            "runEntry": "main",
+            "deviceName": "STM32H7S3L8H",
+            "deviceCore": "Cortex-M7",
+            "imagesAndSymbols": [
+                {
+                    "imageFileName": "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf"
+                },
+                {
+                    "imageFileName": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf"
+                }
+            ],
+            "serverExtLoader": [
+                {
+                    "loader": "${workspaceFolder}/Loaders/MX25UW25645G_NUCLEO-H7S3L8.stldr",
+                    "initialize": false
+                }
+            ],
+            "verbose": false
+        },
+        {
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "name": "STM32Cube: STM32 Launch ST-Link GDB Server",
+            "origin": "snippet",
+            "cwd": "${workspaceFolder}",
+            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+            "runEntry": "main",
+            "deviceName": "STM32H7S3L8H",
+            "deviceCore": "Cortex-M7",
+            "imagesAndSymbols": [
+                {
+                    "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
+                }
+            ]
+        },
+    ]
+}
