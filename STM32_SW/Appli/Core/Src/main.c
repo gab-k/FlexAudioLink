@@ -186,7 +186,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   
-  // init device stack on configured roothub port
+  // init device stack
   tusb_rhport_init_t dev_init = {
       .role = TUSB_ROLE_DEVICE,
       .speed = TUSB_SPEED_AUTO};
