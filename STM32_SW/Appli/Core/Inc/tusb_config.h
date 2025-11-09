@@ -39,12 +39,12 @@ extern "C" {
 
 // RHPort number used for device can be defined by board.mk, default to port 0
 #ifndef BOARD_TUD_RHPORT
-#define BOARD_TUD_RHPORT      0
+  #define BOARD_TUD_RHPORT 1
 #endif
 
 // RHPort max operational speed can defined by board.mk
 #ifndef BOARD_TUD_MAX_SPEED
-#define BOARD_TUD_MAX_SPEED   OPT_MODE_DEFAULT_SPEED
+  #define BOARD_TUD_MAX_SPEED OPT_MODE_DEFAULT_SPEED
 #endif
 
 //--------------------------------------------------------------------
@@ -62,6 +62,18 @@ extern "C" {
 
 #ifndef CFG_TUSB_DEBUG
 #define CFG_TUSB_DEBUG        0
+#endif
+
+#ifndef BOARD_DEVICE_RHPORT_SPEED
+  #define BOARD_DEVICE_RHPORT_SPEED OPT_MODE_HIGH_SPEED
+#endif
+
+#ifndef BOARD_DEVICE_RHPORT_NUM
+  #define BOARD_DEVICE_RHPORT_NUM 1
+#endif
+
+#ifndef CFG_TUSB_RHPORT1_MODE
+  #define CFG_TUSB_RHPORT1_MODE (OPT_MODE_DEVICE | OPT_MODE_HIGH_SPEED)
 #endif
 
 // Enable Device stack
