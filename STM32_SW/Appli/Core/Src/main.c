@@ -46,7 +46,7 @@
 
 COM_InitTypeDef BspCOMInit;
 
-I2S_HandleTypeDef hi2s1;
+I2S_HandleTypeDef hi2s2;
 
 PCD_HandleTypeDef hpcd_USB_OTG_HS;
 
@@ -108,7 +108,7 @@ uint8_t current_resolution;
 /* Private function prototypes -----------------------------------------------*/
 static void MX_GPIO_Init(void);
 static void MX_USB_OTG_HS_PCD_Init(void);
-static void MX_I2S1_Init(void);
+static void MX_I2S2_Init(void);
 /* USER CODE BEGIN PFP */
 void led_blinking_task(void);
 void audio_task(void);
@@ -158,7 +158,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_OTG_HS_PCD_Init();
-  MX_I2S1_Init();
+  MX_I2S2_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -206,38 +206,38 @@ int main(void)
 }
 
 /**
-  * @brief I2S1 Initialization Function
+  * @brief I2S2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2S1_Init(void)
+static void MX_I2S2_Init(void)
 {
 
-  /* USER CODE BEGIN I2S1_Init 0 */
+  /* USER CODE BEGIN I2S2_Init 0 */
 
-  /* USER CODE END I2S1_Init 0 */
+  /* USER CODE END I2S2_Init 0 */
 
-  /* USER CODE BEGIN I2S1_Init 1 */
+  /* USER CODE BEGIN I2S2_Init 1 */
 
-  /* USER CODE END I2S1_Init 1 */
-  hi2s1.Instance = SPI1;
-  hi2s1.Init.Mode = I2S_MODE_MASTER_FULLDUPLEX;
-  hi2s1.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s1.Init.DataFormat = I2S_DATAFORMAT_16B;
-  hi2s1.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
-  hi2s1.Init.AudioFreq = I2S_AUDIOFREQ_48K;
-  hi2s1.Init.CPOL = I2S_CPOL_LOW;
-  hi2s1.Init.FirstBit = I2S_FIRSTBIT_MSB;
-  hi2s1.Init.WSInversion = I2S_WS_INVERSION_DISABLE;
-  hi2s1.Init.Data24BitAlignment = I2S_DATA_24BIT_ALIGNMENT_RIGHT;
-  hi2s1.Init.MasterKeepIOState = I2S_MASTER_KEEP_IO_STATE_DISABLE;
-  if (HAL_I2S_Init(&hi2s1) != HAL_OK)
+  /* USER CODE END I2S2_Init 1 */
+  hi2s2.Instance = SPI2;
+  hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
+  hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+  hi2s2.Init.CPOL = I2S_CPOL_LOW;
+  hi2s2.Init.FirstBit = I2S_FIRSTBIT_MSB;
+  hi2s2.Init.WSInversion = I2S_WS_INVERSION_DISABLE;
+  hi2s2.Init.Data24BitAlignment = I2S_DATA_24BIT_ALIGNMENT_RIGHT;
+  hi2s2.Init.MasterKeepIOState = I2S_MASTER_KEEP_IO_STATE_DISABLE;
+  if (HAL_I2S_Init(&hi2s2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2S1_Init 2 */
+  /* USER CODE BEGIN I2S2_Init 2 */
 
-  /* USER CODE END I2S1_Init 2 */
+  /* USER CODE END I2S2_Init 2 */
 
 }
 
@@ -289,8 +289,6 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -754,7 +752,7 @@ void audio_task(void) {
     // The 'Size' parameter for HAL_I2S_Transmit is the number of 16-bit half-words,
     // so we divide the total number of bytes by 2.
     // A timeout of 100ms is used.
-    if (HAL_I2S_Transmit(&hi2s1, (uint16_t*)spk_buf, spk_data_size / 2, 100) != HAL_OK) {
+    if (HAL_I2S_Transmit(&hi2s2, (uint16_t*)spk_buf, spk_data_size / 2, 100) != HAL_OK) {
       // An error occurred during I2S transmission.
       Error_Handler();
     }
