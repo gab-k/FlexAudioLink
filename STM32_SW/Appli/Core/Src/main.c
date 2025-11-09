@@ -99,8 +99,7 @@ int32_t spk_buf[CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 4];
 // Speaker data size received in the last frame
 int spk_data_size;
 // Resolution per format
-const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX,
-                                                                        CFG_TUD_AUDIO_FUNC_1_FORMAT_2_RESOLUTION_RX};
+const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX};
 // Current resolution, update on format change
 uint8_t current_resolution;
 
@@ -740,40 +739,24 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 // This task simulates an audio transfer callback, one frame is sent/received every 1ms.
 // In a real application, this would be replaced with actual I2S send/receive callback.
 void audio_task(void) {
+  // We'll run this task roughly every 1ms
   static uint32_t start_ms = 0;
   uint32_t curr_ms = HAL_GetTick();
-  if (start_ms == curr_ms) return;// not enough time
+  if (start_ms == curr_ms) return;
   start_ms = curr_ms;
-  // When new data arrived, copy data from speaker buffer, to microphone buffer
-  // and send it over
-  // Only support speaker & headphone both have the same resolution
-  // If one is 16bit another is 24bit be care of LOUD noise !
+
+  // Read a new chunk of audio data from the USB host into the speaker buffer.
   spk_data_size = tud_audio_read(spk_buf, sizeof(spk_buf));
-  if (spk_data_size) {
-    if (current_resolution == 16) {
-      int16_t *src = (int16_t *) spk_buf;
-      int16_t *limit = (int16_t *) spk_buf + spk_data_size / 2;
-      int16_t *dst = (int16_t *) mic_buf;
-      while (src < limit) {
-        // Combine two channels into one
-        int32_t left = *src++;
-        int32_t right = *src++;
-        *dst++ = (int16_t) ((left >> 1) + (right >> 1));
-      }
-      tud_audio_write((uint8_t *) mic_buf, (uint16_t) (spk_data_size / 2));
-      spk_data_size = 0;
-    } else if (current_resolution == 24) {
-      int32_t *src = spk_buf;
-      int32_t *limit = spk_buf + spk_data_size / 4;
-      int32_t *dst = mic_buf;
-      while (src < limit) {
-        // Combine two channels into one
-        int32_t left = *src++;
-        int32_t right = *src++;
-        *dst++ = (int32_t) ((uint32_t) ((left >> 1) + (right >> 1)) & 0xffffff00ul);
-      }
-      tud_audio_write((uint8_t *) mic_buf, (uint16_t) (spk_data_size / 2));
-      spk_data_size = 0;
+
+  // If we received any data, transmit it via I2S
+  if (spk_data_size > 0) {
+    // We only support 16-bit audio now, so no need to check the resolution.
+    // The 'Size' parameter for HAL_I2S_Transmit is the number of 16-bit half-words,
+    // so we divide the total number of bytes by 2.
+    // A timeout of 100ms is used.
+    if (HAL_I2S_Transmit(&hi2s1, (uint16_t*)spk_buf, spk_data_size / 2, 100) != HAL_OK) {
+      // An error occurred during I2S transmission.
+      Error_Handler();
     }
   }
 }
