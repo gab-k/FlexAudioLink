@@ -26,7 +26,12 @@ set(MX_Include_Dirs
 # STM32CubeMX generated application sources
 set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/gpio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/extmem_manager.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/gpdma.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/linked_list.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/sbs.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/xspi.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/stm32h7rsxx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/stm32h7rsxx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/sysmem.c
