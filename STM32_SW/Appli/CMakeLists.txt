@@ -61,6 +61,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ${CMAKE_SOURCE_DIR}/Core/Src/audio.c
     ${CMAKE_SOURCE_DIR}/Core/Src/usb_descriptors.c
     ${CMAKE_SOURCE_DIR}/tinyusb/src/tusb.c
     ${CMAKE_SOURCE_DIR}/tinyusb/src/device/usbd.c

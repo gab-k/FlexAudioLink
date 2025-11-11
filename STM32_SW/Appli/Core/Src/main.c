@@ -135,10 +135,10 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  GPDMA_Init_I2S_TX_Queue(&hi2s2, &handle_GPDMA1_Channel0, &I2S2_Queue);
-  if(&handle_GPDMA1_Channel0 != hi2s2.hdmatx){
-    Error_Handler();
-  }
+  // GPDMA_Init_I2S_TX_Queue(&hi2s2, &handle_GPDMA1_Channel0, &I2S2_Queue);
+  // if(&handle_GPDMA1_Channel0 != hi2s2.hdmatx){
+  //   Error_Handler();
+  // }
 
   audio_init_sine();
 

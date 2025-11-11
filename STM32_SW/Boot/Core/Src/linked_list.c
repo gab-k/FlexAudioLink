@@ -30,7 +30,7 @@ DMA_QListTypeDef I2S2_Queue;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+extern int32_t spk_buf[];  // Speaker data buffer
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
