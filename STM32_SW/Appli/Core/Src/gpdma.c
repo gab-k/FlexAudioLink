@@ -1,29 +1,30 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    gpdma.c
-  * @brief   This file provides code for the configuration
-  *          of the GPDMA instances.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    gpdma.c
+ * @brief   This file provides code for the configuration
+ *          of the GPDMA instances.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "gpdma.h"
 
 /* USER CODE BEGIN 0 */
-
+extern I2S_HandleTypeDef hi2s2;
 /* USER CODE END 0 */
 
+DMA_HandleTypeDef handle_GPDMA1_Channel1;
 DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 /* GPDMA1 init function */
@@ -40,10 +41,26 @@ void MX_GPDMA1_Init(void)
   /* GPDMA1 interrupt Init */
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
 
   /* USER CODE BEGIN GPDMA1_Init 1 */
 
   /* USER CODE END GPDMA1_Init 1 */
+  handle_GPDMA1_Channel1.Instance = GPDMA1_Channel1;
+  handle_GPDMA1_Channel1.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
+  handle_GPDMA1_Channel1.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
+  handle_GPDMA1_Channel1.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
+  handle_GPDMA1_Channel1.InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;
+  handle_GPDMA1_Channel1.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;
+  if (HAL_DMAEx_List_Init(&handle_GPDMA1_Channel1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel1, DMA_CHANNEL_NPRIV) != HAL_OK)
+  {
+    Error_Handler();
+  }
   handle_GPDMA1_Channel0.Instance = GPDMA1_Channel0;
   handle_GPDMA1_Channel0.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
   handle_GPDMA1_Channel0.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
@@ -59,11 +76,50 @@ void MX_GPDMA1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN GPDMA1_Init 2 */
-
   /* USER CODE END GPDMA1_Init 2 */
 
 }
 
 /* USER CODE BEGIN 1 */
+void Init_I2S2_RX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTypeDef *queue)
+{
+  if (MX_I2S2_RX_Queue_Config() != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMAEx_List_ConvertQToDynamic(queue) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMAEx_List_Init(GPDMA_channel_handle) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMAEx_List_LinkQ(GPDMA_channel_handle, queue) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  __HAL_LINKDMA(&hi2s2, hdmarx, *GPDMA_channel_handle);
+}
 
+void Init_I2S2_TX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTypeDef *queue)
+{
+  if (MX_I2S2_TX_Queue_Config() != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMAEx_List_ConvertQToDynamic(queue) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMAEx_List_Init(GPDMA_channel_handle) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_DMAEx_List_LinkQ(GPDMA_channel_handle, queue) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  __HAL_LINKDMA(&hi2s2, hdmatx, *GPDMA_channel_handle);
+}
 /* USER CODE END 1 */

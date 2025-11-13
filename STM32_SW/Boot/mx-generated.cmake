@@ -80,25 +80,26 @@ set(MX_LINK_DIRS
 
 )
 # Project libraries
-set (MX_LINK_LIBS 
-    STM32_Drivers
+set (MX_LINK_LIBS
+    STM32_Drivers_Boot
     ${TOOLCHAIN_LINK_LIBRARIES}
-    STM32_ExtMem_Manager	
+    STM32_ExtMem_Manager
+	
 )
 # Interface library for includes and symbols
-add_library(stm32cubemx INTERFACE)
-target_include_directories(stm32cubemx INTERFACE ${MX_Include_Dirs})
-target_compile_definitions(stm32cubemx INTERFACE ${MX_Defines_Syms})
+add_library(stm32cubemx_Boot INTERFACE)
+target_include_directories(stm32cubemx_Boot INTERFACE ${MX_Include_Dirs})
+target_compile_definitions(stm32cubemx_Boot INTERFACE ${MX_Defines_Syms})
 
 # Create STM32_Drivers static library
-add_library(STM32_Drivers OBJECT)
-target_sources(STM32_Drivers PRIVATE ${STM32_Drivers_Src})
-target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
+add_library(STM32_Drivers_Boot OBJECT)
+target_sources(STM32_Drivers_Boot PRIVATE ${STM32_Drivers_Src})
+target_link_libraries(STM32_Drivers_Boot PUBLIC stm32cubemx_Boot)
 
 # Create STM32_ExtMem_Manager static library
 add_library(STM32_ExtMem_Manager OBJECT)
 target_sources(STM32_ExtMem_Manager PRIVATE ${STM32_ExtMem_Manager_Src})
-target_link_libraries(STM32_ExtMem_Manager PUBLIC stm32cubemx)
+target_link_libraries(STM32_ExtMem_Manager PUBLIC stm32cubemx_Boot)
 
 
 # Add STM32CubeMX generated application sources to the project

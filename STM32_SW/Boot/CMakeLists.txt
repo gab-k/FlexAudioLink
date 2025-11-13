@@ -26,8 +26,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 set(STM32_MCU_FLAGS  "-mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard " )
 
 #Linker options
-set(STM32_LINKER_SCRIPT stm32h7s3xx_flash.ld)
+set(STM32_LINKER_SCRIPT Boot/stm32h7s3xx_flash.ld)
 set(STM32_LINKER_OPTION  )
+
+# Include toolchain file
+include("../gcc-arm-none-eabi.cmake")
 
 # Set the project name
 set(CMAKE_PROJECT_NAME STM32_SW_Boot)
@@ -36,15 +39,21 @@ project(${CMAKE_PROJECT_NAME})
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 
-# Include mx-generated
+# Generate map file for Boot
+target_link_options(${CMAKE_PROJECT_NAME}
+  PUBLIC
+    LINKER:-Map=${CMAKE_PROJECT_NAME}.map
+)
+
+# Include mx-generated 
 include("mx-generated.cmake")
 
 
 # In order to use CMake for cross-compiling
-set(CMAKE_CXX_COMPILER_FORCED "true")
+set(CMAKE_CXX_COMPILER_FORCED "true") 
 
 # Add project symbols (macros)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
     # Add user defined symbols
 )
 
@@ -70,9 +79,6 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined libraries
 )
-
-# Remove wrong libob.a library dependency when using cpp files
-list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
 # Validate that STM32CubeMX code is compatible with C standard
 if((CMAKE_C_STANDARD EQUAL 90) OR (CMAKE_C_STANDARD EQUAL 99))

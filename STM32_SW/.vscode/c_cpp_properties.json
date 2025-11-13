@@ -1,12 +1,11 @@
 {
     "configurations": [
         {
-            "name": "STM32_Boot",
-            "compileCommands": "${workspaceFolder}/Boot/build/compile_commands.json"
-        },
-        {
-            "name": "STM32_Appli",
-            "compileCommands": "${workspaceFolder}/Appli/build/compile_commands.json"
+            "name": "STM32",
+            "configurationProvider": "ms-vscode.cmake-tools",
+            "intelliSenseMode": "${default}",
+            "compileCommands": "${workspaceFolder}/build/Debug/compile_commands.json"
         }
-    ]
+    ],
+    "version": 4
 }

@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -103,22 +103,16 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_GPIO_Init();
   MX_GPDMA1_Init();
+  MX_GPIO_Init();
   MX_SBS_Init();
   MX_XSPI2_Init();
   MX_EXTMEM_MANAGER_Init();
   /* USER CODE BEGIN 2 */
 
+  blink_all_leds(500, 500);
+
   /* USER CODE END 2 */
-
-  /* Initialize leds */
-  BSP_LED_Init(LED_GREEN);
-  BSP_LED_Init(LED_BLUE);
-  BSP_LED_Init(LED_RED);
-
-  /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
   /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
   BspCOMInit.BaudRate   = 115200;
@@ -160,7 +154,7 @@ void SystemClock_Config(void)
 
   /** Configure the main internal regulator output voltage
   */
-  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE0) != HAL_OK)
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -176,9 +170,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL1.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL1.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL1.PLLM = 8;
-  RCC_OscInitStruct.PLL1.PLLN = 75;
+  RCC_OscInitStruct.PLL1.PLLN = 50;
   RCC_OscInitStruct.PLL1.PLLP = 1;
-  RCC_OscInitStruct.PLL1.PLLQ = 8;
+  RCC_OscInitStruct.PLL1.PLLQ = 1;
   RCC_OscInitStruct.PLL1.PLLR = 2;
   RCC_OscInitStruct.PLL1.PLLS = 2;
   RCC_OscInitStruct.PLL1.PLLT = 2;
@@ -191,15 +185,15 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL2.PLLQ = 2;
   RCC_OscInitStruct.PLL2.PLLR = 2;
   RCC_OscInitStruct.PLL2.PLLS = 8;
-  RCC_OscInitStruct.PLL2.PLLT = 2;
+  RCC_OscInitStruct.PLL2.PLLT = 6;
   RCC_OscInitStruct.PLL2.PLLFractional = 0;
   RCC_OscInitStruct.PLL3.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL3.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL3.PLLM = 4;
   RCC_OscInitStruct.PLL3.PLLN = 48;
-  RCC_OscInitStruct.PLL3.PLLP = 2;
+  RCC_OscInitStruct.PLL3.PLLP = 6;
   RCC_OscInitStruct.PLL3.PLLQ = 32;
-  RCC_OscInitStruct.PLL3.PLLR = 2;
+  RCC_OscInitStruct.PLL3.PLLR = 40;
   RCC_OscInitStruct.PLL3.PLLS = 2;
   RCC_OscInitStruct.PLL3.PLLT = 2;
   RCC_OscInitStruct.PLL3.PLLFractional = 0;
@@ -222,7 +216,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
   RCC_ClkInitStruct.APB5CLKDivider = RCC_APB5_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_7) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -244,6 +238,17 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void blink_all_leds(uint32_t on_time_ms, uint32_t off_time_delay_ms)
+{
+  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_SET);
+  HAL_Delay(on_time_ms);
+  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
+  HAL_Delay(off_time_delay_ms);
+}
 
 /* USER CODE END 4 */
 

@@ -609,7 +609,8 @@ void audio_init_sine() {
 
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  BSP_LED_On(LED_RED);
+  UNUSED(hi2s);
+  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
   // if (i2s_dma_buffer_half_to_fill != -1) {
   //   // We are late, the main loop has not yet processed the previous half
   //   Error_Handler();
@@ -621,7 +622,8 @@ void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  BSP_LED_On(LED_RED);
+  UNUSED(hi2s);
+  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_SET);
   // if (i2s_dma_buffer_half_to_fill != -1) {
   //   // We are late, the main loop has not yet processed the previous half
   //   Error_Handler();
@@ -633,7 +635,8 @@ void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 
 void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
 {
-  BSP_LED_On(LED_RED);
+  UNUSED(hi2s);
+  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
   // Handle the error appropriately
-  //Error_Handler();
+  Error_Handler();
 }

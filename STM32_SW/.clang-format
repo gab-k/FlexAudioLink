@@ -1,0 +1,39 @@
+# .clang-format
+
+# --- General settings ---
+BasedOnStyle: LLVM
+
+# --- Braces ---
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterEnum: true
+  AfterStruct: true
+  AfterFunction: true
+  AfterControlStatement: true
+  SplitEmptyFunction: false
+
+# --- Indentation settings ---
+IndentWidth: 2
+UseTab: Never     # Never use tabs for consistency across machines
+TabWidth: 2       # Should match IndentWidth if UseTab is Never or ForIndentation
+IndentCaseLabels: true
+
+
+# --- Line length limit ---
+ColumnLimit: 120
+
+# --- Function formatting ---
+# Prevent clang-format from putting short functions on a single line
+# Possible values: All, None, Empty, InlineOnly
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: true
+
+# --- Include sorting ---
+SortIncludes: false
+
+# --- Preprocessor indentation ---
+# Controls indentation of preprocessor directives (#define, #if, etc.)
+# None (default): Keeps '#' at column 0.
+# AfterHash: Indents the code part after the '#'. '#' stays at column 0.
+# BeforeHash: Indents the entire line, including '#'.
+IndentPPDirectives: BeforeHash

@@ -1,21 +1,21 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    gpdma.h
-  * @brief   This file contains all the function prototypes for
-  *          the gpdma.c file
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    gpdma.h
+ * @brief   This file contains all the function prototypes for
+ *          the gpdma.c file
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __GPDMA_H__
@@ -29,8 +29,10 @@ extern "C" {
 #include "main.h"
 
 /* USER CODE BEGIN Includes */
-
+#include "linked_list.h"
 /* USER CODE END Includes */
+
+extern DMA_HandleTypeDef handle_GPDMA1_Channel1;
 
 extern DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
@@ -41,6 +43,9 @@ extern DMA_HandleTypeDef handle_GPDMA1_Channel0;
 void MX_GPDMA1_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+
+void Init_I2S2_TX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTypeDef *queue);
+void Init_I2S2_RX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTypeDef *queue);
 
 /* USER CODE END Prototypes */
 

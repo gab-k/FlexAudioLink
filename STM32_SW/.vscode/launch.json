@@ -5,70 +5,96 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Appli Debug",
-            "type": "stlinkgdbtarget",
-            "request": "launch",
+            "name": "Debug external memory - ST-Link",
             "cwd": "${workspaceFolder}",
-            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "runEntry": "SystemCoreClockUpdate",
-            "deviceName": "STM32H7S3L8H",
-            "deviceCore": "Cortex-M7",
-            "imagesAndSymbols": [
-                {
-                    "imageFileName": "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf"
-                },
-                {
-                    "imageFileName": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf"
-                }
+            "type": "cortex-debug",
+            "executable": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf", //"${command:STM32VSCodeExtension.bootFlashBootTarget}",
+            "symbolFiles": [
+                "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf",
+                "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf",
+                //"${command:STM32VSCodeExtension.bootFlashAppliTarget}",
+                //"${command:STM32VSCodeExtension.bootFlashBootTarget}",
             ],
-            "serverExtLoader": [
-                {
-                    "loader": "${workspaceFolder}/Loaders/MX25UW25645G_NUCLEO-H7S3L8.stldr",
-                    "initialize": false
-                }
+            "request": "launch",        
+            "servertype": "stlink",
+            "device": "STM32H7S3L8Hx",
+            "interface": "swd",
+            "serialNumber": "",        //Set ST-Link ID if you use multiple at the same time
+            "runToEntryPoint": "dummy_entry_function",
+            "svdFile": "${env:STM32CLT_PATH}/STMicroelectronics_CMSIS_SVD/STM32H7S.svd",
+            "serverpath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer":"${env:STM32CLT_PATH}/STM32CubeProgrammer/bin",
+            "stlinkPath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",   
+            "armToolchainPath": "${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin",
+            "gdbPath":"${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin/arm-none-eabi-gdb",
+            "v1": false,
+            "serverArgs": [
+                "-m", "1",
+                "-t", "-s", 
+                "-el", "${env:STM32CLT_PATH}/STM32CubeProgrammer/bin/ExternalLoader/MX25UW25645G_NUCLEO-H7S3L8.stldr" // Default loader for current board
             ],
-            "verbose": false
+            "preLaunchTask": "Build + Flash in external Memory",
+            "showDevDebugOutput": "raw",
         },
         {
-            "name": "Boot Debug",
-            "type": "stlinkgdbtarget",
-            "request": "launch",
+            "name": "Debug external memory (clean rebuild) - ST-Link",
             "cwd": "${workspaceFolder}",
-            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "runEntry": "main",
-            "deviceName": "STM32H7S3L8H",
-            "deviceCore": "Cortex-M7",
-            "imagesAndSymbols": [
-                {
-                    "imageFileName": "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf"
-                },
-                {
-                    "imageFileName": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf"
-                }
+            "type": "cortex-debug",
+            "executable": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf", //"${command:STM32VSCodeExtension.bootFlashBootTarget}",
+            "symbolFiles": [
+                "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf",
+                "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf",
+                //"${command:STM32VSCodeExtension.bootFlashAppliTarget}",
+                //"${command:STM32VSCodeExtension.bootFlashBootTarget}",
             ],
-            "serverExtLoader": [
-                {
-                    "loader": "${workspaceFolder}/Loaders/MX25UW25645G_NUCLEO-H7S3L8.stldr",
-                    "initialize": false
-                }
+            "request": "launch",        
+            "servertype": "stlink",
+            "device": "STM32H7S3L8Hx",
+            "interface": "swd",
+            "serialNumber": "",        //Set ST-Link ID if you use multiple at the same time
+            "runToEntryPoint": "dummy_entry_function",
+            "svdFile": "${env:STM32CLT_PATH}/STMicroelectronics_CMSIS_SVD/STM32H7S.svd",
+            "serverpath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer":"${env:STM32CLT_PATH}/STM32CubeProgrammer/bin",
+            "stlinkPath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",   
+            "armToolchainPath": "${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin",
+            "gdbPath":"${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin/arm-none-eabi-gdb",
+            "v1": false,
+            "serverArgs": [
+                "-m", "1",
+                "-t", "-s", 
+                "-el", "${env:STM32CLT_PATH}/STM32CubeProgrammer/bin/ExternalLoader/MX25UW25645G_NUCLEO-H7S3L8.stldr" // Default loader for current board
             ],
-            "verbose": false
+            "preLaunchTask": "Clean Build + Flash in external Memory",
+            "showDevDebugOutput": "raw",
         },
         {
-            "type": "stlinkgdbtarget",
-            "request": "launch",
-            "name": "STM32Cube: STM32 Launch ST-Link GDB Server",
-            "origin": "snippet",
+            "name": "Attach external memory - ST-Link",
             "cwd": "${workspaceFolder}",
-            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "runEntry": "main",
-            "deviceName": "STM32H7S3L8H",
-            "deviceCore": "Cortex-M7",
-            "imagesAndSymbols": [
-                {
-                    "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
-                }
-            ]
-        },
+            "type": "cortex-debug",
+            "executable": "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf",//"${command:STM32VSCodeExtension.bootFlashBootTarget}",
+            "symbolFiles": [
+                "${workspaceFolder}/Appli/build/STM32_SW_Appli.elf", //"${command:STM32VSCodeExtension.bootFlashAppliTarget}",
+                "${workspaceFolder}/Boot/build/STM32_SW_Boot.elf", //"${command:STM32VSCodeExtension.bootFlashBootTarget}",
+            ],
+            "request": "attach",
+            "servertype": "stlink",
+            "device": "STM32H7S3L8Hx", //MCU used
+            "interface": "swd",
+            "serialNumber": "",        //Set ST-Link ID if you use multiple at the same time
+            "runToEntryPoint": "main",
+            "svdFile": "${env:STM32CLT_PATH}/STMicroelectronics_CMSIS_SVD/STM32H7S.svd",
+            "serverpath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer":"${env:STM32CLT_PATH}/STM32CubeProgrammer/bin",
+            "stlinkPath": "${env:STM32CLT_PATH}/STLink-gdb-server/bin/ST-LINK_gdbserver",   
+            "armToolchainPath": "${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin",
+            "gdbPath":"${env:STM32CLT_PATH}/GNU-tools-for-STM32/bin/arm-none-eabi-gdb",            
+            "v1": false,               //Change it depending on ST Link version
+            "serverArgs": [
+                "-m","1",
+            ],
+            /* If you use external loader, add additional arguments */
+            //"serverArgs": ["--extload", "path/to/ext/loader.stldr"],
+        }
     ]
 }

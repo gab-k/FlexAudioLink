@@ -65,20 +65,20 @@ set(MX_LINK_DIRS
 
 )
 # Project libraries
-set (MX_LINK_LIBS 
-    STM32_Drivers
+set (MX_LINK_LIBS
+    STM32_Drivers_Appli
     ${TOOLCHAIN_LINK_LIBRARIES}
     
 )
 # Interface library for includes and symbols
-add_library(stm32cubemx INTERFACE)
-target_include_directories(stm32cubemx INTERFACE ${MX_Include_Dirs})
-target_compile_definitions(stm32cubemx INTERFACE ${MX_Defines_Syms})
+add_library(stm32cubemx_Appli INTERFACE)
+target_include_directories(stm32cubemx_Appli INTERFACE ${MX_Include_Dirs})
+target_compile_definitions(stm32cubemx_Appli INTERFACE ${MX_Defines_Syms})
 
 # Create STM32_Drivers static library
-add_library(STM32_Drivers OBJECT)
-target_sources(STM32_Drivers PRIVATE ${STM32_Drivers_Src})
-target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
+add_library(STM32_Drivers_Appli OBJECT)
+target_sources(STM32_Drivers_Appli PRIVATE ${STM32_Drivers_Src})
+target_link_libraries(STM32_Drivers_Appli PUBLIC stm32cubemx_Appli)
 
 
 # Add STM32CubeMX generated application sources to the project

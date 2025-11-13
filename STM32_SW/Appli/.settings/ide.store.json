@@ -1,6 +1,0 @@
-{
-  "device": "STM32H7S3L8H6",
-  "core": "Cortex-M7",
-  "order": 0,
-  "toolchain": "GCC"
-}

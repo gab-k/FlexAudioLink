@@ -31,7 +31,8 @@
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
-HAL_StatusTypeDef MX_I2S2_Queue_Config(void);
+HAL_StatusTypeDef MX_I2S2_RX_Queue_Config(void);
+HAL_StatusTypeDef MX_I2S2_TX_Queue_Config(void);
 
 #ifdef __cplusplus
 }
