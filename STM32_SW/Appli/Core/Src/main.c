@@ -69,6 +69,8 @@ volatile int16_t rx_buf[SAMPLES_TEST_ARRAY*2];
 /* Private function prototypes -----------------------------------------------*/
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
+void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s);
+
 
 
 void led_blinking_task(void);
@@ -77,9 +79,7 @@ void audio_control_task(void);
 void set_debugmcu_bits(void);
 
 void i2s_playback_blocking(void);
-void i2s_playback_dma(void);
-void init_test_sine_array(void);
-void init_test_sawtooth(void);
+void I2S_DMA_Init_Start(void);
 void dummy_entry_function(void);
 inline void dummy_entry_function(void) {
   // This function is intentionally left empty.
@@ -110,10 +110,10 @@ int main(void)
   /* Enable the CPU Cache */
 
   /* Enable I-Cache---------------------------------------------------------*/
-  SCB_EnableICache();
+  //SCB_EnableICache();
 
   /* Enable D-Cache---------------------------------------------------------*/
-  SCB_EnableDCache();
+  //SCB_EnableDCache();
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -151,9 +151,6 @@ int main(void)
   Init_I2S2_TX_DMA_Queue(&handle_GPDMA1_Channel0, &I2S2_TX_Queue);
   Init_I2S2_RX_DMA_Queue(&handle_GPDMA1_Channel1, &I2S2_RX_Queue);
 
-  init_test_sawtooth();
-
-
   
   /* USER CODE END 2 */
 
@@ -171,8 +168,6 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   
-  i2s_playback_dma();
-  
   while (1)
   {
     /* USER CODE END WHILE */
@@ -181,7 +176,7 @@ int main(void)
 
     // TinyUSB device task handles USB stack & TinyUSB callbacks
     tud_task();
-    //audio_task();
+    audio_task();
     audio_control_task();
     led_blinking_task();
   }
@@ -190,55 +185,56 @@ int main(void)
 
 /* USER CODE BEGIN 4 */
 
-void init_test_sine_array() {
-  // Desired Frequency
-  float frequency = 12000.0f; // 12 kHz
-  // Sampling Rate
-  float sample_rate = 48000.0f; // 48 kHz
-  // Calculate the angle step for each sample to generate the desired frequency.
-  double angle_step = 2.0 * M_PI * frequency / sample_rate;
-    // Iterate through the buffer and fill it with sine data.
-  // We step by 2 because we are filling a stereo buffer (Left and Right channels).
-  for (unsigned int i = 0; i < sizeof(test_spk_buf)/sizeof(test_spk_buf[0]); i += 2) {
-    // Calculate the sine value for the current sample position.
-    // The sample index 'n' is i/2 because we handle L/R pairs.
-    int n = i / 2;
-    double sin_value = sin((double)n * angle_step);
 
-    // Scale the sine value by the amplitude and cast to a 16-bit integer.
-    int16_t sample_value = (int16_t)(28000 * sin_value);
+/**
+ * @brief  I2S Error Callback - DEBUGGING OVERRIDE
+ * @note   This function implements a non-standard recovery mechanism specifically
+ *         to handle artificial I2S underrun errors (UDR) caused by pausing
+ *         the CPU with a debugger. It should NOT be used in production code.
+ *
+ * When the debugger halts the CPU at a breakpoint, the I2S peripheral 
+ * continues to operate. It quickly empties its transmit buffer and,
+ * since the CPU and DMA are frozen, no new data arrives. This causes a hardware
+ * Underrun (UDR) error.
+ *
+ * The standard HAL I2S ISR is designed to treat any error, including a UDR, as
+ * a fatal event for the current transfer. Upon detecting the UDR flag, the ISR:
+ *   1. Disables the I2S interrupts required for DMA transfers (specifically I2S_IT_TXP).
+ *   2. Sets the I2S handle's state to HAL_I2S_STATE_READY.
+ *   3. Calls this function.
+ * This permanently stops the audio stream, requiring a full HAL_I2S_DMAStop() and
+ * HAL_I2S_Transmit_DMA() to restart it.
+ *
+ * This callback fights the HAL's default behavior to allow for a seamless resume
+ * after debugging. It manually undoes the state changes made by the ISR:
+ *   - It clears the UDR error code from the software handle.
+ *   - It forces the handle's state machine from READY back to BUSY_TX.
+ *   - It re-enables the error interrupt.
+ *
+ * By "patching" the software state, the I2S peripheral and DMA can continue the
+ * circular buffer transfer where they left off as soon as the debugger resumes
+ * execution. This makes debugging significantly more convenient.
+ *
+ * This code is UNSAFE for a production environment. It blindly assumes any UDR
+ * error is a harmless, debugger-induced event. A real UDR caused by high CPU load
+ * should be handled robustly (e.g., by resetting the stream). 
+ *
+ * @param  hi2s: pointer to a I2S_HandleTypeDef structure that contains
+ *               the configuration information for the specified I2S.
+ */
+void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
+{
+  // Prevent unused argument(s) compilation warning
+  UNUSED(hi2s);
 
-    // Place the same sample in both Left and Right channels.
-    test_spk_buf[i]     = sample_value; // Left Channel
-    test_spk_buf[i + 1] = sample_value; // Right Channel
-  }
-  // Clean the specific memory region of the buffer from the D-Cache
-  SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
-}
+  // Clear the Underrun error from the handle's error code
+  CLEAR_BIT(hi2s->ErrorCode, HAL_I2S_ERROR_UDR);
 
+  // Force the state back to BUSY. This is fighting the HAL.
+  hi2s->State = HAL_I2S_STATE_BUSY_TX;
 
-void init_test_sawtooth() {
-  // --- Configuration ---
-  const int16_t amplitude = 28000;
-  const unsigned int total_samples = sizeof(test_spk_buf) / sizeof(test_spk_buf[0]);
-  
-  // The number of L/R sample pairs in the buffer.
-  const unsigned int num_stereo_samples = total_samples / 2;
-
-  // --- Generate the Sawtooth Wave ---
-  for (unsigned int i = 0; i < num_stereo_samples; i++) {
-    // Calculate the value for the current sample.
-    // This creates a linear ramp from -amplitude to +amplitude.
-    double normalized_position = (double)i / (num_stereo_samples - 1); // Goes from 0.0 to 1.0
-    int16_t sample_value = (int16_t)(-amplitude + (2.0 * amplitude * normalized_position));
-
-    // Place the same sample in both Left and Right channels.
-    test_spk_buf[i * 2]     = sample_value; // Left Channel
-    test_spk_buf[i * 2 + 1] = sample_value; // Right Channel
-  }
-  
-  // Clean the D-Cache once after modifying the entire buffer.
-  SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
+  // Re-enable I2S error interrupts
+  __HAL_I2S_ENABLE_IT(&hi2s2, I2S_IT_ERR);
 }
 
 
@@ -251,20 +247,13 @@ void i2s_playback_blocking() {
   }
 }
 
-void i2s_playback_dma() {
-  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*)test_spk_buf, (uint16_t*) rx_buf, sizeof(test_spk_buf)/sizeof(test_spk_buf[0]));
-  if (status != HAL_OK)
-  {
-      Error_Handler();
-  }
-}
-
 
 
 void set_debugmcu_bits(void)
 {
   // Make DMA stop on debug
   DBGMCU->AHB1FZR |= DBGMCU_AHB1FZR_GPDMA_0_Msk;
+  DBGMCU->AHB1FZR |= DBGMCU_AHB1FZR_GPDMA_1_Msk;
 }
 
 // Enable DWT cycle counter

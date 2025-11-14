@@ -30,6 +30,7 @@ extern "C" {
 
 /* USER CODE BEGIN Includes */
 #include "linked_list.h"
+#include "audio.h"
 /* USER CODE END Includes */
 
 extern DMA_HandleTypeDef handle_GPDMA1_Channel1;

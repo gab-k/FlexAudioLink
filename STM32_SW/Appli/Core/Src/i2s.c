@@ -53,7 +53,7 @@ void MX_I2S2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2S2_Init 2 */
-
+  __HAL_I2S_ENABLE_IT(&hi2s2, I2S_IT_ERR); 
   /* USER CODE END I2S2_Init 2 */
 
 }

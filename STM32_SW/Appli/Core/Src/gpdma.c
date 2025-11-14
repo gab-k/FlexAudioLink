@@ -99,7 +99,23 @@ void Init_I2S2_RX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTy
   {
     Error_Handler();
   }
+  
+  // Link DMA handle to the I2S handle
   __HAL_LINKDMA(&hi2s2, hdmarx, *GPDMA_channel_handle);
+  
+  // RX Callbacks
+  if (HAL_DMA_RegisterCallback(GPDMA_channel_handle, HAL_DMA_XFER_HALFCPLT_CB_ID, I2S_DMA_RX_HalfCpltCallback) != HAL_OK)
+  {
+      Error_Handler();
+  }
+  if (HAL_DMA_RegisterCallback(GPDMA_channel_handle, HAL_DMA_XFER_CPLT_CB_ID, I2S_DMA_RX_CpltCallback) != HAL_OK)
+  {
+      Error_Handler();
+  }
+  if (HAL_DMA_RegisterCallback(GPDMA_channel_handle, HAL_DMA_XFER_ERROR_CB_ID, I2S_DMA_RX_ErrorCallback) != HAL_OK)
+  {
+      Error_Handler();
+  }
 }
 
 void Init_I2S2_TX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTypeDef *queue)
@@ -120,6 +136,23 @@ void Init_I2S2_TX_DMA_Queue(DMA_HandleTypeDef *GPDMA_channel_handle, DMA_QListTy
   {
     Error_Handler();
   }
+
+  // Link TX DMA handle to the I2S handle
   __HAL_LINKDMA(&hi2s2, hdmatx, *GPDMA_channel_handle);
+
+    // TX Callbacks
+  if (HAL_DMA_RegisterCallback(GPDMA_channel_handle, HAL_DMA_XFER_HALFCPLT_CB_ID, I2S_DMA_TX_HalfCpltCallback) != HAL_OK)
+  {
+      Error_Handler();
+  }
+  if (HAL_DMA_RegisterCallback(GPDMA_channel_handle, HAL_DMA_XFER_CPLT_CB_ID, I2S_DMA_TX_CpltCallback) != HAL_OK)
+  {
+      Error_Handler();
+  }
+  if (HAL_DMA_RegisterCallback(GPDMA_channel_handle, HAL_DMA_XFER_ERROR_CB_ID, I2S_DMA_TX_ErrorCallback) != HAL_OK)
+  {
+      Error_Handler();
+  }
 }
+
 /* USER CODE END 1 */

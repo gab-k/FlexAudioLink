@@ -50,9 +50,12 @@ uint8_t mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];   // +1 for master channel
 int16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
 
 // Buffer for microphone data
-int32_t mic_buf[CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ / 4];
+int16_t mic_buf[(CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ / 2)*2]; // Divide by two because int16_t
+// Temporary x2 for debugging purpose
+
 // Buffer for speaker data
-int32_t spk_buf[CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 4];
+int16_t spk_buf[CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2]; // Divide by two because int16_t
+
 // Speaker data size received in the last frame
 int spk_data_size;
 // Resolution per format
@@ -64,7 +67,7 @@ uint8_t current_resolution;
 // -1: No work to do
 //  0: Fill the first half
 //  1: Fill the second half
-volatile int8_t i2s_dma_buffer_half_to_fill = -1;
+volatile int8_t i2s_dma_buffer_half_to_fill = 0;
 
 //--------------------------------------------------------------------+
 // Device callbacks
@@ -504,19 +507,49 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 //--------------------------------------------------------------------+
 
 void audio_task(void) {
-  if( i2s_dma_buffer_half_to_fill == -1) {
-    // No work to do
-    return;
+  static bool started = false;
+  static uint16_t data_read_count = 0;
+  uint16_t available = tud_audio_available();
+  if (!started) {
+    if (available >= sizeof(spk_buf)/2) {
+      audio_init();
+      started = true;
+      return;
+    }
   }
-  else if (i2s_dma_buffer_half_to_fill == 0) {
-    // Fill the first half of the buffer
-    spk_data_size = tud_audio_read(spk_buf, sizeof(spk_buf)/2);
+  else
+  {
+    if (available < sizeof(spk_buf)/2) {
+      // Not enough data to read
+      return;
+    }
+    else if(i2s_dma_buffer_half_to_fill == 0){
+      data_read_count = tud_audio_read(&(spk_buf[0]), sizeof(spk_buf)/2);
+    }
+    else if(i2s_dma_buffer_half_to_fill == 1){
+      //data_read_count = tud_audio_read(&(spk_buf[0 + (sizeof(spk_buf)/2)]), sizeof(spk_buf)/2);
+    }
   }
-  else if (i2s_dma_buffer_half_to_fill == 1) {
-    // Fill the second half of the buffer
-    spk_data_size = tud_audio_read(spk_buf + sizeof(spk_buf)/2, sizeof(spk_buf)/2);
 
-  }
+  // if( i2s_dma_buffer_half_to_fill == -1) {
+  //   // No work to do
+  //   return;
+  // }
+  // else if (i2s_dma_buffer_half_to_fill == 0) {
+  //   // Fill the first half of the buffer
+  //   data_read_count = tud_audio_read(&(spk_buf[0]), sizeof(spk_buf)/2);
+  // }
+  // else if (i2s_dma_buffer_half_to_fill == 1) {
+  //   // Fill the second half of the buffer
+  //   data_read_count = tud_audio_read(&(spk_buf[sizeof(spk_buf)/2]), sizeof(spk_buf)/2);
+  // }
+  // i2s_dma_buffer_half_to_fill = -1; // Reset flag
+  
+
+  // if (data_read_count != sizeof(spk_buf)/2) {
+  //   Error_Handler();
+  // }
+  
 }
 
 void audio_control_task(void) {
@@ -559,26 +592,31 @@ void audio_control_task(void) {
   btn_prev = btn;
 }
 
+
 void audio_init() {
   // Fill the entire buffer with silence to start cleanly
-  memset((void*)spk_buf, 0, sizeof(spk_buf));
+  init_test_sawtooth();
 
   // Start the DMA ONCE in circular mode. It will run forever.
-  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t*)spk_buf, sizeof(spk_buf));
+  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*)spk_buf, (uint16_t*) mic_buf, sizeof(spk_buf)/sizeof(spk_buf[0]));
+  if (status != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
-void audio_init_sine() {
-  // --- Generate the 1kHz Sine Wave ---
+  
 
-  // Calculate the total number of samples in the buffer.
-  const int total_samples = 512;
-
+void init_test_sine_array() {
+  // Desired Frequency
+  float frequency = 12000.0f; // 12 kHz
+  // Sampling Rate
+  float sample_rate = 48000.0f; // 48 kHz
   // Calculate the angle step for each sample to generate the desired frequency.
-  double angle_step = 2.0 * M_PI * 1000.0f / 48000.0f;
-
-  // Iterate through the buffer and fill it with sine data.
+  double angle_step = 2.0 * M_PI * frequency / sample_rate;
+    // Iterate through the buffer and fill it with sine data.
   // We step by 2 because we are filling a stereo buffer (Left and Right channels).
-  for (int i = 0; i < total_samples; i += 2) {
+  for (unsigned int i = 0; i < sizeof(spk_buf)/sizeof(spk_buf[0]); i += 2) {
     // Calculate the sine value for the current sample position.
     // The sample index 'n' is i/2 because we handle L/R pairs.
     int n = i / 2;
@@ -591,51 +629,94 @@ void audio_init_sine() {
     spk_buf[i]     = sample_value; // Left Channel
     spk_buf[i + 1] = sample_value; // Right Channel
   }
+  // Clean the specific memory region of the buffer from the D-Cache
+  //SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
+}
 
-  // --- Start the DMA Transfer ---
 
-  // Start the DMA ONCE in circular mode. It will now loop this sine wave forever.
-  // The size parameter is the TOTAL number of SAMPLES (uint16_t), NOT bytes.
-  HAL_StatusTypeDef status = HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t*)spk_buf, total_samples);
-  if (status != HAL_OK)
-  {
-      Error_Handler();
+void init_test_sawtooth() {
+  // --- Configuration ---
+  const int16_t amplitude = 28000;
+  const unsigned int total_samples = sizeof(spk_buf) / sizeof(spk_buf[0]);
+  
+  // The number of L/R sample pairs in the buffer.
+  const unsigned int num_stereo_samples = total_samples / 2;
+
+  // --- Generate the Sawtooth Wave ---
+  for (unsigned int i = 0; i < num_stereo_samples; i++) {
+    // Calculate the value for the current sample.
+    // This creates a linear ramp from -amplitude to +amplitude.
+    double normalized_position = (double)i / (num_stereo_samples - 1); // Goes from 0.0 to 1.0
+    int16_t sample_value = (int16_t)(-amplitude + (2.0 * amplitude * normalized_position));
+
+    // Place the same sample in both Left and Right channels.
+    spk_buf[i * 2]     = sample_value; // Left Channel
+    spk_buf[i * 2 + 1] = sample_value; // Right Channel
   }
+  
+  // Clean the D-Cache once after modifying the entire buffer.
+  //SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
 }
 
 //--------------------------------------------------------------------+
 // DMA Callbacks
 //--------------------------------------------------------------------+
 
-void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+void I2S_DMA_TX_HalfCpltCallback(DMA_HandleTypeDef *hdma)
 {
-  UNUSED(hi2s);
+  UNUSED(hdma);
   HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
+  i2s_dma_buffer_half_to_fill = 0;
   // if (i2s_dma_buffer_half_to_fill != -1) {
   //   // We are late, the main loop has not yet processed the previous half
-  //   Error_Handler();
+  //   HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
+  //   //Error_Handler();
   // }
   // else {
+  //   // First half of buffer consumed, signal main loop to fill it
   //   i2s_dma_buffer_half_to_fill = 0;
   // }
 }
 
-void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
+void I2S_DMA_TX_CpltCallback(DMA_HandleTypeDef *hdma)
 {
-  UNUSED(hi2s);
+  UNUSED(hdma);
   HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_SET);
+  i2s_dma_buffer_half_to_fill = 1;
   // if (i2s_dma_buffer_half_to_fill != -1) {
   //   // We are late, the main loop has not yet processed the previous half
-  //   Error_Handler();
+  //   HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
+  //   //Error_Handler();
   // }
   // else{
+  //   //Second half of buffer consumed, signal main loop to fill it
   //   i2s_dma_buffer_half_to_fill = 1;
   // }
 }
 
-void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
+void I2S_DMA_TX_ErrorCallback(DMA_HandleTypeDef *hdma)
 {
-  UNUSED(hi2s);
+  UNUSED(hdma);
+  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
+  // Handle the error appropriately
+  Error_Handler();
+}
+
+void I2S_DMA_RX_HalfCpltCallback(DMA_HandleTypeDef *hdma)
+{
+  UNUSED(hdma);
+  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
+}
+
+void I2S_DMA_RX_CpltCallback(DMA_HandleTypeDef *hdma)
+{
+  UNUSED(hdma);
+  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_SET);
+}
+
+void I2S_DMA_RX_ErrorCallback(DMA_HandleTypeDef *hdma)
+{
+  UNUSED(hdma);
   HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
   // Handle the error appropriately
   Error_Handler();
