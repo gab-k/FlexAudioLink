@@ -49,12 +49,14 @@ uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 uint8_t mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];   // +1 for master channel 0
 int16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
 
-// Buffer for microphone data
-int16_t mic_buf[(CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ / 2)*2]; // Divide by two because int16_t
-// Temporary x2 for debugging purpose
+// Pointer to microphone data buffer
+tu_fifo_t * mic_ff_ptr = NULL;
+tu_fifo_buffer_info_t mic_ff_info;
 
-// Buffer for speaker data
-int16_t spk_buf[CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2]; // Divide by two because int16_t
+// Pointer to speaker data buffer
+tu_fifo_t * spk_ff_ptr = NULL;
+tu_fifo_buffer_info_t spk_ff_info;
+
 
 // Speaker data size received in the last frame
 int spk_data_size;
@@ -63,11 +65,6 @@ const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {CFG_TUD_
 // Current resolution, update on format change
 uint8_t current_resolution;
 
-// Our "flag". It tells the main loop WHICH half to fill.
-// -1: No work to do
-//  0: Fill the first half
-//  1: Fill the second half
-volatile int8_t i2s_dma_buffer_half_to_fill = 0;
 
 //--------------------------------------------------------------------+
 // Device callbacks
@@ -491,6 +488,7 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
   TU_LOG2("Set interface %d alt %d\r\n", itf, alt);
   if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt != 0) {
     blink_interval_ms = BLINK_STREAMING;
+    audio_init();
   }
 
   // Clear buffer when streaming format is changed
@@ -508,48 +506,19 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 
 void audio_task(void) {
   static bool started = false;
-  static uint16_t data_read_count = 0;
+  uint16_t bytes_written;
   uint16_t available = tud_audio_available();
   if (!started) {
-    if (available >= sizeof(spk_buf)/2) {
-      audio_init();
+    if (available >= CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/4) {
+      HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*) spk_ff_ptr->buffer, (uint16_t*) mic_ff_ptr->buffer, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
+      if (status != HAL_OK)
+      {
+        Error_Handler();
+      }
       started = true;
       return;
     }
   }
-  else
-  {
-    if (available < sizeof(spk_buf)/2) {
-      // Not enough data to read
-      return;
-    }
-    else if(i2s_dma_buffer_half_to_fill == 0){
-      data_read_count = tud_audio_read(&(spk_buf[0]), sizeof(spk_buf)/2);
-    }
-    else if(i2s_dma_buffer_half_to_fill == 1){
-      //data_read_count = tud_audio_read(&(spk_buf[0 + (sizeof(spk_buf)/2)]), sizeof(spk_buf)/2);
-    }
-  }
-
-  // if( i2s_dma_buffer_half_to_fill == -1) {
-  //   // No work to do
-  //   return;
-  // }
-  // else if (i2s_dma_buffer_half_to_fill == 0) {
-  //   // Fill the first half of the buffer
-  //   data_read_count = tud_audio_read(&(spk_buf[0]), sizeof(spk_buf)/2);
-  // }
-  // else if (i2s_dma_buffer_half_to_fill == 1) {
-  //   // Fill the second half of the buffer
-  //   data_read_count = tud_audio_read(&(spk_buf[sizeof(spk_buf)/2]), sizeof(spk_buf)/2);
-  // }
-  // i2s_dma_buffer_half_to_fill = -1; // Reset flag
-  
-
-  // if (data_read_count != sizeof(spk_buf)/2) {
-  //   Error_Handler();
-  // }
-  
 }
 
 void audio_control_task(void) {
@@ -594,69 +563,73 @@ void audio_control_task(void) {
 
 
 void audio_init() {
-  // Fill the entire buffer with silence to start cleanly
+  spk_ff_ptr = tud_audio_get_ep_out_ff();
+  mic_ff_ptr = tud_audio_get_ep_in_ff();
+}
+
+void audio_init_test(){
   init_test_sawtooth();
-
-  // Start the DMA ONCE in circular mode. It will run forever.
-  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*)spk_buf, (uint16_t*) mic_buf, sizeof(spk_buf)/sizeof(spk_buf[0]));
-  if (status != HAL_OK)
-  {
-    Error_Handler();
-  }
 }
 
+// void audio_start_test(){
+//   HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*) spk_intmdt_buf, (uint16_t*) mic_intmdt_buf, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
+//   if (status != HAL_OK)
+//   {
+//     Error_Handler();
+//   }
+// }
+
+// void init_test_sine_array() {
+//   // Desired Frequency
+//   float frequency = 12000.0f; // 12 kHz
+//   // Sampling Rate
+//   float sample_rate = 48000.0f; // 48 kHz
+//   // Calculate the angle step for each sample to generate the desired frequency.
+//   double angle_step = 2.0 * M_PI * frequency / sample_rate;
+//     // Iterate through the buffer and fill it with sine data.
+//   // We step by 2 because we are filling a stereo buffer (Left and Right channels).
+//   for (unsigned int i = 0; i < sizeof(spk_intmdt_buf)/sizeof(spk_intmdt_buf[0]); i += 2) {
+//     // Calculate the sine value for the current sample position.
+//     // The sample index 'n' is i/2 because we handle L/R pairs.
+//     int n = i / 2;
+//     double sin_value = sin((double)n * angle_step);
+
+//     // Scale the sine value by the amplitude and cast to a 16-bit integer.
+//     int16_t sample_value = (int16_t)(28000 * sin_value);
+
+//     // Place the same sample in both Left and Right channels.
+//     spk_intmdt_buf[i]     = sample_value; // Left Channel
+//     spk_intmdt_buf[i + 1] = sample_value; // Right Channel
+//   }
+//   // Clean the specific memory region of the buffer from the D-Cache
+//   //SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
+// }
+
+
+// void init_test_sawtooth() {
+//   // --- Configuration ---
+//   const int16_t amplitude = 28000;
+//   const unsigned int total_samples = sizeof(spk_intmdt_buf) / sizeof(spk_intmdt_buf[0]);
   
+//   // The number of L/R sample pairs in the buffer.
+//   const unsigned int num_stereo_samples = total_samples / 2;
 
-void init_test_sine_array() {
-  // Desired Frequency
-  float frequency = 12000.0f; // 12 kHz
-  // Sampling Rate
-  float sample_rate = 48000.0f; // 48 kHz
-  // Calculate the angle step for each sample to generate the desired frequency.
-  double angle_step = 2.0 * M_PI * frequency / sample_rate;
-    // Iterate through the buffer and fill it with sine data.
-  // We step by 2 because we are filling a stereo buffer (Left and Right channels).
-  for (unsigned int i = 0; i < sizeof(spk_buf)/sizeof(spk_buf[0]); i += 2) {
-    // Calculate the sine value for the current sample position.
-    // The sample index 'n' is i/2 because we handle L/R pairs.
-    int n = i / 2;
-    double sin_value = sin((double)n * angle_step);
+//   // --- Generate the Sawtooth Wave ---
+//   for (unsigned int i = 0; i < num_stereo_samples; i++) {
+//     // Calculate the value for the current sample.
+//     // This creates a linear ramp from -amplitude to +amplitude.
+//     double normalized_position = (double)i / (num_stereo_samples - 1); // Goes from 0.0 to 1.0
+//     int16_t sample_value = (int16_t)(-amplitude + (2.0 * amplitude * normalized_position));
 
-    // Scale the sine value by the amplitude and cast to a 16-bit integer.
-    int16_t sample_value = (int16_t)(28000 * sin_value);
-
-    // Place the same sample in both Left and Right channels.
-    spk_buf[i]     = sample_value; // Left Channel
-    spk_buf[i + 1] = sample_value; // Right Channel
-  }
-  // Clean the specific memory region of the buffer from the D-Cache
-  //SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
-}
-
-
-void init_test_sawtooth() {
-  // --- Configuration ---
-  const int16_t amplitude = 28000;
-  const unsigned int total_samples = sizeof(spk_buf) / sizeof(spk_buf[0]);
+//     // Place the same sample in both Left and Right channels.
+//     spk_intmdt_buf[i * 2]     = sample_value; // Left Channel
+//     spk_intmdt_buf[i * 2 + 1] = sample_value; // Right Channel
+//   }
   
-  // The number of L/R sample pairs in the buffer.
-  const unsigned int num_stereo_samples = total_samples / 2;
+//   // Clean the D-Cache once after modifying the entire buffer.
+//   //SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
+// }
 
-  // --- Generate the Sawtooth Wave ---
-  for (unsigned int i = 0; i < num_stereo_samples; i++) {
-    // Calculate the value for the current sample.
-    // This creates a linear ramp from -amplitude to +amplitude.
-    double normalized_position = (double)i / (num_stereo_samples - 1); // Goes from 0.0 to 1.0
-    int16_t sample_value = (int16_t)(-amplitude + (2.0 * amplitude * normalized_position));
-
-    // Place the same sample in both Left and Right channels.
-    spk_buf[i * 2]     = sample_value; // Left Channel
-    spk_buf[i * 2 + 1] = sample_value; // Right Channel
-  }
-  
-  // Clean the D-Cache once after modifying the entire buffer.
-  //SCB_CleanDCache_by_Addr((uint32_t*)test_spk_buf, sizeof(test_spk_buf));
-}
 
 //--------------------------------------------------------------------+
 // DMA Callbacks
@@ -665,32 +638,44 @@ void init_test_sawtooth() {
 void I2S_DMA_TX_HalfCpltCallback(DMA_HandleTypeDef *hdma)
 {
   UNUSED(hdma);
-  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
-  i2s_dma_buffer_half_to_fill = 0;
-  // if (i2s_dma_buffer_half_to_fill != -1) {
-  //   // We are late, the main loop has not yet processed the previous half
-  //   HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
-  //   //Error_Handler();
+  HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_SET);
+  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  tu_fifo_advance_read_pointer(spk_ff_ptr, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
+  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_RESET);
+
+  // uint16_t bytes_written = tud_audio_read(spk_intmdt_buf, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
+  // if(bytes_written < CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2)
+  // {
+  //   Error_Handler();
   // }
-  // else {
-  //   // First half of buffer consumed, signal main loop to fill it
-  //   i2s_dma_buffer_half_to_fill = 0;
+  // tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  // uint16_t available = tud_audio_available();
+  // HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_RESET);
+  // available = tud_audio_available();
+  // if(!available){
+  //   Error_Handler();
   // }
 }
 
 void I2S_DMA_TX_CpltCallback(DMA_HandleTypeDef *hdma)
 {
   UNUSED(hdma);
-  HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_SET);
-  i2s_dma_buffer_half_to_fill = 1;
-  // if (i2s_dma_buffer_half_to_fill != -1) {
-  //   // We are late, the main loop has not yet processed the previous half
-  //   HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
-  //   //Error_Handler();
+  HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_SET);
+  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  tu_fifo_advance_read_pointer(spk_ff_ptr, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
+  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_RESET);
+  //uint16_t available = tud_audio_available();
+  //uint16_t bytes_written = tud_audio_read(&(spk_intmdt_buf[CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2]), CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
+  // if(bytes_written < CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2)
+  // {
+  //   Error_Handler();
   // }
-  // else{
-  //   //Second half of buffer consumed, signal main loop to fill it
-  //   i2s_dma_buffer_half_to_fill = 1;
+  // HAL_GPIO_WritePin(LED_YELLOW_GPIO_Port, LED_YELLOW_Pin, GPIO_PIN_SET);
+  // uint16_t available = tud_audio_available();
+  // if(!available){
+  //   Error_Handler();
   // }
 }
 

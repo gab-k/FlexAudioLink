@@ -60,17 +60,11 @@ extern DMA_QListTypeDef I2S2_TX_Queue;
 extern DMA_QListTypeDef I2S2_RX_Queue;
 
 
-// Calculate the total number of samples in the test buffer.
-volatile int16_t test_spk_buf[SAMPLES_TEST_ARRAY*2];
-volatile int16_t rx_buf[SAMPLES_TEST_ARRAY*2];
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
-void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s);
-
 
 
 void led_blinking_task(void);
@@ -110,7 +104,7 @@ int main(void)
   /* Enable the CPU Cache */
 
   /* Enable I-Cache---------------------------------------------------------*/
-  //SCB_EnableICache();
+  SCB_EnableICache();
 
   /* Enable D-Cache---------------------------------------------------------*/
   //SCB_EnableDCache();
@@ -151,7 +145,6 @@ int main(void)
   Init_I2S2_TX_DMA_Queue(&handle_GPDMA1_Channel0, &I2S2_TX_Queue);
   Init_I2S2_RX_DMA_Queue(&handle_GPDMA1_Channel1, &I2S2_RX_Queue);
 
-  
   /* USER CODE END 2 */
 
   /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
@@ -167,7 +160,6 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  
   while (1)
   {
     /* USER CODE END WHILE */
@@ -186,67 +178,28 @@ int main(void)
 /* USER CODE BEGIN 4 */
 
 
-/**
- * @brief  I2S Error Callback - DEBUGGING OVERRIDE
- * @note   This function implements a non-standard recovery mechanism specifically
- *         to handle artificial I2S underrun errors (UDR) caused by pausing
- *         the CPU with a debugger. It should NOT be used in production code.
- *
- * When the debugger halts the CPU at a breakpoint, the I2S peripheral 
- * continues to operate. It quickly empties its transmit buffer and,
- * since the CPU and DMA are frozen, no new data arrives. This causes a hardware
- * Underrun (UDR) error.
- *
- * The standard HAL I2S ISR is designed to treat any error, including a UDR, as
- * a fatal event for the current transfer. Upon detecting the UDR flag, the ISR:
- *   1. Disables the I2S interrupts required for DMA transfers (specifically I2S_IT_TXP).
- *   2. Sets the I2S handle's state to HAL_I2S_STATE_READY.
- *   3. Calls this function.
- * This permanently stops the audio stream, requiring a full HAL_I2S_DMAStop() and
- * HAL_I2S_Transmit_DMA() to restart it.
- *
- * This callback fights the HAL's default behavior to allow for a seamless resume
- * after debugging. It manually undoes the state changes made by the ISR:
- *   - It clears the UDR error code from the software handle.
- *   - It forces the handle's state machine from READY back to BUSY_TX.
- *   - It re-enables the error interrupt.
- *
- * By "patching" the software state, the I2S peripheral and DMA can continue the
- * circular buffer transfer where they left off as soon as the debugger resumes
- * execution. This makes debugging significantly more convenient.
- *
- * This code is UNSAFE for a production environment. It blindly assumes any UDR
- * error is a harmless, debugger-induced event. A real UDR caused by high CPU load
- * should be handled robustly (e.g., by resetting the stream). 
- *
- * @param  hi2s: pointer to a I2S_HandleTypeDef structure that contains
- *               the configuration information for the specified I2S.
- */
+
 void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
 {
   // Prevent unused argument(s) compilation warning
   UNUSED(hi2s);
 
-  // Clear the Underrun error from the handle's error code
-  CLEAR_BIT(hi2s->ErrorCode, HAL_I2S_ERROR_UDR);
-
-  // Force the state back to BUSY. This is fighting the HAL.
-  hi2s->State = HAL_I2S_STATE_BUSY_TX;
-
-  // Re-enable I2S error interrupts
-  __HAL_I2S_ENABLE_IT(&hi2s2, I2S_IT_ERR);
-}
-
-
-void i2s_playback_blocking() {
-  HAL_StatusTypeDef status = HAL_I2S_Transmit(&hi2s2, (uint16_t*)test_spk_buf, sizeof(test_spk_buf)/sizeof(test_spk_buf[0]),400);
-  if (status != HAL_OK)
+  if(hi2s->ErrorCode == HAL_I2S_ERROR_UDR)
   {
-    
+    // On underrun
+    if(HAL_I2S_DMAStop(hi2s) != HAL_OK)
+    {
       Error_Handler();
+    }
+    // CLEAR_BIT(hi2s->ErrorCode, HAL_I2S_ERROR_UDR);
+    __HAL_I2S_ENABLE_IT(&hi2s2, I2S_IT_ERR);
+    //audio_start_test();
+  }
+  else
+  {
+    Error_Handler();
   }
 }
-
 
 
 void set_debugmcu_bits(void)
@@ -353,6 +306,7 @@ void Error_Handler(void)
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   BSP_LED_On(LED_RED);
+  __BKPT(0);
   while (1)
   {
   }

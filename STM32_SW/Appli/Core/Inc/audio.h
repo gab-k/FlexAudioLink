@@ -16,6 +16,9 @@ void init_test_sine_array(void);
 void audio_task(void);
 void audio_control_task(void);
 
+void audio_init_test();
+void audio_start_test();
+
 void I2S_DMA_TX_HalfCpltCallback(DMA_HandleTypeDef *hi2s);
 void I2S_DMA_TX_CpltCallback(DMA_HandleTypeDef *hi2s);
 void I2S_DMA_TX_ErrorCallback(DMA_HandleTypeDef *hi2s);

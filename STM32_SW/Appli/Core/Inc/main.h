@@ -68,6 +68,10 @@ uint32_t get_dwt_cycle_counter();
 /* Private defines -----------------------------------------------------------*/
 #define LED_RED_Pin GPIO_PIN_7
 #define LED_RED_GPIO_Port GPIOB
+#define TESTA2_Pin GPIO_PIN_4
+#define TESTA2_GPIO_Port GPIOB
+#define TESTA_Pin GPIO_PIN_5
+#define TESTA_GPIO_Port GPIOF
 #define LED_YELLOW_Pin GPIO_PIN_13
 #define LED_YELLOW_GPIO_Port GPIOD
 #define LED_GREEN_Pin GPIO_PIN_10
