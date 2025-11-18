@@ -66,9 +66,32 @@ MEMORY
 /* Sections */
 SECTIONS
 {
-  .usb_ram (NOLOAD) : {
-    *(.usb_ram)  /* Refer to #define CFG_TUSB_MEM_SECTION inside tusb_config.h*/
-  } > RAM_NONCACHEABLEBUFFER 
+  /*
+  * Section for all non-cacheable data.
+  * This is placed in the RAM_NONCACHEABLEBUFFER memory region.
+  * The start/end symbols are used by the startup code to zero-initialize it.
+  */
+  .bss_nc (NOLOAD) :
+  {
+    . = ALIGN(32);              /* Enforce 32-byte alignment for DMA safety */
+    __bss_nc_start__ = .;
+    
+    /* Catch variables explicitly placed with section attributes */
+    *(.usb_ram)
+    *(.usb_ram*)
+    KEEP(*(noncacheable_buffer))
+
+    /* 
+    * --- THE HIJACK ---
+   * Use KEEP() to prevent the linker from placing this section in the main .bss
+   * and force it to be placed right here.
+    */
+    KEEP(*(.bss.ep_out_sw_buf))
+    KEEP(*(.bss.ep_in_sw_buf))
+
+    . = ALIGN(32);
+    __bss_nc_end__ = .;
+  } > RAM_NONCACHEABLEBUFFER
   /* The startup code into "FLASH" FLASH type memory */
   .isr_vector :
   {
@@ -180,13 +203,6 @@ SECTIONS
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
   } >RAM
-
-  RW_NONCACHEABLE :
-  {
-    __NONCACHEABLEBUFFER_BEGIN = .;/* create symbol for start of section */
-    KEEP(*(noncacheable_buffer))
-    __NONCACHEABLEBUFFER_END = .;  /* create symbol for start of section */
-  } > RAM_NONCACHEABLEBUFFER
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :
