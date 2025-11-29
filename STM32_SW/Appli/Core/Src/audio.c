@@ -504,21 +504,94 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 // AUDIO Task
 //--------------------------------------------------------------------+
 
+uint16_t current_buffer_level = 0;
+bool feedback_flag = false;
+
 void audio_task(void) {
   static bool started = false;
-  uint16_t bytes_written;
   uint16_t available = tud_audio_available();
   if (!started) {
-    if (available >= CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/4) {
-      HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*) spk_ff_ptr->buffer, (uint16_t*) mic_ff_ptr->buffer, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
-      if (status != HAL_OK)
-      {
-        Error_Handler();
-      }
+    if (available >= CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/3) {
+      start_audio_dma();
+      available = tud_audio_available();
       started = true;
       return;
     }
+  } else if(feedback_flag) {
+    audio_feedback_controller();
+    feedback_flag = false;
   }
+}
+
+    
+// --- Constants (These require tuning!) ---
+const float KP = 0.500f;     // Proportional gain
+const float KI = 0.00005f;   // Integral gain
+
+const int TARGET_BUFFER_LEVEL_SAMPLES = CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2;
+
+// The maximum deviation from the nominal rate. Prevents crazy values.
+const float MAX_RATE_ADJUSTMENT = 100.0f; // Allow +/- 100 Hz adjustment
+
+// --- State Variables ---
+float integral_term = 0.0f;
+
+  
+
+void audio_feedback_controller()
+{
+    static uint32_t count = 0;
+    // 2. Calculate the error
+    // Positive error means buffer is below target (need to speed up)
+    // Negative error means buffer is above target (need to slow down)
+    int16_t error = TARGET_BUFFER_LEVEL_SAMPLES - current_buffer_level;
+
+    // 3. Calculate the Proportional Term
+    float proportional_correction = KP * error;
+
+    // 4. Calculate the Integral Term (with anti-windup)
+    integral_term += KI * error;
+
+    // --- Integral Anti-Windup ---
+    // This is CRITICAL to prevent oscillation and overshoot. It stops the
+    // integral term from growing to ridiculous values if the system is saturated.
+    float max_integral = MAX_RATE_ADJUSTMENT;
+    if (integral_term > max_integral) {
+        integral_term = max_integral;
+    } else if (integral_term < -max_integral) {
+        integral_term = -max_integral;
+    }
+
+    // 5. Calculate the total correction
+    float total_correction_hz = proportional_correction + integral_term;
+
+    // Clamp the total correction to prevent extreme requests
+    if (total_correction_hz > MAX_RATE_ADJUSTMENT) {
+        total_correction_hz = MAX_RATE_ADJUSTMENT;
+    } else if (total_correction_hz < -MAX_RATE_ADJUSTMENT) {
+        total_correction_hz = -MAX_RATE_ADJUSTMENT;
+    }
+
+    // 6. Determine the final feedback sample rate
+    float adjusted_sample_rate = current_sample_rate + total_correction_hz;
+    // float adjusted_sample_rate = 48025.0f; 
+
+    // 7. Convert to samples per frame.
+    // IMPORTANT: This assumes a Full-Speed device (1ms frames).
+    // For High-Speed (125us micro-frames), divide by 8000.0f instead.
+    float samples_per_frame = adjusted_sample_rate / 8000.0f;
+
+    // 8. Convert to 16.16 fixed-point format
+    uint32_t feedback_value = (uint32_t)(samples_per_frame * 65536.0f); // 65536 is 2^16
+
+    // 9. Send this value back to the STM32
+    tud_audio_fb_set(feedback_value);
+    if (count % 50 == 0)
+    {
+      printf("%u, %d, P: %d, I: %d\n", (unsigned int) adjusted_sample_rate,  error , (int) proportional_correction,  (int)  integral_term);
+    }
+    
+    count++;
 }
 
 void audio_control_task(void) {
@@ -571,13 +644,16 @@ void audio_init_test(){
   init_test_sawtooth();
 }
 
-// void audio_start_test(){
-//   HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t*) spk_intmdt_buf, (uint16_t*) mic_intmdt_buf, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
-//   if (status != HAL_OK)
-//   {
-//     Error_Handler();
-//   }
-// }
+void start_audio_dma(){
+  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA( &hi2s2,
+                                                            (uint16_t*) spk_ff_ptr->buffer,
+                                                            (uint16_t*) mic_ff_ptr->buffer,
+                                                            CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2 );
+  if (status != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
 
 // void init_test_sine_array() {
 //   // Desired Frequency
@@ -639,9 +715,9 @@ void I2S_DMA_TX_HalfCpltCallback(DMA_HandleTypeDef *hdma)
 {
   UNUSED(hdma);
   HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_SET);
-  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
   tu_fifo_advance_read_pointer(spk_ff_ptr, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
-  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  current_buffer_level = tud_audio_available();
+  feedback_flag = true;
   HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_RESET);
 
   // uint16_t bytes_written = tud_audio_read(spk_intmdt_buf, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
@@ -662,9 +738,9 @@ void I2S_DMA_TX_CpltCallback(DMA_HandleTypeDef *hdma)
 {
   UNUSED(hdma);
   HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_SET);
-  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
   tu_fifo_advance_read_pointer(spk_ff_ptr, CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);
-  tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+  current_buffer_level = tud_audio_available();
+  feedback_flag = true;
   HAL_GPIO_WritePin(TESTA_GPIO_Port, TESTA_Pin, GPIO_PIN_RESET);
   //uint16_t available = tud_audio_available();
   //uint16_t bytes_written = tud_audio_read(&(spk_intmdt_buf[CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2]), CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ/2);

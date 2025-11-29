@@ -160,17 +160,22 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  //static uint32_t tick;
   while (1)
   {
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
+
 
     // TinyUSB device task handles USB stack & TinyUSB callbacks
     tud_task();
     audio_task();
     audio_control_task();
     led_blinking_task();
+    //if(tick != HAL_GetTick()) {
+      //audio_feedback_controller();
+    //}
+    //tick = HAL_GetTick();
   }
   /* USER CODE END 3 */
 }
@@ -193,7 +198,7 @@ void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
     }
     // CLEAR_BIT(hi2s->ErrorCode, HAL_I2S_ERROR_UDR);
     __HAL_I2S_ENABLE_IT(&hi2s2, I2S_IT_ERR);
-    //audio_start_test();
+    start_audio_dma();
   }
   else
   {
