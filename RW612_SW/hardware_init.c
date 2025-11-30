@@ -13,13 +13,13 @@
 // #include "usb_device_ch9.h"
 // #include "usb_device_descriptor.h"
 // #include "virtual_com.h"
-// #include "pin_mux.h"
-
-//#include "tusb.h"
 
 #include "pin_mux.h"
 #include "clock_config.h"
 #include "board.h"
+#include "tusb.h"
+
+#define USB_DEVICE_INTERRUPT_PRIORITY (6U)
 
 /*${header:end}*/
 
@@ -32,11 +32,6 @@ void BOARD_InitHardware(void)
     BOARD_BootClockRUN();
     BOARD_InitDebugConsole();
 }
-void USBHS_IRQHandler(void)
-{
-    //tusb_int_handler(BOARD_TUD_RHPORT, 1);
-    //USB_DeviceEhciIsrFunction(s_cdcVcom.deviceHandle);
-}
 
 void USB_DeviceClockInit(void)
 {
@@ -48,21 +43,16 @@ void USB_DeviceClockInit(void)
     CLOCK_EnableUsbhsPhyClock();
 }
 
-// void USB_DeviceIsrEnable(void)
-// {
-//     uint8_t irqNumber;
+void USB_DeviceIsrEnable(void)
+{
+    uint8_t irqNumber = USB_IRQn;
+    /* Install isr, set priority, and enable IRQ. */
+    NVIC_SetPriority((IRQn_Type)irqNumber, USB_DEVICE_INTERRUPT_PRIORITY);
+    EnableIRQ((IRQn_Type)irqNumber);
+}
 
-//     uint8_t usbDeviceEhciIrq[] = USBHS_IRQS;
-//     irqNumber                  = usbDeviceEhciIrq[CONTROLLER_ID - kUSB_ControllerEhci0];
-
-//     /* Install isr, set priority, and enable IRQ. */
-//     NVIC_SetPriority((IRQn_Type)irqNumber, USB_DEVICE_INTERRUPT_PRIORITY);
-//     EnableIRQ((IRQn_Type)irqNumber);
-// }
-// #if USB_DEVICE_CONFIG_USE_TASK
-// void USB_DeviceTaskFn(void *deviceHandle)
-// {
-//     USB_DeviceEhciTaskFunction(deviceHandle);
-// }
-// #endif
+void USBHS_IRQHandler(void)
+{
+    tusb_int_handler(BOARD_TUD_RHPORT, 1);
+}
 /*${function:end}*/

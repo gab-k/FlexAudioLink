@@ -21,6 +21,8 @@
  ******************************************************************************/
 /*${prototype:start}*/
 void BOARD_InitHardware(void);
+void USB_DeviceClockInit(void);
+void USB_DeviceIsrEnable(void);
 /*${prototype:end}*/
 
 #endif /* _APP_H_ */
