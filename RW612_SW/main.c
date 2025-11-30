@@ -30,15 +30,11 @@
  ******************************************************************************/
 /* Task priorities. */
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 2)
-#define cdc_app_task_PRIORITY (configMAX_PRIORITIES - 3)
-#define hello_task_PRIORITY (configMAX_PRIORITIES - 4)
 
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
-static void hello_task(void *pvParameters);
 static void usb_device_task(void *pvParameters);
-static void cdc_app_task(void *pvParameters);
 
 /*******************************************************************************
  * Code
@@ -57,35 +53,9 @@ int main(void)
         PRINTF("usbd task creation failed!.\r\n");
         while (1);
     }
-    
-    // Create CDC application task.
-    if (xTaskCreate(cdc_app_task, "cdc", 2048 / sizeof(StackType_t), NULL, cdc_app_task_PRIORITY, NULL) != pdPASS)
-    {
-        PRINTF("cdc task creation failed!.\r\n");
-        while (1);
-    }
-    
-    // Create hello task.
-    if (xTaskCreate(hello_task, "hello", configMINIMAL_STACK_SIZE + 100, NULL, hello_task_PRIORITY, NULL) != pdPASS)
-    {
-        PRINTF("hello task creation failed!.\r\n");
-        while (1);
-    }
 
     vTaskStartScheduler();
     while (1);
-}
-
-/*!
- * @brief Task responsible for printing of "Hello world." message.
- */
-static void hello_task(void *pvParameters)
-{
-    for (;;)
-    {
-        PRINTF("Hello world.\r\n");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
 }
 
 
@@ -104,29 +74,6 @@ static void usb_device_task(void *pvParameters)
     }
 }
 
-static void cdc_app_task(void *pvParameters)
-{
-    while (1)
-    {
-        if (tud_cdc_connected())
-        {
-            if (tud_cdc_available())
-            {
-                uint8_t buf[64];
-                uint32_t count = tud_cdc_read(buf, sizeof(buf));
-
-                // Echo to Port 0
-                tud_cdc_n_write(0, buf, count);
-                tud_cdc_n_write_flush(0);
-
-                // Echo to Port 1 (Dual CDC)
-                tud_cdc_n_write(1, buf, count);
-                tud_cdc_n_write_flush(1);
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-}
 
 void board_get_unique_id(uint8_t id[], uint8_t max_len)
 {

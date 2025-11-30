@@ -18,6 +18,7 @@ mcux_add_source(
     SOURCES 
             # Regular application files
             main.c
+            audio.c
             
             # TinyUSB descriptor and configuration files
             usb_descriptors.c
@@ -28,7 +29,7 @@ mcux_add_source(
             tinyusb/src/device/usbd.c
             tinyusb/src/device/usbd_control.c
             tinyusb/src/common/tusb_fifo.c
-            tinyusb/src/class/cdc/cdc_device.c
+            tinyusb/src/class/audio/audio_device.c
             tinyusb/src/portable/ehci/ehci.c
             tinyusb/src/portable/chipidea/ci_hs/dcd_ci_hs.c
 )
