@@ -6,6 +6,9 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+ /*******************************************************************************
+ * Includes
+ ******************************************************************************/
 /* FreeRTOS kernel includes. */
 #include "FreeRTOS.h"
 #include "task.h"
@@ -23,7 +26,7 @@
 
 
 /*******************************************************************************
- * Definitions
+ * Defines
  ******************************************************************************/
 /* Task priorities. */
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 2)
@@ -63,11 +66,11 @@ int main(void)
     }
     
     // Create hello task.
-    // if (xTaskCreate(hello_task, "hello", configMINIMAL_STACK_SIZE + 100, NULL, hello_task_PRIORITY, NULL) != pdPASS)
-    // {
-    //     PRINTF("hello task creation failed!.\r\n");
-    //     while (1);
-    // }
+    if (xTaskCreate(hello_task, "hello", configMINIMAL_STACK_SIZE + 100, NULL, hello_task_PRIORITY, NULL) != pdPASS)
+    {
+        PRINTF("hello task creation failed!.\r\n");
+        while (1);
+    }
 
     vTaskStartScheduler();
     while (1);
@@ -88,7 +91,6 @@ static void hello_task(void *pvParameters)
 
 static void usb_device_task(void *pvParameters)
 {
-    // Init
     USB_DeviceClockInit();
 
     tusb_rhport_init_t dev_init = {.role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_AUTO};
@@ -98,7 +100,7 @@ static void usb_device_task(void *pvParameters)
     
     while (1)
     {
-        tud_task(); // Blocks waiting for interrupt events
+        tud_task();
     }
 }
 
@@ -122,19 +124,13 @@ static void cdc_app_task(void *pvParameters)
                 tud_cdc_n_write_flush(1);
             }
         }
-        
-        // IMPORTANT: In FreeRTOS, you must yield or delay if nothing is happening
-        // to allow lower priority tasks (if any) to run, though tud_cdc_read usually 
-        // returns immediately if empty.
-        // A small delay here saves power when idle.
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
 void board_get_unique_id(uint8_t id[], uint8_t max_len)
 {
-    // You can eventually read the real OCOTP unique ID here.
-    // For now, we return a fixed dummy ID to make the build pass.
+    // For now, return a fixed dummy ID to make the build pass.
     for (uint8_t i = 0; i < max_len; i++)
     {
         id[i] = (uint8_t)(i + 1); 

@@ -26,6 +26,10 @@
 #ifndef TUSB_CONFIG_H_
 #define TUSB_CONFIG_H_
 
+// NXP Specific includes
+#include <stdio.h>              // Required for snprintf
+#include "fsl_debug_console.h"  // Required for DbgConsole_Printf
+
 #ifdef __cplusplus
  extern "C" {
 #endif
@@ -43,14 +47,6 @@
 #ifndef BOARD_TUD_MAX_SPEED
 #define BOARD_TUD_MAX_SPEED   OPT_MODE_DEFAULT_SPEED
 #endif
-
-// #ifndef CFG_TUSB_RHPORT0_MODE
-//   #define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE)
-// #endif
-
-// #ifndef CFG_TUSB_RHPORT1_MODE
-//   #define CFG_TUSB_RHPORT1_MODE (OPT_MODE_DEVICE)
-// #endif
 
 //--------------------------------------------------------------------
 // COMMON CONFIGURATION
@@ -73,8 +69,14 @@
 #define CFG_TUSB_OS           OPT_OS_FREERTOS
 #endif
 
+// Log levels : 0=None, 1=Error, 2=Debug, 3=Verbose
 #ifndef CFG_TUSB_DEBUG
-#define CFG_TUSB_DEBUG        0
+#define CFG_TUSB_DEBUG        1
+#endif
+
+// NXP Specific printf redirection
+#ifndef CFG_TUSB_DEBUG_PRINTF
+#define CFG_TUSB_DEBUG_PRINTF DbgConsole_Printf
 #endif
 
 // Enable Device stack
