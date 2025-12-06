@@ -31,6 +31,9 @@ board: FRDM-RW612
 void BOARD_InitBootPins(void)
 {
     BOARD_InitPins();
+    BOARD_InitDEBUG_UARTPins();
+    BOARD_InitSWD_DEBUGPins();
+    BOARD_InitLEDPins();
 }
 
 /* clang-format off */
@@ -63,7 +66,7 @@ void BOARD_InitPins(void)
 /*
  * TEXT BELOW IS USED AS SETTING FOR TOOLS *************************************
 BOARD_InitDEBUG_UARTPins:
-- options: {callFromInitBoot: 'false', coreID: cm33, enableClock: 'true'}
+- options: {callFromInitBoot: 'true', coreID: cm33, enableClock: 'true'}
 - pin_list:
   - {pin_num: E5, peripheral: FLEXCOMM3, signal: USART_RXD, pin_signal: GPIO_24}
   - {pin_num: F6, peripheral: FLEXCOMM3, signal: USART_TXD, pin_signal: GPIO_26}
@@ -88,7 +91,7 @@ void BOARD_InitDEBUG_UARTPins(void)
 /*
  * TEXT BELOW IS USED AS SETTING FOR TOOLS *************************************
 BOARD_InitSWD_DEBUGPins:
-- options: {callFromInitBoot: 'false', coreID: cm33, enableClock: 'true'}
+- options: {callFromInitBoot: 'true', coreID: cm33, enableClock: 'true'}
 - pin_list:
   - {pin_num: G5, peripheral: SWD, signal: CLK, pin_signal: GPIO_13}
   - {pin_num: K4, peripheral: SWD, signal: IO, pin_signal: GPIO_14}
@@ -159,7 +162,7 @@ void BOARD_InitSWD_DEBUGPins(void)
 /*
  * TEXT BELOW IS USED AS SETTING FOR TOOLS *************************************
 BOARD_InitLEDPins:
-- options: {callFromInitBoot: 'false', coreID: cm33, enableClock: 'true'}
+- options: {callFromInitBoot: 'true', coreID: cm33, enableClock: 'true'}
 - pin_list:
   - {pin_num: M1, peripheral: GPIO, signal: 'PIO0, 0', pin_signal: GPIO_0, direction: OUTPUT, gpio_init_state: 'true'}
   - {pin_num: N2, peripheral: GPIO, signal: 'PIO0, 1', pin_signal: GPIO_1, direction: OUTPUT, gpio_init_state: 'true'}

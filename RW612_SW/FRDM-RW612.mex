@@ -68,7 +68,7 @@
             <function name="BOARD_InitDEBUG_UARTPins">
                <description>Configures pin routing and optionally pin electrical features.</description>
                <options>
-                  <callFromInitBoot>false</callFromInitBoot>
+                  <callFromInitBoot>true</callFromInitBoot>
                   <coreID>cm33</coreID>
                   <enableClock>true</enableClock>
                </options>
@@ -92,7 +92,7 @@
             <function name="BOARD_InitSWD_DEBUGPins">
                <description>Configures pin routing and optionally pin electrical features.</description>
                <options>
-                  <callFromInitBoot>false</callFromInitBoot>
+                  <callFromInitBoot>true</callFromInitBoot>
                   <coreID>cm33</coreID>
                   <enableClock>true</enableClock>
                </options>
@@ -111,7 +111,7 @@
             <function name="BOARD_InitLEDPins">
                <description>Configures pin routing and optionally pin electrical features.</description>
                <options>
-                  <callFromInitBoot>false</callFromInitBoot>
+                  <callFromInitBoot>true</callFromInitBoot>
                   <coreID>cm33</coreID>
                   <enableClock>true</enableClock>
                </options>
