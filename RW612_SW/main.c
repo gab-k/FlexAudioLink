@@ -64,7 +64,7 @@ int main(void)
         while (1);
     }
 
-    // Create USB device task.
+    // Create LED blinking task.
     if (xTaskCreate(led_blinking_task, "blink", configMINIMAL_STACK_SIZE + 100, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("blink task creation failed!.\r\n");
