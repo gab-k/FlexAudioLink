@@ -1,0 +1,631 @@
+<?xml version="1.0" encoding= "UTF-8" ?>
+<configuration name="FRDM-RW612" xsi:schemaLocation="http://mcuxpresso.nxp.com/XSD/mex_configuration_19 http://mcuxpresso.nxp.com/XSD/mex_configuration_19.xsd" uuid="79eee00d-c69b-41f2-9508-aa19da9144bc" version="19" xmlns="http://mcuxpresso.nxp.com/XSD/mex_configuration_19" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+   <common>
+      <processor>RW612</processor>
+      <package>RW612ETA2I</package>
+      <board>FRDM-RW612</board>
+      <board_revision>1</board_revision>
+      <mcu_data>ksdk2_0</mcu_data>
+      <cores selected="cm33">
+         <core name="Cortex-M33" id="cm33" description=""/>
+      </cores>
+      <description></description>
+   </common>
+   <preferences>
+      <validate_boot_init_only>true</validate_boot_init_only>
+      <generate_code_modified_registers_only>false</generate_code_modified_registers_only>
+      <custom_copyright>
+         <text></text>
+         <enabled>true</enabled>
+      </custom_copyright>
+      <output_path_overrides>
+         <rule>
+            <description>Rule1</description>
+            <enabled>true</enabled>
+            <regex>board/(.*)</regex>
+            <replacement>/$1</replacement>
+         </rule>
+      </output_path_overrides>
+      <update_include_paths>true</update_include_paths>
+      <enable_parallel_routing>true</enable_parallel_routing>
+      <generate_registers_defines>false</generate_registers_defines>
+   </preferences>
+   <tools>
+      <pins name="Pins" version="17.0" enabled="true" update_project_code="true">
+         <generated_project_files>
+            <file path="pin_mux.c" update_enabled="true"/>
+            <file path="pin_mux.h" update_enabled="true"/>
+         </generated_project_files>
+         <pins_profile>
+            <processor_version>25.09.10</processor_version>
+         </pins_profile>
+         <functions_list>
+            <function name="BOARD_InitPins">
+               <description></description>
+               <options>
+                  <callFromInitBoot>true</callFromInitBoot>
+                  <coreID>cm33</coreID>
+                  <enableClock>true</enableClock>
+               </options>
+               <dependencies>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Pins initialization requires the COMMON Driver in the project." problem_level="2" source="Pins:BOARD_InitPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.cns_io_mux" description="Pins initialization requires the CNS_IO_MUX Driver in the project." problem_level="2" source="Pins:BOARD_InitPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <pins>
+                  <pin peripheral="FLEXCOMM0" signal="I2S_SCK" pin_num="F8" pin_signal="GPIO_4"/>
+                  <pin peripheral="FLEXCOMM0" signal="I2S_WS" pin_num="C13" pin_signal="GPIO_3"/>
+                  <pin peripheral="FLEXCOMM0" signal="I2S_DATA" pin_num="F10" pin_signal="GPIO_2"/>
+               </pins>
+            </function>
+            <function name="BOARD_InitDEBUG_UARTPins">
+               <description>Configures pin routing and optionally pin electrical features.</description>
+               <options>
+                  <callFromInitBoot>false</callFromInitBoot>
+                  <coreID>cm33</coreID>
+                  <enableClock>true</enableClock>
+               </options>
+               <dependencies>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Pins initialization requires the COMMON Driver in the project." problem_level="2" source="Pins:BOARD_InitDEBUG_UARTPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.cns_io_mux" description="Pins initialization requires the CNS_IO_MUX Driver in the project." problem_level="2" source="Pins:BOARD_InitDEBUG_UARTPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <pins>
+                  <pin peripheral="FLEXCOMM3" signal="USART_RXD" pin_num="E5" pin_signal="GPIO_24"/>
+                  <pin peripheral="FLEXCOMM3" signal="USART_TXD" pin_num="F6" pin_signal="GPIO_26"/>
+               </pins>
+            </function>
+            <function name="BOARD_InitSWD_DEBUGPins">
+               <description>Configures pin routing and optionally pin electrical features.</description>
+               <options>
+                  <callFromInitBoot>false</callFromInitBoot>
+                  <coreID>cm33</coreID>
+                  <enableClock>true</enableClock>
+               </options>
+               <dependencies>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Pins initialization requires the COMMON Driver in the project." problem_level="2" source="Pins:BOARD_InitSWD_DEBUGPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <pins>
+                  <pin peripheral="SWD" signal="CLK" pin_num="G5" pin_signal="GPIO_13"/>
+                  <pin peripheral="SWD" signal="IO" pin_num="K4" pin_signal="GPIO_14"/>
+               </pins>
+            </function>
+            <function name="BOARD_InitLEDPins">
+               <description>Configures pin routing and optionally pin electrical features.</description>
+               <options>
+                  <callFromInitBoot>false</callFromInitBoot>
+                  <coreID>cm33</coreID>
+                  <enableClock>true</enableClock>
+               </options>
+               <dependencies>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Pins initialization requires the COMMON Driver in the project." problem_level="2" source="Pins:BOARD_InitLEDPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.cns_io_mux" description="Pins initialization requires the CNS_IO_MUX Driver in the project." problem_level="2" source="Pins:BOARD_InitLEDPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.lpc_gpio" description="Pins initialization requires the LPC_GPIO Driver in the project." problem_level="2" source="Pins:BOARD_InitLEDPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <pins>
+                  <pin peripheral="GPIO" signal="PIO0, 0" pin_num="M1" pin_signal="GPIO_0">
+                     <pin_features>
+                        <pin_feature name="direction" value="OUTPUT"/>
+                     </pin_features>
+                  </pin>
+                  <pin peripheral="GPIO" signal="PIO0, 1" pin_num="N2" pin_signal="GPIO_1">
+                     <pin_features>
+                        <pin_feature name="direction" value="OUTPUT"/>
+                     </pin_features>
+                  </pin>
+                  <pin peripheral="GPIO" signal="PIO0, 12" pin_num="N8" pin_signal="GPIO_12">
+                     <pin_features>
+                        <pin_feature name="direction" value="OUTPUT"/>
+                     </pin_features>
+                  </pin>
+               </pins>
+            </function>
+         </functions_list>
+      </pins>
+      <clocks name="Clocks" version="18.0" enabled="true" update_project_code="true">
+         <generated_project_files>
+            <file path="clock_config.c" update_enabled="true"/>
+            <file path="clock_config.h" update_enabled="true"/>
+         </generated_project_files>
+         <clocks_profile>
+            <processor_version>25.09.10</processor_version>
+         </clocks_profile>
+         <clock_configurations>
+            <clock_configuration name="BOARD_BootClockRUN" id_prefix="" prefix_user_defined="false">
+               <description></description>
+               <options/>
+               <dependencies>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_in" description="&apos;XTALIN&apos; (Pins tool id: CAU.xtal_in, Clocks tool id: CAU.XTALIN) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_in" description="&apos;XTALIN&apos; (Pins tool id: CAU.xtal_in, Clocks tool id: CAU.XTALIN) needs to have &apos;INPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="direction" evaluation="">
+                        <data>INPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_out" description="&apos;XTALOUT&apos; (Pins tool id: CAU.xtal_out, Clocks tool id: CAU.XTALOUT) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_out" description="&apos;XTALOUT&apos; (Pins tool id: CAU.xtal_out, Clocks tool id: CAU.XTALOUT) needs to have &apos;OUTPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="direction" evaluation="">
+                        <data>OUTPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_in" description="&apos;AON_XTAL32K_IN&apos; (Pins tool id: PMU.xtal32k_in, Clocks tool id: PMU.AON_XTAL32K_IN) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_in" description="&apos;AON_XTAL32K_IN&apos; (Pins tool id: PMU.xtal32k_in, Clocks tool id: PMU.AON_XTAL32K_IN) needs to have &apos;INPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="direction" evaluation="">
+                        <data>INPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_out" description="&apos;AON_XTAL32K_OUT&apos; (Pins tool id: PMU.xtal32k_out, Clocks tool id: PMU.AON_XTAL32K_OUT) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_out" description="&apos;AON_XTAL32K_OUT&apos; (Pins tool id: PMU.xtal32k_out, Clocks tool id: PMU.AON_XTAL32K_OUT) needs to have &apos;OUTPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="direction" evaluation="">
+                        <data>OUTPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Clocks initialization requires the COMMON Driver in the project." problem_level="2" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.power" description="Clocks initialization requires the POWER Driver in the project." problem_level="2" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.clock" description="Clocks initialization requires the CLOCK Driver in the project." problem_level="2" source="Clocks:BOARD_BootClockRUN">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <clock_sources>
+                  <clock_source id="CAU.XTAL_OSC.outFreq" value="40 MHz" locked="false" enabled="true"/>
+               </clock_sources>
+               <clock_outputs>
+                  <clock_output id="audio_pll_clk.outFreq" value="1.536 MHz" locked="true" accuracy="0.001"/>
+                  <clock_output id="aux0_pll_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="avpll_ch1_clkout.outFreq" value="4246732800/345600007 MHz" locked="false" accuracy=""/>
+                  <clock_output id="avpll_ch2_clkout.outFreq" value="1415577600/22118401 MHz" locked="false" accuracy=""/>
+                  <clock_output id="cau_slp_clk.outFreq" value="4 MHz" locked="false" accuracy=""/>
+                  <clock_output id="clk_32k.outFreq" value="32 kHz" locked="false" accuracy=""/>
+                  <clock_output id="clk_pmu_sys.outFreq" value="54 MHz" locked="false" accuracy=""/>
+                  <clock_output id="els_128m_clk.outFreq" value="128 MHz" locked="false" accuracy=""/>
+                  <clock_output id="els_256m_clk.outFreq" value="256 MHz" locked="false" accuracy=""/>
+                  <clock_output id="els_64m_clk.outFreq" value="64 MHz" locked="false" accuracy=""/>
+                  <clock_output id="ffro_clk_div4.outFreq" value="640/53 MHz" locked="false" accuracy=""/>
+                  <clock_output id="flexcomm0_fclk.outFreq" value="1.536 MHz" locked="true" accuracy="0"/>
+                  <clock_output id="hclk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="lposc_clk_i.outFreq" value="1 MHz" locked="false" accuracy=""/>
+                  <clock_output id="main_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="main_pll_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="otp_fuse_32m_clk.outFreq" value="32 MHz" locked="false" accuracy=""/>
+                  <clock_output id="refclk_phy.outFreq" value="40 MHz" locked="false" accuracy=""/>
+                  <clock_output id="sfro_clk_i.outFreq" value="16 MHz" locked="false" accuracy=""/>
+                  <clock_output id="systick_fclk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="t3pll_mci_256m.outFreq" value="256 MHz" locked="false" accuracy=""/>
+                  <clock_output id="t3pll_mci_48_60m_irc.outFreq" value="2560/53 MHz" locked="false" accuracy=""/>
+                  <clock_output id="tcpu_mci_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="tddr_mci_flexspi_clk.outFreq" value="320 MHz" locked="false" accuracy=""/>
+               </clock_outputs>
+               <clock_settings>
+                  <setting id="CLKCTL0.MAINCLKSELB.sel" value="CLKCTL0.MAINPLLCLKDIV" locked="false"/>
+                  <setting id="CLKCTL0.MAINPLLCLKDIV.scale" value="1" locked="true"/>
+                  <setting id="CLKCTL0.PMUFCLKDIV.scale" value="5" locked="true"/>
+                  <setting id="CLKCTL0.SYSCPUAHBCLKDIV.scale" value="1" locked="true"/>
+                  <setting id="CLKCTL0.SYSTICKFCLKSEL.sel" value="CLKCTL0.SYSTICKFCLKDIV" locked="false"/>
+                  <setting id="CLKCTL0.WDT0FCLKSEL.sel" value="NO_CLOCK" locked="false"/>
+                  <setting id="CLKCTL1.AUDIOPLLCLKDIV.scale" value="8" locked="false"/>
+                  <setting id="CLKCTL1.FC0FCLKSEL.sel" value="CLKCTL1.FRG0CTL" locked="false"/>
+                  <setting id="CLKCTL1.FRG0CLKSEL.sel" value="CLKCTL1.FRGPLLCLKDIV" locked="false"/>
+                  <setting id="CLKCTL1.FRG0_DIV.scale" value="500" locked="false"/>
+                  <setting id="CLKCTL1.FRGPLLCLKDIV.scale" value="90" locked="false"/>
+                  <setting id="CLKCTL1.OSEVENTFCLKSEL.sel" value="NO_CLOCK" locked="false"/>
+                  <setting id="REFCLK_SYS_Config" value="Disabled" locked="false"/>
+                  <setting id="SYSCTL2.CH1_OFFSET_DIV.scale" value="345600007" locked="false"/>
+                  <setting id="SYSCTL2.CH2_M.scale" value="2621440" locked="true"/>
+                  <setting id="SYSCTL2.CH2_OFFSET_DIV.scale" value="66355203" locked="true"/>
+                  <setting id="SYSCTL2.T3_FBDIV.scale" value="64" locked="true"/>
+                  <setting id="SYSCTL2.T3_REFDIV.scale" value="1" locked="true"/>
+                  <setting id="SYSCTL2.TCPU_FBDIV.scale" value="81" locked="false"/>
+                  <setting id="T3PLL_MCI_213P3M_Config" value="Disabled" locked="false"/>
+                  <setting id="T3PLL_MCI_FLEXSPI_Config" value="Disabled" locked="false"/>
+                  <setting id="TCPU_MCI_FLEXSPI_CLK_Config" value="Disabled" locked="false"/>
+                  <setting id="TDDR_MCI_ENET_CLK_Config" value="Disabled" locked="false"/>
+               </clock_settings>
+               <called_from_default_init>true</called_from_default_init>
+            </clock_configuration>
+            <clock_configuration name="BOARD_BootClockLPR" id_prefix="" prefix_user_defined="false">
+               <description></description>
+               <options/>
+               <dependencies>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_in" description="&apos;XTALIN&apos; (Pins tool id: CAU.xtal_in, Clocks tool id: CAU.XTALIN) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_in" description="&apos;XTALIN&apos; (Pins tool id: CAU.xtal_in, Clocks tool id: CAU.XTALIN) needs to have &apos;INPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="direction" evaluation="">
+                        <data>INPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_out" description="&apos;XTALOUT&apos; (Pins tool id: CAU.xtal_out, Clocks tool id: CAU.XTALOUT) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="CAU.xtal_out" description="&apos;XTALOUT&apos; (Pins tool id: CAU.xtal_out, Clocks tool id: CAU.XTALOUT) needs to have &apos;OUTPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="direction" evaluation="">
+                        <data>OUTPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_in" description="&apos;AON_XTAL32K_IN&apos; (Pins tool id: PMU.xtal32k_in, Clocks tool id: PMU.AON_XTAL32K_IN) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_in" description="&apos;AON_XTAL32K_IN&apos; (Pins tool id: PMU.xtal32k_in, Clocks tool id: PMU.AON_XTAL32K_IN) needs to have &apos;INPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="direction" evaluation="">
+                        <data>INPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_out" description="&apos;AON_XTAL32K_OUT&apos; (Pins tool id: PMU.xtal32k_out, Clocks tool id: PMU.AON_XTAL32K_OUT) needs to be routed" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="routed" evaluation="">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="PMU.xtal32k_out" description="&apos;AON_XTAL32K_OUT&apos; (Pins tool id: PMU.xtal32k_out, Clocks tool id: PMU.AON_XTAL32K_OUT) needs to have &apos;OUTPUT&apos; direction" problem_level="1" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="direction" evaluation="">
+                        <data>OUTPUT</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Clocks initialization requires the COMMON Driver in the project." problem_level="2" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.power" description="Clocks initialization requires the POWER Driver in the project." problem_level="2" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.clock" description="Clocks initialization requires the CLOCK Driver in the project." problem_level="2" source="Clocks:BOARD_BootClockLPR">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <clock_sources>
+                  <clock_source id="CAU.XTAL_OSC.outFreq" value="40 MHz" locked="false" enabled="true"/>
+               </clock_sources>
+               <clock_outputs>
+                  <clock_output id="aux0_pll_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+                  <clock_output id="clk_32k.outFreq" value="32 kHz" locked="false" accuracy=""/>
+                  <clock_output id="clk_pmu_sys.outFreq" value="52 MHz" locked="false" accuracy=""/>
+                  <clock_output id="els_128m_clk.outFreq" value="128 MHz" locked="false" accuracy=""/>
+                  <clock_output id="els_256m_clk.outFreq" value="256 MHz" locked="false" accuracy=""/>
+                  <clock_output id="els_64m_clk.outFreq" value="64 MHz" locked="false" accuracy=""/>
+                  <clock_output id="hclk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+                  <clock_output id="main_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+                  <clock_output id="main_pll_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+                  <clock_output id="otp_fuse_32m_clk.outFreq" value="32 MHz" locked="false" accuracy=""/>
+                  <clock_output id="refclk_phy.outFreq" value="40 MHz" locked="false" accuracy=""/>
+                  <clock_output id="refclk_sys.outFreq" value="40 MHz" locked="false" accuracy=""/>
+                  <clock_output id="sfro_clk_i.outFreq" value="16 MHz" locked="false" accuracy=""/>
+                  <clock_output id="systick_fclk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+                  <clock_output id="t3pll_mci_256m.outFreq" value="256 MHz" locked="false" accuracy=""/>
+                  <clock_output id="tcpu_mci_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+               </clock_outputs>
+               <clock_settings>
+                  <setting id="AVPLL_Init_Config" value="Disabled" locked="false"/>
+                  <setting id="CAU_SLP_CLK_Config" value="Disabled" locked="false"/>
+                  <setting id="CLKCTL0.MAINCLKSELB.sel" value="CLKCTL0.MAINPLLCLKDIV" locked="false"/>
+                  <setting id="CLKCTL0.MAINPLLCLKDIV.scale" value="1" locked="true"/>
+                  <setting id="CLKCTL0.SYSOSCBYPASS_SEL.sel" value="NO_CLOCK" locked="false"/>
+                  <setting id="CLKCTL0.SYSTICKFCLKSEL.sel" value="CLKCTL0.SYSTICKFCLKDIV" locked="false"/>
+                  <setting id="CLKCTL1.CLKOUTSEL1.sel" value="CLKCTL1.CLKOUTSEL0" locked="false"/>
+                  <setting id="CLKCTL1.CLKOUTSEL2.sel" value="CLKCTL1.CLKOUTSEL1" locked="false"/>
+                  <setting id="CLKCTL1.FRGPLLCLKDIV.scale" value="13" locked="true"/>
+                  <setting id="SYSCTL2.T3_FBDIV.scale" value="64" locked="false"/>
+                  <setting id="SYSCTL2.TCPU_FBDIV.scale" value="78" locked="true"/>
+                  <setting id="SYSCTL2.TCPU_MCI_FLEXSPI_CLK_DIV.scale" value="10" locked="true"/>
+                  <setting id="SYSCTL2.TCPU_REFDIV.scale" value="1" locked="true"/>
+                  <setting id="T3PLL_MCI_213P3M_Config" value="Disabled" locked="false"/>
+                  <setting id="T3PLL_MCI_48_60M_IRC_Config" value="Disabled" locked="false"/>
+                  <setting id="T3PLL_MCI_FLEXSPI_Config" value="Disabled" locked="false"/>
+                  <setting id="TCPU_MCI_FLEXSPI_CLK_Config" value="Disabled" locked="false"/>
+                  <setting id="TDDR_MCI_ENET_CLK_Config" value="Disabled" locked="false"/>
+                  <setting id="TDDR_MCI_FLEXSPI_CLK_Config" value="Disabled" locked="false"/>
+                  <setting id="TDDR_PLL_Init_Config" value="Disabled" locked="false"/>
+               </clock_settings>
+               <called_from_default_init>false</called_from_default_init>
+            </clock_configuration>
+         </clock_configurations>
+      </clocks>
+      <dcdx name="DCDx" version="3.0" enabled="false" update_project_code="true">
+         <generated_project_files/>
+         <dcdx_profile>
+            <processor_version>0.0.0</processor_version>
+         </dcdx_profile>
+         <dcdx_configurations/>
+      </dcdx>
+      <periphs name="Peripherals" version="15.0" enabled="true" update_project_code="true">
+         <dependencies>
+            <dependency resourceType="SWComponent" resourceId="platform.drivers.lpc_gpio" description="GPIO Driver is not found in the toolchain/IDE project. The project will not compile!" problem_level="2" source="Peripherals">
+               <feature name="enabled" evaluation="equal">
+                  <data type="Boolean">true</data>
+               </feature>
+            </dependency>
+            <dependency resourceType="SWComponent" resourceId="platform.drivers.lpc_gpio" description="An unsupported version of the GPIO Driver in the toolchain/IDE project. Required: ${required_value}, actual: ${actual_value}. The project might not compile correctly." problem_level="1" source="Peripherals">
+               <feature name="version" evaluation="equivalent">
+                  <data type="Version">2.1.1</data>
+               </feature>
+            </dependency>
+            <dependency resourceType="SWComponent" resourceId="platform.drivers.flexcomm_i2s" description="FLEXCOMM I2S Driver is not found in the toolchain/IDE project. The project will not compile!" problem_level="2" source="Peripherals">
+               <feature name="enabled" evaluation="equal">
+                  <data type="Boolean">true</data>
+               </feature>
+            </dependency>
+            <dependency resourceType="SWComponent" resourceId="platform.drivers.flexcomm_i2s" description="An unsupported version of the FLEXCOMM I2S Driver in the toolchain/IDE project. Required: ${required_value}, actual: ${actual_value}. The project might not compile correctly." problem_level="1" source="Peripherals">
+               <feature name="version" evaluation="greaterOrEqual">
+                  <data type="Version" maxValue="2.3.9">2.2.0</data>
+               </feature>
+            </dependency>
+            <dependency resourceType="SWComponent" resourceId="platform.drivers.lpc_dma" description="DMA Driver is not found in the toolchain/IDE project. The project will not compile!" problem_level="2" source="Peripherals">
+               <feature name="enabled" evaluation="equal">
+                  <data type="Boolean">true</data>
+               </feature>
+            </dependency>
+            <dependency resourceType="SWComponent" resourceId="platform.drivers.lpc_dma" description="An unsupported version of the DMA Driver in the toolchain/IDE project. Required: ${required_value}, actual: ${actual_value}. The project might not compile correctly." problem_level="1" source="Peripherals">
+               <feature name="version" evaluation="equivalent">
+                  <data type="Version">2.5.0</data>
+               </feature>
+            </dependency>
+            <dependency resourceType="Tool" resourceId="Clocks" description="The Clocks tool is required by the Peripherals tool, but it is disabled." problem_level="2" source="Peripherals">
+               <feature name="enabled" evaluation="equal">
+                  <data>true</data>
+               </feature>
+            </dependency>
+         </dependencies>
+         <generated_project_files>
+            <file path="peripherals.c" update_enabled="true"/>
+            <file path="peripherals.h" update_enabled="true"/>
+         </generated_project_files>
+         <peripherals_profile>
+            <processor_version>25.09.10</processor_version>
+         </peripherals_profile>
+         <functional_groups>
+            <functional_group name="BOARD_InitPeripherals" uuid="65c69a75-6687-4d60-9cba-6b87ca7b8e8d" called_from_default_init="true" id_prefix="" core="cm33">
+               <description></description>
+               <options/>
+               <dependencies>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="FLEXCOMM0.i2s_sck" description="Signal I2S clock signal SCK is not routed." problem_level="1" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="routed" evaluation="equal">
+                        <data type="Boolean">true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="FLEXCOMM0.i2s_ws" description="Signal I2S word select signal WS is not routed." problem_level="1" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="routed" evaluation="equal">
+                        <data type="Boolean">true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="FLEXCOMM0.i2s_data" description="Signal I2S data signal SDA is not routed." problem_level="1" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="routed" evaluation="equal">
+                        <data type="Boolean">true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="ClockOutput" resourceId="flexcomm0_fclk" description="flexcomm0_fclk is inactive." problem_level="2" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="frequency" evaluation="greaterThan">
+                        <data type="Frequency" unit="Hz">0</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.flexcomm_i2s_dma" description="The flexcomm_i2s_dma (fsl_i2s_dma.c) driver is missing in the project (required for the DMA mode)." problem_level="2" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="enabled" evaluation="equal">
+                        <data type="Boolean">true</data>
+                     </feature>
+                  </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.flexcomm_i2s_dma" description="The compatible version of the flexcomm_i2s_dma (fsl_i2s_dma.c) driver is not available in the project (required for the DMA mode)." problem_level="1" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="version" evaluation="compatible">
+                        <data type="Version">2.1.0</data>
+                     </feature>
+                  </dependency>
+               </dependencies>
+               <instances>
+                  <instance name="NVIC" uuid="0228940b-ca5a-4126-935e-9afa3d3135fc" type="nvic" type_id="nvic" mode="general" peripheral="NVIC" enabled="true" comment="" custom_name_enabled="false" editing_lock="false">
+                     <config_set name="nvic">
+                        <array name="interrupt_table">
+                           <struct name="0"/>
+                           <struct name="1"/>
+                        </array>
+                        <array name="interrupts">
+                           <struct name="0">
+                              <setting name="channelId" value="SysTick"/>
+                              <struct name="interrupt_t">
+                                 <setting name="IRQn" value="SysTick_IRQn"/>
+                                 <setting name="enable_interrrupt" value="enabled"/>
+                                 <setting name="enable_priority" value="false"/>
+                                 <setting name="priority" value="0"/>
+                                 <setting name="enable_custom_name" value="false"/>
+                              </struct>
+                           </struct>
+                           <struct name="1">
+                              <setting name="channelId" value="USB"/>
+                              <struct name="interrupt_t">
+                                 <setting name="IRQn" value="USB_IRQn"/>
+                                 <setting name="enable_interrrupt" value="enabled"/>
+                                 <setting name="enable_priority" value="false"/>
+                                 <setting name="priority" value="0"/>
+                                 <setting name="enable_custom_name" value="false"/>
+                              </struct>
+                           </struct>
+                        </array>
+                     </config_set>
+                  </instance>
+                  <instance name="GPIO" uuid="e6aca474-e948-43a5-b8ed-37d7646590e5" type="lpc_gpio" type_id="lpc_gpio_2.1.1" mode="GPIO" peripheral="GPIO" enabled="true" comment="" custom_name_enabled="false" editing_lock="false">
+                     <config_set name="lpc_gpio"/>
+                  </instance>
+                  <instance name="FLEXCOMM0" uuid="59e8aec4-15c4-4a3b-8562-8cbca4ee99bd" type="flexcomm_i2s" type_id="flexcomm_i2s_2.2.0" mode="dma" peripheral="FLEXCOMM0" enabled="true" comment="" custom_name_enabled="false" editing_lock="false">
+                     <config_set name="fsl_i2s">
+                        <struct name="i2s_config">
+                           <setting name="usage" value="playback"/>
+                           <setting name="masterSlave" value="kI2S_MasterSlaveNormalMaster"/>
+                           <setting name="sckPolM" value="false"/>
+                           <setting name="wsPolM" value="false"/>
+                           <setting name="pdmDataTx" value="false"/>
+                           <struct name="clockConfig">
+                              <setting name="sampleRate_Hz" value="kSAI_SampleRate48KHz"/>
+                              <setting name="clockSource" value="FXCOMFunctionClock"/>
+                              <setting name="clockSourceFreq" value="ClocksTool_DefaultInit"/>
+                              <setting name="masterClockDependency" value="false"/>
+                           </struct>
+                           <setting name="mode" value="kI2S_ModeI2sClassic"/>
+                           <setting name="dataLengthM" value="16"/>
+                           <setting name="stereo" value="kSAI_Stereo"/>
+                           <setting name="i2s_mono_palcement" value="kSAI_Mono_Left"/>
+                           <setting name="positionM" value="0"/>
+                           <array name="secondary_channels_array"/>
+                           <setting name="frameLengthM" value="32"/>
+                           <setting name="rightLow" value="false"/>
+                           <setting name="leftJust" value="false"/>
+                           <setting name="watermarkM_Tx" value="ki2s_TxFifo4"/>
+                           <setting name="txEmptyZeroTx" value="true"/>
+                           <setting name="pack48" value="false"/>
+                        </struct>
+                     </config_set>
+                     <config_set name="dmaCfg" quick_selection="QuickSelection1">
+                        <struct name="dma_channels">
+                           <struct name="dma_tx_channel">
+                              <setting name="DMA_source" value="kDma0RequestFlexcomm0Tx"/>
+                              <setting name="init_channel_priority" value="false"/>
+                              <setting name="dma_priority" value="kDMA_ChannelPriority0"/>
+                              <setting name="enable_custom_name" value="false"/>
+                           </struct>
+                        </struct>
+                        <struct name="i2s_dma_handle">
+                           <setting name="enable_custom_name" value="false"/>
+                           <setting name="init_callback" value="false"/>
+                           <setting name="callback_fcn" value=""/>
+                           <setting name="user_data" value=""/>
+                        </struct>
+                     </config_set>
+                  </instance>
+                  <instance name="DMA0" uuid="6fcf8ff1-9f0d-4e9c-bee4-f0890f0fe5e5" type="lpc_dma" type_id="lpc_dma_2.5.0" mode="basic" peripheral="DMA0" enabled="true" comment="" custom_name_enabled="false" editing_lock="false">
+                     <config_set name="fsl_dma" quick_selection="default">
+                        <array name="dma_table">
+                           <struct name="0"/>
+                        </array>
+                        <array name="dma_channels"/>
+                        <setting name="init_interrupt" value="false"/>
+                        <struct name="dma_interrupt">
+                           <setting name="IRQn" value="DMA0_IRQn"/>
+                           <setting name="enable_interrrupt" value="enabled"/>
+                           <setting name="enable_priority" value="false"/>
+                           <setting name="priority" value="0"/>
+                           <setting name="enable_custom_name" value="false"/>
+                        </struct>
+                     </config_set>
+                  </instance>
+               </instances>
+            </functional_group>
+         </functional_groups>
+         <components>
+            <component name="system" uuid="bb9e4b86-39db-4917-a741-a6c76d6225fd" type_id="system">
+               <config_set_global name="global_system_definitions">
+                  <setting name="user_definitions" value=""/>
+                  <setting name="user_includes" value=""/>
+                  <setting name="global_init" value=""/>
+               </config_set_global>
+            </component>
+            <component name="gpio_adapter_common" uuid="458c6859-6060-4dea-a2f0-81f9ef88bd4b" type_id="gpio_adapter_common">
+               <config_set_global name="global_gpio_adapter_common" quick_selection="default"/>
+            </component>
+            <component name="uart_cmsis_common" uuid="9a264716-5143-4fed-b1ae-87bae9cec3cb" type_id="uart_cmsis_common">
+               <config_set_global name="global_USART_CMSIS_common" quick_selection="default"/>
+            </component>
+            <component name="msg" uuid="f47ac915-b12e-44b2-8399-d66fa29f2002" type_id="msg">
+               <config_set_global name="global_messages"/>
+            </component>
+            <component name="generic_uart" uuid="196f48a9-5b23-4023-b2f2-39f273b48056" type_id="generic_uart">
+               <config_set_global name="global_uart"/>
+            </component>
+            <component name="gau_common" uuid="62a250a0-5ca1-4fb6-ad53-922624cc2d60" type_id="gau_common">
+               <config_set_global name="global_gau_common" quick_selection="default"/>
+            </component>
+            <component name="generic_enet" uuid="fae6c7c7-b664-419c-9a98-adcf0718c3d8" type_id="generic_enet">
+               <config_set_global name="global_enet"/>
+            </component>
+            <component name="generic_can" uuid="bef85dd9-b4ca-4c92-9858-fe61e4d7f9b2" type_id="generic_can">
+               <config_set_global name="global_can"/>
+            </component>
+         </components>
+      </periphs>
+      <tee name="TEE" version="10.0" enabled="false" update_project_code="true">
+         <generated_project_files/>
+         <tee_profile>
+            <processor_version>0.0.0</processor_version>
+            <tool_options>
+               <option id="_legacy_source_names_" value="yes"/>
+            </tool_options>
+         </tee_profile>
+         <functional_group name="BOARD_InitTrustZone" called_from_default_init="true" id_prefix="" prefix_user_defined="true">
+            <description></description>
+            <options/>
+            <saus>
+               <sau enabled="true" all_non_secure="false" generate_code_for_disabled_regions="false">
+                  <region start="0" size="268435456" security="ns" enabled="true" index="0"/>
+                  <region start="536870912" size="3221225472" security="ns" enabled="true" index="1"/>
+                  <region start="0" size="32" security="ns" enabled="false" index="2"/>
+                  <region start="0" size="32" security="ns" enabled="false" index="3"/>
+                  <region start="0" size="32" security="ns" enabled="false" index="4"/>
+                  <region start="0" size="32" security="ns" enabled="false" index="5"/>
+                  <region start="0" size="32" security="ns" enabled="false" index="6"/>
+                  <region start="0" size="32" security="ns" enabled="false" index="7"/>
+               </sau>
+            </saus>
+            <dependencies/>
+         </functional_group>
+      </tee>
+   </tools>
+</configuration>

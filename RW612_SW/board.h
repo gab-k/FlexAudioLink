@@ -8,7 +8,6 @@
 #define _BOARD_H_
 
 #include "fsl_common.h"
-#include "fsl_gpio.h"
 
 /*******************************************************************************
  * Definitions
@@ -79,60 +78,6 @@
 #define BOARD_ENABLE_PSRAM_CACHE 1
 #endif
 
-/* Board I2C for codec */
-#define BOARD_CODEC_I2C_BASEADDR   I2C2
-#define BOARD_CODEC_I2C_CLOCK_FREQ CLOCK_GetFlexCommClkFreq(2U)
-#define BOARD_CODEC_I2C_INSTANCE   2
-#define BOARD_CODEC_I2C_SDA_PORT   0
-#define BOARD_CODEC_I2C_SCL_PORT   0
-#define BOARD_CODEC_I2C_SDA_PIN    16
-#define BOARD_CODEC_I2C_SCL_PIN    17
-
-/* Board led color mapping */
-#define LOGIC_LED_ON  0U
-#define LOGIC_LED_OFF 1U
-
-/* A fake led on GPIO header */
-#ifndef BOARD_LED_BLUE_GPIO
-#define BOARD_LED_BLUE_GPIO GPIO
-#endif
-#define BOARD_LED_BLUE_GPIO_PORT 0U
-#ifndef BOARD_LED_BLUE_GPIO_PIN
-#define BOARD_LED_BLUE_GPIO_PIN 0U
-#endif
-
-#define LED_BLUE_INIT(output)                                                            \
-    GPIO_PinInit(BOARD_LED_BLUE_GPIO, BOARD_LED_BLUE_GPIO_PORT, BOARD_LED_BLUE_GPIO_PIN, \
-                 &(gpio_pin_config_t){kGPIO_DigitalOutput, (output)}) /*!< Enable target LED_BLUE */
-#define LED_BLUE_ON()                                           \
-    GPIO_PortSet(BOARD_LED_BLUE_GPIO, BOARD_LED_BLUE_GPIO_PORT, \
-                 1U << BOARD_LED_BLUE_GPIO_PIN) /*!< Turn on target LED_BLUE */
-#define LED_BLUE_OFF()                                            \
-    GPIO_PortClear(BOARD_LED_BLUE_GPIO, BOARD_LED_BLUE_GPIO_PORT, \
-                   1U << BOARD_LED_BLUE_GPIO_PIN) /*!< Turn off target LED_BLUE */
-#define LED_BLUE_TOGGLE()                                          \
-    GPIO_PortToggle(BOARD_LED_BLUE_GPIO, BOARD_LED_BLUE_GPIO_PORT, \
-                    1U << BOARD_LED_BLUE_GPIO_PIN) /*!< Toggle on target LED_BLUE */
-
-/* Board SW PIN */
-#ifndef BOARD_SW2_GPIO
-#define BOARD_SW2_GPIO GPIO
-#endif
-#define BOARD_SW2_GPIO_PORT 0U
-#ifndef BOARD_SW2_GPIO_PIN
-#define BOARD_SW2_GPIO_PIN 11U
-#endif
-
-#define BOARD_ENET0_PHY_ADDRESS (0x02U)
-
-/*! @brief The USIM SMARTCARD PHY configuration. */
-#define BOARD_SMARTCARD_MODULE                (USIM)      /*!< SMARTCARD communicational module instance */
-#define BOARD_SMARTCARD_MODULE_IRQ            (USIM_IRQn) /*!< SMARTCARD communicational module IRQ handler */
-#define BOARD_SMARTCARD_CLOCK_MODULE_CLK_FREQ (CLOCK_GetUsimClkFreq())
-#define BOARD_SMARTCARD_CLOCK_VALUE           (4000000U)  /*!< SMARTCARD clock frequency (4Mhz) */
-#define BOARD_SMARTCARD_IRQ_PORT              (0)
-#define BOARD_SMARTCARD_IRQ_PIN               (19)
-#define BOARD_SMARTCARD_TS_TIMER_IRQ          (CTIMER0_IRQn)
 
 #if defined(__cplusplus)
 extern "C" {

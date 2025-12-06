@@ -18,6 +18,9 @@
 /* Freescale includes. */
 #include "fsl_device_registers.h"
 #include "fsl_debug_console.h"
+#include "fsl_gpio.h"
+
+#include "pin_mux.h"
 #include "board.h"
 #include "app.h"
 
@@ -46,6 +49,9 @@ int main(void)
 {
     /* Init board hardware. */
     BOARD_InitHardware();
+
+    // Enable green channel of RGB LED.
+    GPIO_PortClear(GPIO, BOARD_INITLEDPINS_LED_GREEN_PORT, BOARD_INITLEDPINS_LED_GREEN_PIN_MASK);
     
     // Create USB device task.
     if (xTaskCreate(usb_device_task, "usbd", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, NULL) != pdPASS)
