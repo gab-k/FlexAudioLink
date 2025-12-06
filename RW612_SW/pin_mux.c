@@ -161,9 +161,9 @@ void BOARD_InitSWD_DEBUGPins(void)
 BOARD_InitLEDPins:
 - options: {callFromInitBoot: 'false', coreID: cm33, enableClock: 'true'}
 - pin_list:
-  - {pin_num: M1, peripheral: GPIO, signal: 'PIO0, 0', pin_signal: GPIO_0, direction: OUTPUT}
-  - {pin_num: N2, peripheral: GPIO, signal: 'PIO0, 1', pin_signal: GPIO_1, direction: OUTPUT}
-  - {pin_num: N8, peripheral: GPIO, signal: 'PIO0, 12', pin_signal: GPIO_12, direction: OUTPUT}
+  - {pin_num: M1, peripheral: GPIO, signal: 'PIO0, 0', pin_signal: GPIO_0, direction: OUTPUT, gpio_init_state: 'true'}
+  - {pin_num: N2, peripheral: GPIO, signal: 'PIO0, 1', pin_signal: GPIO_1, direction: OUTPUT, gpio_init_state: 'true'}
+  - {pin_num: N8, peripheral: GPIO, signal: 'PIO0, 12', pin_signal: GPIO_12, direction: OUTPUT, gpio_init_state: 'true'}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */

@@ -63,7 +63,7 @@ void BOARD_InitSWD_DEBUGPins(void); /* Function assigned for the Cortex-M33 */
 #define BOARD_INITLEDPINS_LED_BLUE_SIGNAL PIO0                        /*!<@brief Signal name */
 #define BOARD_INITLEDPINS_LED_BLUE_CHANNEL 0                          /*!<@brief Signal channel */
 #define BOARD_INITLEDPINS_LED_BLUE_GPIO GPIO                          /*!<@brief GPIO peripheral base pointer */
-#define BOARD_INITLEDPINS_LED_BLUE_INIT_GPIO_VALUE 0U                 /*!<@brief GPIO output initial state */
+#define BOARD_INITLEDPINS_LED_BLUE_INIT_GPIO_VALUE 1U                 /*!<@brief GPIO output initial state */
 #define BOARD_INITLEDPINS_LED_BLUE_GPIO_PIN 0U                        /*!<@brief GPIO pin number */
 #define BOARD_INITLEDPINS_LED_BLUE_PORT 0U                            /*!<@brief PORT number */
 #define BOARD_INITLEDPINS_LED_BLUE_PIN 0U                             /*!<@brief PORT pin number */
@@ -77,7 +77,7 @@ void BOARD_InitSWD_DEBUGPins(void); /* Function assigned for the Cortex-M33 */
 #define BOARD_INITLEDPINS_LED_RED_SIGNAL PIO0                        /*!<@brief Signal name */
 #define BOARD_INITLEDPINS_LED_RED_CHANNEL 1                          /*!<@brief Signal channel */
 #define BOARD_INITLEDPINS_LED_RED_GPIO GPIO                          /*!<@brief GPIO peripheral base pointer */
-#define BOARD_INITLEDPINS_LED_RED_INIT_GPIO_VALUE 0U                 /*!<@brief GPIO output initial state */
+#define BOARD_INITLEDPINS_LED_RED_INIT_GPIO_VALUE 1U                 /*!<@brief GPIO output initial state */
 #define BOARD_INITLEDPINS_LED_RED_GPIO_PIN 1U                        /*!<@brief GPIO pin number */
 #define BOARD_INITLEDPINS_LED_RED_PORT 0U                            /*!<@brief PORT number */
 #define BOARD_INITLEDPINS_LED_RED_PIN 1U                             /*!<@brief PORT pin number */
@@ -91,7 +91,7 @@ void BOARD_InitSWD_DEBUGPins(void); /* Function assigned for the Cortex-M33 */
 #define BOARD_INITLEDPINS_LED_GREEN_SIGNAL PIO0                        /*!<@brief Signal name */
 #define BOARD_INITLEDPINS_LED_GREEN_CHANNEL 12                         /*!<@brief Signal channel */
 #define BOARD_INITLEDPINS_LED_GREEN_GPIO GPIO                          /*!<@brief GPIO peripheral base pointer */
-#define BOARD_INITLEDPINS_LED_GREEN_INIT_GPIO_VALUE 0U                 /*!<@brief GPIO output initial state */
+#define BOARD_INITLEDPINS_LED_GREEN_INIT_GPIO_VALUE 1U                 /*!<@brief GPIO output initial state */
 #define BOARD_INITLEDPINS_LED_GREEN_GPIO_PIN 12U                       /*!<@brief GPIO pin number */
 #define BOARD_INITLEDPINS_LED_GREEN_PORT 0U                            /*!<@brief PORT number */
 #define BOARD_INITLEDPINS_LED_GREEN_PIN 12U                            /*!<@brief PORT pin number */

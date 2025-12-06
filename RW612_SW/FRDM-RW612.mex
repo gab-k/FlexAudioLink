@@ -136,16 +136,19 @@
                   <pin peripheral="GPIO" signal="PIO0, 0" pin_num="M1" pin_signal="GPIO_0">
                      <pin_features>
                         <pin_feature name="direction" value="OUTPUT"/>
+                        <pin_feature name="gpio_init_state" value="true"/>
                      </pin_features>
                   </pin>
                   <pin peripheral="GPIO" signal="PIO0, 1" pin_num="N2" pin_signal="GPIO_1">
                      <pin_features>
                         <pin_feature name="direction" value="OUTPUT"/>
+                        <pin_feature name="gpio_init_state" value="true"/>
                      </pin_features>
                   </pin>
                   <pin peripheral="GPIO" signal="PIO0, 12" pin_num="N8" pin_signal="GPIO_12">
                      <pin_features>
                         <pin_feature name="direction" value="OUTPUT"/>
+                        <pin_feature name="gpio_init_state" value="true"/>
                      </pin_features>
                   </pin>
                </pins>
