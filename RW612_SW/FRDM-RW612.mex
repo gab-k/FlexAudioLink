@@ -464,6 +464,11 @@
                         <data type="Frequency" unit="Hz">0</data>
                      </feature>
                   </dependency>
+                  <dependency resourceType="PeripheralUnifiedSignal" resourceId="SYSCON.mclk" description="Signal I2S (SYSCON) Leader clock MCLK is not routed." problem_level="1" source="Peripherals:BOARD_InitPeripherals">
+                     <feature name="routed" evaluation="equal">
+                        <data type="Boolean">true</data>
+                     </feature>
+                  </dependency>
                   <dependency resourceType="SWComponent" resourceId="platform.drivers.flexcomm_i2s_dma" description="The flexcomm_i2s_dma (fsl_i2s_dma.c) driver is missing in the project (required for the DMA mode)." problem_level="2" source="Peripherals:BOARD_InitPeripherals">
                      <feature name="enabled" evaluation="equal">
                         <data type="Boolean">true</data>
@@ -521,7 +526,7 @@
                               <setting name="sampleRate_Hz" value="kSAI_SampleRate48KHz"/>
                               <setting name="clockSource" value="FXCOMFunctionClock"/>
                               <setting name="clockSourceFreq" value="ClocksTool_DefaultInit"/>
-                              <setting name="masterClockDependency" value="false"/>
+                              <setting name="masterClockDependency" value="true"/>
                            </struct>
                            <setting name="mode" value="kI2S_ModeI2sClassic"/>
                            <setting name="dataLengthM" value="16"/>
@@ -537,7 +542,7 @@
                            <setting name="pack48" value="false"/>
                         </struct>
                      </config_set>
-                     <config_set name="dmaCfg" quick_selection="QuickSelection1">
+                     <config_set name="dmaCfg">
                         <struct name="dma_channels">
                            <struct name="dma_tx_channel">
                               <setting name="DMA_source" value="kDma0RequestFlexcomm0Tx"/>
@@ -548,8 +553,8 @@
                         </struct>
                         <struct name="i2s_dma_handle">
                            <setting name="enable_custom_name" value="false"/>
-                           <setting name="init_callback" value="false"/>
-                           <setting name="callback_fcn" value=""/>
+                           <setting name="init_callback" value="true"/>
+                           <setting name="callback_fcn" value="I2S_TX_DMA_Callback"/>
                            <setting name="user_data" value=""/>
                         </struct>
                      </config_set>

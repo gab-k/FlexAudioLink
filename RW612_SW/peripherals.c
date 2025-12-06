@@ -184,7 +184,7 @@ instance:
         - sampleRate_Hz: 'kSAI_SampleRate48KHz'
         - clockSource: 'FXCOMFunctionClock'
         - clockSourceFreq: 'ClocksTool_DefaultInit'
-        - masterClockDependency: 'false'
+        - masterClockDependency: 'true'
       - mode: 'kI2S_ModeI2sClassic'
       - dataLengthM: '16'
       - stereo: 'kSAI_Stereo'
@@ -206,10 +206,9 @@ instance:
         - enable_custom_name: 'false'
     - i2s_dma_handle:
       - enable_custom_name: 'false'
-      - init_callback: 'false'
-      - callback_fcn: ''
+      - init_callback: 'true'
+      - callback_fcn: 'I2S_TX_DMA_Callback'
       - user_data: ''
-    - quick_selection: 'QuickSelection1'
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS **********/
 /* clang-format on */
 /* Flexcomm I2S configuration */
@@ -241,7 +240,7 @@ static void FLEXCOMM0_init(void) {
   /* Create the DMA FLEXCOMM0_TX_Handle handle */
   DMA_CreateHandle(&FLEXCOMM0_TX_Handle, FLEXCOMM0_TX_DMA_BASEADDR, FLEXCOMM0_TX_DMA_CHANNEL);
   /* Create the I2S DMA handle */
-  I2S_TxTransferCreateHandleDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, &FLEXCOMM0_TX_Handle, NULL, NULL);
+  I2S_TxTransferCreateHandleDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, &FLEXCOMM0_TX_Handle, I2S_TX_DMA_Callback, NULL);
 }
 
 /***********************************************************************************************************************

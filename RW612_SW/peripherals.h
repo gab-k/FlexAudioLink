@@ -53,6 +53,12 @@ extern dma_handle_t FLEXCOMM0_TX_Handle;
 extern i2s_dma_handle_t FLEXCOMM0_Tx_DMA_Handle;
 
 /***********************************************************************************************************************
+ * Callback functions
+ **********************************************************************************************************************/
+/* I2S DMA callback function for the FLEXCOMM0 component (init. function BOARD_InitPeripherals)*/
+extern void I2S_TX_DMA_Callback(I2S_Type *,i2s_dma_handle_t *,status_t ,void *);
+
+/***********************************************************************************************************************
  * Initialization functions
  **********************************************************************************************************************/
 
