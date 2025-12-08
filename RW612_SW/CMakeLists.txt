@@ -19,6 +19,8 @@ mcux_add_source(
             # Regular application files
             main.c
             audio.c
+            peripherals.c
+            clock_config.c
             
             # TinyUSB descriptor and configuration files
             usb_descriptors.c
@@ -42,3 +44,11 @@ mcux_add_include(
 
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)
 
+mcux_add_linker_symbol(
+    SYMBOLS "__stack_size__=0x2000 __heap_size__=0x0400"
+)
+
+mcux_add_macro(
+    CC "PRINTF_ADVANCED_ENABLE=1"
+    TARGETS debug
+)

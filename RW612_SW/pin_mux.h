@@ -26,6 +26,21 @@ extern "C" {
 void BOARD_InitBootPins(void);
 
 /*!
+ * @brief mclk direction control: MCLK is in the output direction. */
+#define MCLKPINDIR_MCLKPINDIR_OUTPUT_DIRECTION 0x01u
+
+/*! @name GPIO_5 (coord L7), J1[7]/MCLK
+  @{ */
+/* Routed pin properties */
+#define BOARD_INITPINS_MCLKOUT_PERIPHERAL CLKCTL1                 /*!<@brief Peripheral name */
+#define BOARD_INITPINS_MCLKOUT_SIGNAL MCLK                        /*!<@brief Signal name */
+#define BOARD_INITPINS_MCLKOUT_GPIO_PIN 5U                        /*!<@brief GPIO pin number */
+#define BOARD_INITPINS_MCLKOUT_PORT 0U                            /*!<@brief PORT number */
+#define BOARD_INITPINS_MCLKOUT_PIN 5U                             /*!<@brief PORT pin number */
+#define BOARD_INITPINS_MCLKOUT_PIN_MASK (1U << 5U)                /*!<@brief PORT pin mask */
+                                                                  /* @} */
+
+/*!
  * @brief 
  *
  */

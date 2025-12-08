@@ -113,12 +113,14 @@ instance:
     - interrupt_table:
       - 0: []
       - 1: []
+      - 2: []
+      - 3: []
     - interrupts:
       - 0:
         - channelId: 'SysTick'
         - interrupt_t:
           - IRQn: 'SysTick_IRQn'
-          - enable_interrrupt: 'enabled'
+          - enable_interrrupt: 'noInit'
           - enable_priority: 'false'
           - priority: '0'
           - enable_custom_name: 'false'
@@ -127,8 +129,24 @@ instance:
         - interrupt_t:
           - IRQn: 'USB_IRQn'
           - enable_interrrupt: 'enabled'
-          - enable_priority: 'false'
-          - priority: '0'
+          - enable_priority: 'true'
+          - priority: '4'
+          - enable_custom_name: 'false'
+      - 2:
+        - channelId: 'DMA0'
+        - interrupt_t:
+          - IRQn: 'DMA0_IRQn'
+          - enable_interrrupt: 'enabled'
+          - enable_priority: 'true'
+          - priority: '3'
+          - enable_custom_name: 'false'
+      - 3:
+        - channelId: 'FLEXCOMM0'
+        - interrupt_t:
+          - IRQn: 'FLEXCOMM0_IRQn'
+          - enable_interrrupt: 'enabled'
+          - enable_priority: 'true'
+          - priority: '5'
           - enable_custom_name: 'false'
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS **********/
 /* clang-format on */
@@ -183,7 +201,7 @@ instance:
       - clockConfig:
         - sampleRate_Hz: 'kSAI_SampleRate48KHz'
         - clockSource: 'FXCOMFunctionClock'
-        - clockSourceFreq: 'ClocksTool_DefaultInit'
+        - clockSourceFreq: 'custom:12288000'
         - masterClockDependency: 'true'
       - mode: 'kI2S_ModeI2sClassic'
       - dataLengthM: '16'
@@ -201,8 +219,8 @@ instance:
     - dma_channels:
       - dma_tx_channel:
         - DMA_source: 'kDma0RequestFlexcomm0Tx'
-        - init_channel_priority: 'false'
-        - dma_priority: 'kDMA_ChannelPriority0'
+        - init_channel_priority: 'true'
+        - dma_priority: 'kDMA_ChannelPriority3'
         - enable_custom_name: 'false'
     - i2s_dma_handle:
       - enable_custom_name: 'false'
@@ -220,7 +238,7 @@ const i2s_config_t FLEXCOMM0_config = {
   .pdmData = false,
   .sckPol = false,
   .wsPol = false,
-  .divider = 1,
+  .divider = 8,
   .oneChannel = false,
   .dataLength = 16,
   .frameLength = 32,
@@ -237,6 +255,8 @@ static void FLEXCOMM0_init(void) {
   I2S_TxInit(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_config);
   /* Enable the DMA 1 channel in the DMA */
   DMA_EnableChannel(FLEXCOMM0_TX_DMA_BASEADDR, FLEXCOMM0_TX_DMA_CHANNEL);
+  /* Set the DMA 1 channel priority */
+  DMA_SetChannelPriority(FLEXCOMM0_TX_DMA_BASEADDR, FLEXCOMM0_TX_DMA_CHANNEL, kDMA_ChannelPriority3);
   /* Create the DMA FLEXCOMM0_TX_Handle handle */
   DMA_CreateHandle(&FLEXCOMM0_TX_Handle, FLEXCOMM0_TX_DMA_BASEADDR, FLEXCOMM0_TX_DMA_CHANNEL);
   /* Create the I2S DMA handle */
@@ -248,10 +268,20 @@ static void FLEXCOMM0_init(void) {
  **********************************************************************************************************************/
 static void BOARD_InitPeripherals_CommonPostInit(void)
 {
-  /* Enable interrupt SYSTICK_IRQN request in the NVIC */
-  EnableIRQ(SYSTICK_IRQN);
+  /* Interrupt vector USB_IRQn priority settings in the NVIC. */
+  NVIC_SetPriority(USB_IRQN, USB_IRQ_PRIORITY);
+  /* Interrupt vector DMA0_IRQn priority settings in the NVIC. */
+  NVIC_SetPriority(DMA0_IRQN, DMA0_IRQ_PRIORITY);
+  /* Interrupt vector FLEXCOMM0_IRQn priority settings in the NVIC. */
+  NVIC_SetPriority(FLEXCOMM0_IRQN, FLEXCOMM0_IRQ_PRIORITY);
+  /* Interrupt SYSTICK_IRQN request in the NVIC is not initialized (disabled by default). */
+  /* It can be enabled later by EnableIRQ(SYSTICK_IRQN); function call. */
   /* Enable interrupt USB_IRQN request in the NVIC */
   EnableIRQ(USB_IRQN);
+  /* Enable interrupt DMA0_IRQN request in the NVIC */
+  EnableIRQ(DMA0_IRQN);
+  /* Enable interrupt FLEXCOMM0_IRQN request in the NVIC */
+  EnableIRQ(FLEXCOMM0_IRQN);
 }
 
 void BOARD_InitPeripherals(void)

@@ -1,5 +1,4 @@
-#include "tusb.h"
-#include "usb_descriptors.h"
+#include "audio.h"
 
 // ----------------------------------------------------------------+
 // Audio Variables
@@ -58,6 +57,174 @@ int spk_data_size;
 const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX};
 // Current resolution, update on format change
 uint8_t current_resolution;
+
+
+// --- Constants ---
+#define AUDIO_HALF_BLOCK_SIZE (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2)
+
+// --- External Handles from auto-generated code ---
+// These are defined in peripherals.c
+extern i2s_dma_handle_t FLEXCOMM0_Tx_DMA_Handle; 
+
+// --- Task Handle ---
+// You need to assign this when you create your audio task
+TaskHandle_t audio_task_handle = NULL;
+
+// --- State Variables ---
+static volatile uint16_t current_buffer_level = 0;
+extern uint32_t current_sample_rate; // e.g., 48000
+
+// Feedback controller constants
+const float KP = 0.500f;     
+const float KI = 0.001f;   
+const float MAX_RATE_ADJUSTMENT = 100.0f; 
+const int TARGET_BUFFER_LEVEL_SAMPLES = AUDIO_HALF_BLOCK_SIZE;
+
+// ----------------------------------------------------------------+
+// Audio Task and Buffer Level Variables
+// ----------------------------------------------------------------+
+
+
+static void audio_feedback_controller(void)
+{
+    static uint32_t count = 0;
+    static float integral_term = 0.0f;
+    // 1. Calculate Error
+    int16_t error = (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2) - current_buffer_level;
+
+    // 2. PI Calculation
+    float proportional = KP * error;
+    integral_term += KI * error;
+
+    // Anti-Windup
+    if (integral_term > MAX_RATE_ADJUSTMENT) integral_term = MAX_RATE_ADJUSTMENT;
+    else if (integral_term < -MAX_RATE_ADJUSTMENT) integral_term = -MAX_RATE_ADJUSTMENT;
+
+    // 3. Total Correction
+    float total_correction = proportional + integral_term;
+    if (total_correction > MAX_RATE_ADJUSTMENT) total_correction = MAX_RATE_ADJUSTMENT;
+    else if (total_correction < -MAX_RATE_ADJUSTMENT) total_correction = -MAX_RATE_ADJUSTMENT;
+
+    // 4. Calculate Feedback
+    float adjusted_rate = (float)current_sample_rate + total_correction;
+    
+    // RW612 is High Speed USB (Microframes, 125us) -> Divide by 8000.0f
+    // If Full Speed is forced (1ms frames) -> Divide by 1000.0f
+    float samples_per_frame = adjusted_rate / 8000.0f;
+    
+    // 16.16 Fixed Point
+    uint32_t feedback_value = (uint32_t)(samples_per_frame * 65536.0f);
+
+    tud_audio_fb_set(feedback_value);
+
+    if (count % 100 == 0)
+    {
+      PRINTF("fs: %u, C: %d T: %u, E: %d, P: %d, I: %d\n", 
+          (unsigned int)adjusted_rate, 
+          (int)current_buffer_level,
+          (unsigned int) TARGET_BUFFER_LEVEL_SAMPLES,
+          (int)error,
+          (int)proportional, 
+          (int)integral_term);
+    }
+    
+    count++;
+}
+
+void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t completionStatus, void *userData)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    i2s_transfer_t next_xfer;
+    static bool toggle = false; // false = just finished A, true = just finished B
+
+    // 1. Advance TinyUSB FIFO (We consumed half the buffer)
+    // Note: spk_ff_ptr must be accessible here
+    tu_fifo_advance_read_pointer(spk_ff_ptr, AUDIO_HALF_BLOCK_SIZE);
+    
+    // 2. Snapshot buffer level for the PI Controller
+    current_buffer_level = tud_audio_available();
+
+    // 3. Re-Submit Logic (Keep the DMA Queue full)
+    // If we just finished Block A (toggle=false), we must re-queue Block A 
+    // to run after the currently-playing Block B finishes.
+    
+    uint8_t *buffer_start = (uint8_t *)spk_ff_ptr->buffer;
+    
+    if (!toggle) {
+        next_xfer.data = buffer_start; // Re-queue Block A
+    } else {
+        next_xfer.data = buffer_start + AUDIO_HALF_BLOCK_SIZE; // Re-queue Block B
+    }
+    
+    next_xfer.dataSize = AUDIO_HALF_BLOCK_SIZE;
+
+    // Send to DMA queue (Non-blocking, just adds to list)
+    I2S_TxTransferSendDMA(base, handle, next_xfer);
+
+    // Flip toggle for next time
+    toggle = !toggle;
+
+    // 4. Notify Audio Task
+    if (audio_task_handle != NULL) {
+        vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+    
+static void Start_Audio_Playback(void)
+{
+    i2s_transfer_t xfer;
+    uint8_t *buffer_start = (uint8_t *)spk_ff_ptr->buffer;
+
+    // 1. Submit Block A (First Half)
+    xfer.data = buffer_start;
+    xfer.dataSize = AUDIO_HALF_BLOCK_SIZE;
+    I2S_TxTransferSendDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, xfer);
+
+    // 2. Submit Block B (Second Half)
+    // The DMA will play A, then automatically switch to B.
+    // When A finishes, the Callback fires, re-queues A, and the loop continues.
+    xfer.data = buffer_start + AUDIO_HALF_BLOCK_SIZE;
+    xfer.dataSize = AUDIO_HALF_BLOCK_SIZE;
+    I2S_TxTransferSendDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, xfer);
+}
+    
+void audio_task(void *pvParameters)
+{
+    static bool started = false;
+    
+    // Initialize Task Handle for the Callback to use
+    audio_task_handle = xTaskGetCurrentTaskHandle();
+
+    for (;;)
+    {
+        // --- 1. Startup Logic ---
+        if (!started)
+        {
+            if (tud_audio_available() >= (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 16))
+            {
+                Start_Audio_Playback();
+                started = true;
+            }
+            else
+            {
+                // Wait at least 1 tick, or 1ms (whichever is larger)
+                TickType_t wait_ticks = pdMS_TO_TICKS(1);
+                if (wait_ticks == 0) wait_ticks = 1;
+                vTaskDelay(wait_ticks);
+                continue;
+            }
+        }
+
+        // --- 2. Runtime Logic ---
+        // Wait for notification from I2S_TX_DMA_Callback
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Run the Controller
+        audio_feedback_controller();
+    }
+}  
 
 //--------------------------------------------------------------------+
 // Device callbacks
@@ -481,6 +648,10 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
   TU_LOG2("Set interface %d alt %d\r\n", itf, alt);
   if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt != 0) {
     blink_interval_ms = BLINK_STREAMING;
+    
+    // Get FIFO pointers
+    spk_ff_ptr = tud_audio_get_ep_out_ff();
+    mic_ff_ptr = tud_audio_get_ep_in_ff();
   }
 
   // Clear buffer when streaming format is changed

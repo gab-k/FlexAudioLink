@@ -53,7 +53,7 @@ void BOARD_InitBootClocks(void)
 name: BOARD_BootClockRUN
 called_from_default_init: true
 outputs:
-- {id: audio_pll_clk.outFreq, value: 1.536 MHz, locked: true, accuracy: '0.001'}
+- {id: audio_pll_clk.outFreq, value: 4246732800/345600007 MHz}
 - {id: aux0_pll_clk.outFreq, value: 270 MHz}
 - {id: avpll_ch1_clkout.outFreq, value: 4246732800/345600007 MHz}
 - {id: avpll_ch2_clkout.outFreq, value: 1415577600/22118401 MHz}
@@ -64,11 +64,12 @@ outputs:
 - {id: els_256m_clk.outFreq, value: 256 MHz}
 - {id: els_64m_clk.outFreq, value: 64 MHz}
 - {id: ffro_clk_div4.outFreq, value: 640/53 MHz}
-- {id: flexcomm0_fclk.outFreq, value: 1.536 MHz, locked: true, accuracy: '0'}
+- {id: flexcomm0_fclk.outFreq, value: 4246732800/345600007 MHz}
 - {id: hclk.outFreq, value: 270 MHz}
 - {id: lposc_clk_i.outFreq, value: 1 MHz}
 - {id: main_clk.outFreq, value: 270 MHz}
 - {id: main_pll_clk.outFreq, value: 270 MHz}
+- {id: mclk_out.outFreq, value: 4246732800/345600007 MHz}
 - {id: otp_fuse_32m_clk.outFreq, value: 32 MHz}
 - {id: refclk_phy.outFreq, value: 40 MHz}
 - {id: sfro_clk_i.outFreq, value: 16 MHz}
@@ -84,14 +85,15 @@ settings:
 - {id: CLKCTL0.SYSCPUAHBCLKDIV.scale, value: '1', locked: true}
 - {id: CLKCTL0.SYSTICKFCLKSEL.sel, value: CLKCTL0.SYSTICKFCLKDIV}
 - {id: CLKCTL0.WDT0FCLKSEL.sel, value: NO_CLOCK}
-- {id: CLKCTL1.AUDIOPLLCLKDIV.scale, value: '8'}
-- {id: CLKCTL1.FC0FCLKSEL.sel, value: CLKCTL1.FRG0CTL}
+- {id: CLKCTL1.AUDIOMCLKSEL.sel, value: CLKCTL1.AUDIOPLLCLKDIV}
+- {id: CLKCTL1.FC0FCLKSEL.sel, value: CLKCTL1.AUDIOPLLCLKDIV}
 - {id: CLKCTL1.FRG0CLKSEL.sel, value: CLKCTL1.FRGPLLCLKDIV}
 - {id: CLKCTL1.FRG0_DIV.scale, value: '500'}
 - {id: CLKCTL1.FRGPLLCLKDIV.scale, value: '90'}
 - {id: CLKCTL1.OSEVENTFCLKSEL.sel, value: NO_CLOCK}
 - {id: REFCLK_SYS_Config, value: Disabled}
-- {id: SYSCTL2.CH1_OFFSET_DIV.scale, value: '345600007'}
+- {id: SYSCTL2.CH1_M.scale, value: '2621440', locked: true}
+- {id: SYSCTL2.CH1_OFFSET_DIV.scale, value: '345600007', locked: true}
 - {id: SYSCTL2.CH2_M.scale, value: '2621440', locked: true}
 - {id: SYSCTL2.CH2_OFFSET_DIV.scale, value: '66355203', locked: true}
 - {id: SYSCTL2.T3_FBDIV.scale, value: '64', locked: true}
@@ -103,6 +105,7 @@ settings:
 - {id: TDDR_MCI_ENET_CLK_Config, value: Disabled}
 sources:
 - {id: CAU.XTAL_OSC.outFreq, value: 40 MHz, enabled: true}
+- {id: PMU.XTAL32K.outFreq, value: 32.768 kHz}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS **********/
 /* clang-format on */
 
@@ -140,8 +143,6 @@ void BOARD_BootClockRUN(void)
         /* Enable the REFCLK_SYS clock. */
         CLOCK_EnableClock(kCLOCK_RefClkSys);
     }
-    /* Initialize PMU XTAL32K clock source. */
-    CLOCK_EnableXtal32K(true);
     /* Initialize T3 PLL and enable outputs that are not clock gated. */
     CLOCK_InitT3RefClk(kCLOCK_T3MciIrc48m);
     /* Enable FFRO - T3 PLL 48/60 MHz IRC clock output */
@@ -166,16 +167,18 @@ void BOARD_BootClockRUN(void)
 
     /* Set up clock selectors - Attach clocks to the peripheries */
     CLOCK_AttachClk(kRC32K_to_CLK32K);                 /* Switch CLK32K to RC32K */
-    CLOCK_AttachClk(kFRG_to_FLEXCOMM0);                 /* Switch FLEXCOMM0 to FRG */
+    CLOCK_AttachClk(kAUDIO_PLL_to_MCLK_CLK);                 /* Switch MCLK_CLK to AUDIO_PLL */
+    CLOCK_AttachClk(kAUDIO_PLL_to_FLEXCOMM0);                 /* Switch FLEXCOMM0 to AUDIO_PLL */
     /*!< Please note SYSTICK_CLK source is used only if the SysTick SYST_CSR register CLKSOURCE bit is set to 0. */
     CLOCK_AttachClk(kSYSTICK_DIV_to_SYSTICK_CLK);                 /* Switch SYSTICK_CLK to SYSTICK_DIV */
     /* Set up dividers */
-    CLOCK_SetClkDiv(kCLOCK_DivAudioPllClk, 8U);         /* Set .AUDIOPLLCLKDIV divider to value 8 */
+    CLOCK_SetClkDiv(kCLOCK_DivAudioPllClk, 1U);         /* Set .AUDIOPLLCLKDIV divider to value 1 */
     CLOCK_SetClkDiv(kCLOCK_DivPllFrgClk, 90U);         /* Set .FRGPLLCLKDIV divider to value 90 */
     CLOCK_SetClkDiv(kCLOCK_DivMainPllClk, 1U);         /* Set .MAINPLLCLKDIV divider to value 1 */
     CLOCK_SetClkDiv(kCLOCK_DivAux0PllClk, 1U);         /* Set .AUX0PLLCLKDIV divider to value 1 */
     CLOCK_SetClkDiv(kCLOCK_DivSystickClk, 1U);         /* Set .SYSTICKFCLKDIV divider to value 1 */
     CLOCK_SetClkDiv(kCLOCK_DivPmuFclk, 5U);         /* Set .PMUFCLKDIV divider to value 5 */
+    CLOCK_SetClkDiv(kCLOCK_DivMclkClk, 1U);         /* Set .AUDIOMCLKDIV divider to value 1 */
     /* Select the main clock source for the main system clock (MAINCLKSELA and MAINCLKSELB). */
     CLOCK_AttachClk(kMAIN_PLL_to_MAIN_CLK);
     BOARD_ClockPostConfig();

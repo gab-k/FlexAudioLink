@@ -16,5 +16,6 @@
     "fsl_debug_console.h": "c",
     "stdint.h": "c",
     "fsl_gpio.h": "c"
-  }
+  },
+  "mcuxpresso.debug.variableUseNaturalFormat": false
 }

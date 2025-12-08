@@ -33,7 +33,7 @@ void BOARD_InitBootClocks(void);
  ******************************************************************************/
 
 /* Clock outputs (values are in Hz): */
-#define BOARD_BOOTCLOCKRUN_AUDIO_PLL_CLK              1535999UL      /* Clock consumers of audio_pll_clk output : N/A */
+#define BOARD_BOOTCLOCKRUN_AUDIO_PLL_CLK              12287999UL     /* Clock consumers of audio_pll_clk output : N/A */
 #define BOARD_BOOTCLOCKRUN_AUX0_PLL_CLK               270000000UL    /* Clock consumers of aux0_pll_clk output : N/A */
 #define BOARD_BOOTCLOCKRUN_AUX1_PLL_CLK               0UL            /* Clock consumers of aux1_pll_clk output : N/A */
 #define BOARD_BOOTCLOCKRUN_AVPLL_CH1_CLKOUT           12287999UL     /* Clock consumers of avpll_ch1_clkout output : N/A */
@@ -52,7 +52,7 @@ void BOARD_InitBootClocks(void);
 #define BOARD_BOOTCLOCKRUN_ELS_64M_CLK                64000000UL     /* Clock consumers of els_64m_clk output : N/A */
 #define BOARD_BOOTCLOCKRUN_ELS_FCLK                   0UL            /* Clock consumers of els_fclk output : ELS */
 #define BOARD_BOOTCLOCKRUN_FFRO_CLK_DIV4              12075471UL     /* Clock consumers of ffro_clk_div4 output : N/A */
-#define BOARD_BOOTCLOCKRUN_FLEXCOMM0_FCLK             1536000UL      /* Clock consumers of flexcomm0_fclk output : FLEXCOMM0 */
+#define BOARD_BOOTCLOCKRUN_FLEXCOMM0_FCLK             12287999UL     /* Clock consumers of flexcomm0_fclk output : FLEXCOMM0 */
 #define BOARD_BOOTCLOCKRUN_FLEXCOMM14_FCLK            0UL            /* Clock consumers of flexcomm14_fclk output : FLEXCOMM14 */
 #define BOARD_BOOTCLOCKRUN_FLEXCOMM1_FCLK             0UL            /* Clock consumers of flexcomm1_fclk output : FLEXCOMM1 */
 #define BOARD_BOOTCLOCKRUN_FLEXCOMM2_FCLK             0UL            /* Clock consumers of flexcomm2_fclk output : FLEXCOMM2 */
@@ -64,7 +64,7 @@ void BOARD_InitBootClocks(void);
 #define BOARD_BOOTCLOCKRUN_LPOSC_CLK_I                1000000UL      /* Clock consumers of lposc_clk_i output : N/A */
 #define BOARD_BOOTCLOCKRUN_MAIN_CLK                   270000000UL    /* Clock consumers of main_clk output : N/A */
 #define BOARD_BOOTCLOCKRUN_MAIN_PLL_CLK               270000000UL    /* Clock consumers of main_pll_clk output : N/A */
-#define BOARD_BOOTCLOCKRUN_MCLK_OUT                   0UL            /* Clock consumers of mclk_out output : N/A */
+#define BOARD_BOOTCLOCKRUN_MCLK_OUT                   12287999UL     /* Clock consumers of mclk_out output : N/A */
 #define BOARD_BOOTCLOCKRUN_OSEVENT_FCLK               0UL            /* Clock consumers of osevent_fclk output : OSTIMER */
 #define BOARD_BOOTCLOCKRUN_OTP_FUSE_32M_CLK           32000000UL     /* Clock consumers of otp_fuse_32m_clk output : OCOTP */
 #define BOARD_BOOTCLOCKRUN_REFCLK_PHY                 40000000UL     /* Clock consumers of refclk_phy output : USBOTG */

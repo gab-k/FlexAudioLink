@@ -16,6 +16,7 @@
 
 #include "pin_mux.h"
 #include "clock_config.h"
+#include "peripherals.h"
 #include "board.h"
 #include "tusb.h"
 
@@ -29,8 +30,9 @@
 void BOARD_InitHardware(void)
 {
     BOARD_InitBootPins();
-    BOARD_BootClockRUN();
+    BOARD_InitBootClocks();
     BOARD_InitDebugConsole();
+    BOARD_InitBootPeripherals();
 }
 
 void USB_DeviceClockInit(void)
@@ -41,14 +43,6 @@ void USB_DeviceClockInit(void)
     CLOCK_EnableClock(kCLOCK_Usb);
     /* enable usb phy clock */
     CLOCK_EnableUsbhsPhyClock();
-}
-
-void USB_DeviceIsrEnable(void)
-{
-    uint8_t irqNumber = USB_IRQn;
-    /* Install isr, set priority, and enable IRQ. */
-    NVIC_SetPriority((IRQn_Type)irqNumber, USB_DEVICE_INTERRUPT_PRIORITY);
-    EnableIRQ((IRQn_Type)irqNumber);
 }
 
 void USBHS_IRQHandler(void)

@@ -13,6 +13,8 @@ package_id: RW612ETA2I
 mcu_data: ksdk2_0
 processor_version: 25.09.10
 board: FRDM-RW612
+pin_labels:
+- {pin_num: L7, pin_signal: GPIO_5, label: 'J1[7]/MCLK', identifier: MCLKOUT}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -45,6 +47,7 @@ BOARD_InitPins:
   - {pin_num: F8, peripheral: FLEXCOMM0, signal: I2S_SCK, pin_signal: GPIO_4}
   - {pin_num: C13, peripheral: FLEXCOMM0, signal: I2S_WS, pin_signal: GPIO_3}
   - {pin_num: F10, peripheral: FLEXCOMM0, signal: I2S_DATA, pin_signal: GPIO_2}
+  - {pin_num: L7, peripheral: CLKCTL1, signal: MCLK, pin_signal: GPIO_5, direction: OUTPUT}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -60,6 +63,15 @@ void BOARD_InitPins(void)
 {
     /* Initialize FC0_I2S functionality on pin GPIO_4, GPIO_3, GPIO_2 (pin F8_C13_F10) */
     IO_MUX_SetPinMux(IO_MUX_FC0_I2S);
+    /* Initialize MCLK functionality on pin GPIO_5 (pin L7) */
+    IO_MUX_SetPinMux(IO_MUX_MCLK);
+
+    SYSCTL1->MCLKPINDIR = ((SYSCTL1->MCLKPINDIR &
+                            /* Mask bits to zero which are setting */
+                            (~(SYSCTL1_MCLKPINDIR_MCLKPINDIR_MASK)))
+
+                           /* mclk direction control: MCLK is in the output direction. */
+                           | SYSCTL1_MCLKPINDIR_MCLKPINDIR(MCLKPINDIR_MCLKPINDIR_OUTPUT_DIRECTION));
 }
 
 /* clang-format off */

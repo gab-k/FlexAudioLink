@@ -31,15 +31,29 @@ extern "C" {
 #define SYSTICK_IRQHANDLER SysTick_Handler
 /* NVIC interrupt vector ID (number). */
 #define USB_IRQN USB_IRQn
+/* NVIC interrupt vector priority. */
+#define USB_IRQ_PRIORITY 4
 /* NVIC interrupt handler identifier. */
 #define USB_IRQHANDLER USB_IRQHandler
+/* NVIC interrupt vector ID (number). */
+#define DMA0_IRQN DMA0_IRQn
+/* NVIC interrupt vector priority. */
+#define DMA0_IRQ_PRIORITY 3
+/* NVIC interrupt handler identifier. */
+#define DMA0_IRQHANDLER DMA0_IRQHandler
+/* NVIC interrupt vector ID (number). */
+#define FLEXCOMM0_IRQN FLEXCOMM0_IRQn
+/* NVIC interrupt vector priority. */
+#define FLEXCOMM0_IRQ_PRIORITY 5
+/* NVIC interrupt handler identifier. */
+#define FLEXCOMM0_IRQHANDLER FLEXCOMM0_IRQHandler
 /* Definition of peripheral ID */
 #define GPIO_GPIO GPIO
 /* BOARD_InitPeripherals defines for FLEXCOMM0 */
 /* Definition of peripheral ID */
 #define FLEXCOMM0_PERIPHERAL ((I2S_Type *)FLEXCOMM0)
 /* Definition of the clock source frequency */
-#define FLEXCOMM0_CLOCK_SOURCE 1536000UL
+#define FLEXCOMM0_CLOCK_SOURCE 12288000UL
 /* Selected DMA channel number. */
 #define FLEXCOMM0_TX_DMA_CHANNEL 1
 /* Used DMA device. */

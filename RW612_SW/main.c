@@ -23,6 +23,7 @@
 #include "pin_mux.h"
 #include "board.h"
 #include "app.h"
+#include "audio.h"
 
 /* TinyUSB includes */
 #include "tusb.h"
@@ -32,7 +33,8 @@
  * Defines
  ******************************************************************************/
 /* Task priorities. */
-#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 2)
+#define audio_task_PRIORITY (configMAX_PRIORITIES - 2)
+#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define led_blinking_task_PRIORITY (tskIDLE_PRIORITY + 1)
 
 /*******************************************************************************
@@ -64,8 +66,15 @@ int main(void)
         while (1);
     }
 
+    // Create audio task.
+    if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, NULL) != pdPASS)
+    {
+        PRINTF("audio task creation failed!.\r\n");
+        while (1);
+    }
+
     // Create LED blinking task.
-    if (xTaskCreate(led_blinking_task, "blink", configMINIMAL_STACK_SIZE + 100, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(led_blinking_task, "blink", configMINIMAL_STACK_SIZE, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("blink task creation failed!.\r\n");
         while (1);
@@ -83,8 +92,6 @@ static void usb_device_task(void *pvParameters)
 
     tusb_rhport_init_t dev_init = {.role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_AUTO};
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
-
-    USB_DeviceIsrEnable();
     
     while (1)
     {
