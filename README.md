@@ -1,6 +1,3 @@
-# wifi-headphones
-Software and hardware to convert wired headphones to wireless
+Wireless Headset
 
-```sh
-pip install PyAudioWPatch
-```
+This project aims to build a low-latency wireless audio system, effectively converting wired headphones into wireless ones.

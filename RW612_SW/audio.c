@@ -6,6 +6,7 @@
 const uint32_t sample_rates[] = {44100, 48000};
 uint32_t current_sample_rate = 48000;
 #define N_SAMPLE_RATES TU_ARRAY_SIZE(sample_rates)
+#define AUDIO_DEBUG_LVL 0
 
 /* Blink pattern
  * - 25 ms   : streaming data
@@ -117,6 +118,7 @@ static void audio_feedback_controller(void)
 
     tud_audio_fb_set(feedback_value);
 
+    #if AUDIO_DEBUG_LVL > 0
     if (count % 100 == 0)
     {
       PRINTF("fs: %u, C: %d T: %u, E: %d, P: %d, I: %d\n", 
@@ -127,6 +129,7 @@ static void audio_feedback_controller(void)
           (int)proportional, 
           (int)integral_term);
     }
+    #endif
     
     count++;
 }
