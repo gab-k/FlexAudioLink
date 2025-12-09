@@ -54,29 +54,29 @@ name: BOARD_BootClockRUN
 called_from_default_init: true
 outputs:
 - {id: audio_pll_clk.outFreq, value: 4246732800/345600007 MHz}
-- {id: aux0_pll_clk.outFreq, value: 270 MHz}
+- {id: aux0_pll_clk.outFreq, value: 260 MHz}
 - {id: avpll_ch1_clkout.outFreq, value: 4246732800/345600007 MHz}
 - {id: avpll_ch2_clkout.outFreq, value: 1415577600/22118401 MHz}
 - {id: cau_slp_clk.outFreq, value: 4 MHz}
 - {id: clk_32k.outFreq, value: 32 kHz}
-- {id: clk_pmu_sys.outFreq, value: 54 MHz}
+- {id: clk_pmu_sys.outFreq, value: 52 MHz}
 - {id: els_128m_clk.outFreq, value: 128 MHz}
 - {id: els_256m_clk.outFreq, value: 256 MHz}
 - {id: els_64m_clk.outFreq, value: 64 MHz}
 - {id: ffro_clk_div4.outFreq, value: 640/53 MHz}
 - {id: flexcomm0_fclk.outFreq, value: 4246732800/345600007 MHz}
-- {id: hclk.outFreq, value: 270 MHz}
+- {id: hclk.outFreq, value: 260 MHz}
 - {id: lposc_clk_i.outFreq, value: 1 MHz}
-- {id: main_clk.outFreq, value: 270 MHz}
-- {id: main_pll_clk.outFreq, value: 270 MHz}
+- {id: main_clk.outFreq, value: 260 MHz}
+- {id: main_pll_clk.outFreq, value: 260 MHz}
 - {id: mclk_out.outFreq, value: 4246732800/345600007 MHz}
 - {id: otp_fuse_32m_clk.outFreq, value: 32 MHz}
 - {id: refclk_phy.outFreq, value: 40 MHz}
 - {id: sfro_clk_i.outFreq, value: 16 MHz}
-- {id: systick_fclk.outFreq, value: 270 MHz}
+- {id: systick_fclk.outFreq, value: 260 MHz}
 - {id: t3pll_mci_256m.outFreq, value: 256 MHz}
 - {id: t3pll_mci_48_60m_irc.outFreq, value: 2560/53 MHz}
-- {id: tcpu_mci_clk.outFreq, value: 270 MHz}
+- {id: tcpu_mci_clk.outFreq, value: 260 MHz}
 - {id: tddr_mci_flexspi_clk.outFreq, value: 320 MHz}
 settings:
 - {id: CLKCTL0.MAINCLKSELB.sel, value: CLKCTL0.MAINPLLCLKDIV}
@@ -98,7 +98,6 @@ settings:
 - {id: SYSCTL2.CH2_OFFSET_DIV.scale, value: '66355203', locked: true}
 - {id: SYSCTL2.T3_FBDIV.scale, value: '64', locked: true}
 - {id: SYSCTL2.T3_REFDIV.scale, value: '1', locked: true}
-- {id: SYSCTL2.TCPU_FBDIV.scale, value: '81'}
 - {id: T3PLL_MCI_213P3M_Config, value: Disabled}
 - {id: T3PLL_MCI_FLEXSPI_Config, value: Disabled}
 - {id: TCPU_MCI_FLEXSPI_CLK_Config, value: Disabled}
@@ -154,7 +153,7 @@ void BOARD_BootClockRUN(void)
     CLOCK_AttachClk(kSYSOSC_to_MAIN_CLK);
     CLOCK_SetClkDiv(kCLOCK_DivSysCpuAhbClk, 1);
     /* Initialize TCPU PLL and enable outputs that are not clock gated. */
-    CLOCK_InitTcpuRefClk(3240000000UL, kCLOCK_TcpuFlexspiDiv10);
+    CLOCK_InitTcpuRefClk(3120000000UL, kCLOCK_TcpuFlexspiDiv10);
     /* Enable TCPU PLL MCI clock output */
     CLOCK_EnableClock(kCLOCK_TcpuMciClk);
     /* Initialize TDDR PLL and enable outputs that are not clock gated. */

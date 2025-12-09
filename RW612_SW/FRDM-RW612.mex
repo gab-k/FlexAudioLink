@@ -228,29 +228,29 @@
                </clock_sources>
                <clock_outputs>
                   <clock_output id="audio_pll_clk.outFreq" value="4246732800/345600007 MHz" locked="false" accuracy=""/>
-                  <clock_output id="aux0_pll_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="aux0_pll_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
                   <clock_output id="avpll_ch1_clkout.outFreq" value="4246732800/345600007 MHz" locked="false" accuracy=""/>
                   <clock_output id="avpll_ch2_clkout.outFreq" value="1415577600/22118401 MHz" locked="false" accuracy=""/>
                   <clock_output id="cau_slp_clk.outFreq" value="4 MHz" locked="false" accuracy=""/>
                   <clock_output id="clk_32k.outFreq" value="32 kHz" locked="false" accuracy=""/>
-                  <clock_output id="clk_pmu_sys.outFreq" value="54 MHz" locked="false" accuracy=""/>
+                  <clock_output id="clk_pmu_sys.outFreq" value="52 MHz" locked="false" accuracy=""/>
                   <clock_output id="els_128m_clk.outFreq" value="128 MHz" locked="false" accuracy=""/>
                   <clock_output id="els_256m_clk.outFreq" value="256 MHz" locked="false" accuracy=""/>
                   <clock_output id="els_64m_clk.outFreq" value="64 MHz" locked="false" accuracy=""/>
                   <clock_output id="ffro_clk_div4.outFreq" value="640/53 MHz" locked="false" accuracy=""/>
                   <clock_output id="flexcomm0_fclk.outFreq" value="4246732800/345600007 MHz" locked="false" accuracy=""/>
-                  <clock_output id="hclk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="hclk.outFreq" value="260 MHz" locked="false" accuracy=""/>
                   <clock_output id="lposc_clk_i.outFreq" value="1 MHz" locked="false" accuracy=""/>
-                  <clock_output id="main_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
-                  <clock_output id="main_pll_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="main_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
+                  <clock_output id="main_pll_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
                   <clock_output id="mclk_out.outFreq" value="4246732800/345600007 MHz" locked="false" accuracy=""/>
                   <clock_output id="otp_fuse_32m_clk.outFreq" value="32 MHz" locked="false" accuracy=""/>
                   <clock_output id="refclk_phy.outFreq" value="40 MHz" locked="false" accuracy=""/>
                   <clock_output id="sfro_clk_i.outFreq" value="16 MHz" locked="false" accuracy=""/>
-                  <clock_output id="systick_fclk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="systick_fclk.outFreq" value="260 MHz" locked="false" accuracy=""/>
                   <clock_output id="t3pll_mci_256m.outFreq" value="256 MHz" locked="false" accuracy=""/>
                   <clock_output id="t3pll_mci_48_60m_irc.outFreq" value="2560/53 MHz" locked="false" accuracy=""/>
-                  <clock_output id="tcpu_mci_clk.outFreq" value="270 MHz" locked="false" accuracy=""/>
+                  <clock_output id="tcpu_mci_clk.outFreq" value="260 MHz" locked="false" accuracy=""/>
                   <clock_output id="tddr_mci_flexspi_clk.outFreq" value="320 MHz" locked="false" accuracy=""/>
                </clock_outputs>
                <clock_settings>
@@ -273,7 +273,6 @@
                   <setting id="SYSCTL2.CH2_OFFSET_DIV.scale" value="66355203" locked="true"/>
                   <setting id="SYSCTL2.T3_FBDIV.scale" value="64" locked="true"/>
                   <setting id="SYSCTL2.T3_REFDIV.scale" value="1" locked="true"/>
-                  <setting id="SYSCTL2.TCPU_FBDIV.scale" value="81" locked="false"/>
                   <setting id="T3PLL_MCI_213P3M_Config" value="Disabled" locked="false"/>
                   <setting id="T3PLL_MCI_FLEXSPI_Config" value="Disabled" locked="false"/>
                   <setting id="TCPU_MCI_FLEXSPI_CLK_Config" value="Disabled" locked="false"/>
