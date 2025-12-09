@@ -86,7 +86,6 @@ int main(void)
 }
 
 static void usb_device_task(void *pvParameters)
-
 {
     USB_DeviceClockInit();
 
@@ -100,9 +99,9 @@ static void usb_device_task(void *pvParameters)
 }
 
 
-static void led_blinking_task(void *pvParameters) {
+static void led_blinking_task(void *pvParameters) 
+{
     TickType_t delay_ticks;
-
     while(1)
     {
         // Toggle First
