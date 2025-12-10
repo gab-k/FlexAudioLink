@@ -71,7 +71,7 @@
 
 // Log levels : 0=None, 1=Error, 2=Debug, 3=Verbose
 #ifndef CFG_TUSB_DEBUG
-#define CFG_TUSB_DEBUG        1
+#define CFG_TUSB_DEBUG        0
 #endif
 
 // NXP Specific printf redirection

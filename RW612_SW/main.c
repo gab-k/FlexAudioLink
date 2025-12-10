@@ -25,6 +25,8 @@
 #include "app.h"
 #include "audio.h"
 
+#include "wpl.h"
+
 /* TinyUSB includes */
 #include "tusb.h"
 
@@ -36,12 +38,15 @@
 #define audio_task_PRIORITY (configMAX_PRIORITIES - 2)
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define led_blinking_task_PRIORITY (tskIDLE_PRIORITY + 1)
+#define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
 
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
 static void usb_device_task(void *pvParameters);
-static void led_blinking_task(void *pvParameters);
+static void wifi_task(void *pvParameters);
+static void link_status_change_cb(bool link_state);
+static void blink_task(void *pvParameters);
 
 /*******************************************************************************
  * Variables
@@ -66,6 +71,13 @@ int main(void)
         while (1);
     }
 
+    // Create Wi-Fi task.
+    if (xTaskCreate(wifi_task, "wifi", 4096 / sizeof(StackType_t), NULL, wifi_task_PRIORITY, NULL) != pdPASS)
+    {
+        PRINTF("wifi task creation failed!.\r\n");
+        while (1);
+    }
+
     // Create audio task.
     if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, NULL) != pdPASS)
     {
@@ -74,7 +86,7 @@ int main(void)
     }
 
     // Create LED blinking task.
-    if (xTaskCreate(led_blinking_task, "blink", configMINIMAL_STACK_SIZE, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(blink_task, "blink", configMINIMAL_STACK_SIZE, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("blink task creation failed!.\r\n");
         while (1);
@@ -98,8 +110,66 @@ static void usb_device_task(void *pvParameters)
     }
 }
 
+static void wifi_task(void *pvParameters)
+{
+    // Initialize Wi-Fi driver and WPL layer
+    PRINTF("\r\nInitializing Wi-Fi driver...\r\n");
+    wpl_ret_t err = WPLRET_FAIL;
+    err = WPL_Init();
+    if (err != WPLRET_SUCCESS)
+    {
+        PRINTF("WPL_Init: Failed, error: %d\r\n", (uint32_t)err);
+        while (1);
+    }
 
-static void led_blinking_task(void *pvParameters) 
+    // Start Wi-Fi driver and register an application link state callback.
+    PRINTF("\r\nStarting Wi-Fi driver...\r\n");
+    err = WPL_Start(link_status_change_cb);
+    if (err != WPLRET_SUCCESS)
+    {
+        PRINTF("WPL_Start: Failed, error: %d\r\n", (uint32_t)err);
+        while (1);
+    }
+
+    // Scan for nearby Wi-Fi networks
+    char *scanData = NULL;
+    PRINTF("\r\nScanning for nearby Wi-Fi networks...\r\n");
+    scanData = WPL_Scan();
+    if (scanData == NULL)
+    {
+        PRINTF("Error while scanning!\r\n");
+    }
+    else
+    {
+        vPortFree(scanData);
+    }
+
+    #if (defined(SDK_DEBUGCONSOLE) && (SDK_DEBUGCONSOLE == DEBUGCONSOLE_REDIRECT_TO_SDK))
+    /*
+     * Scanning prints the found networks to the console.
+     * Wait for debug console output to be printed before returning from
+     * the command, otherwise shell prompt could be printed in
+     * the middle of the output of the network scan.
+     */
+    (void)DbgConsole_Flush();
+    #endif
+
+    vTaskSuspend(NULL);
+}
+
+static void link_status_change_cb(bool link_state)
+{
+    if (link_state == false)
+    {
+        PRINTF("-------- LINK LOST --------\r\n");
+    }
+    else
+    {
+        PRINTF("-------- LINK REESTABLISHED --------\r\n");
+    }
+}
+
+static void blink_task(void *pvParameters) 
 {
     TickType_t delay_ticks;
     while(1)
