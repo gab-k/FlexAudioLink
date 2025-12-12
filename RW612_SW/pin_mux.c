@@ -14,6 +14,7 @@ mcu_data: ksdk2_0
 processor_version: 25.09.10
 board: FRDM-RW612
 pin_labels:
+- {pin_num: M2, pin_signal: GPIO_11, label: 'J1[6]/WAKEUP_BTN', identifier: WAKEUP;WAKEUP_BTN}
 - {pin_num: L7, pin_signal: GPIO_5, label: 'J1[7]/MCLK', identifier: MCLKOUT}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
@@ -48,6 +49,7 @@ BOARD_InitPins:
   - {pin_num: C13, peripheral: FLEXCOMM0, signal: I2S_WS, pin_signal: GPIO_3}
   - {pin_num: F10, peripheral: FLEXCOMM0, signal: I2S_DATA, pin_signal: GPIO_2}
   - {pin_num: L7, peripheral: CLKCTL1, signal: MCLK, pin_signal: GPIO_5, direction: OUTPUT}
+  - {pin_num: M2, peripheral: GPIO, signal: 'PIO0, 11', pin_signal: GPIO_11, identifier: WAKEUP_BTN, direction: INPUT}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -61,10 +63,21 @@ BOARD_InitPins:
 /* Function assigned for the Cortex-M33 */
 void BOARD_InitPins(void)
 {
+    /* Enables the clock for the GPIO0 module */
+    GPIO_PortInit(GPIO, 0);
+
+    gpio_pin_config_t WAKEUP_BTN_config = {
+        .pinDirection = kGPIO_DigitalInput,
+        .outputLogic = 0U
+    };
+    /* Initialize GPIO functionality on pin PIO0_11 (pin M2)  */
+    GPIO_PinInit(BOARD_INITPINS_WAKEUP_BTN_GPIO, BOARD_INITPINS_WAKEUP_BTN_PORT, BOARD_INITPINS_WAKEUP_BTN_PIN, &WAKEUP_BTN_config);
     /* Initialize FC0_I2S functionality on pin GPIO_4, GPIO_3, GPIO_2 (pin F8_C13_F10) */
     IO_MUX_SetPinMux(IO_MUX_FC0_I2S);
     /* Initialize MCLK functionality on pin GPIO_5 (pin L7) */
     IO_MUX_SetPinMux(IO_MUX_MCLK);
+    /* Initialize GPIO11 functionality on pin GPIO_11 (pin M2) */
+    IO_MUX_SetPinMux(IO_MUX_GPIO11);
 
     SYSCTL1->MCLKPINDIR = ((SYSCTL1->MCLKPINDIR &
                             /* Mask bits to zero which are setting */
@@ -193,7 +206,7 @@ BOARD_InitLEDPins:
 void BOARD_InitLEDPins(void)
 {
     /* Enables the clock for the GPIO0 module */
-    GPIO_PortInit(GPIO, 0);
+    CLOCK_EnableClock(kCLOCK_HsGpio0);
 
     gpio_pin_config_t LED_BLUE_config = {
         .pinDirection = kGPIO_DigitalOutput,

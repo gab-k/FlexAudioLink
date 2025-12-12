@@ -54,15 +54,7 @@
 
 // defined by board.mk
 #ifndef CFG_TUSB_MCU
-#define CFG_TUSB_MCU OPT_MCU_MCXN9
-#endif
-
-#ifndef USBHS1__USBC_BASE
-#define USBHS1__USBC_BASE USBOTG_BASE
-#endif
-
-#ifndef USB1_HS_IRQn
-#define USB1_HS_IRQn USB_IRQn
+#define CFG_TUSB_MCU OPT_MCU_RW61X
 #endif
 
 #ifndef CFG_TUSB_OS

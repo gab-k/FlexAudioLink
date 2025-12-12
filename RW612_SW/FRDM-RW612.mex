@@ -39,6 +39,7 @@
          <pins_profile>
             <processor_version>25.09.10</processor_version>
             <pin_labels>
+               <pin_label pin_num="M2" pin_signal="GPIO_11" label="J1[6]/WAKEUP_BTN" identifier="WAKEUP;WAKEUP_BTN"/>
                <pin_label pin_num="L7" pin_signal="GPIO_5" label="J1[7]/MCLK" identifier="MCLKOUT"/>
             </pin_labels>
          </pins_profile>
@@ -61,6 +62,11 @@
                         <data>true</data>
                      </feature>
                   </dependency>
+                  <dependency resourceType="SWComponent" resourceId="platform.drivers.lpc_gpio" description="Pins initialization requires the LPC_GPIO Driver in the project." problem_level="2" source="Pins:BOARD_InitPins">
+                     <feature name="enabled" evaluation="equal" configuration="cm33">
+                        <data>true</data>
+                     </feature>
+                  </dependency>
                </dependencies>
                <pins>
                   <pin peripheral="FLEXCOMM0" signal="I2S_SCK" pin_num="F8" pin_signal="GPIO_4"/>
@@ -69,6 +75,12 @@
                   <pin peripheral="CLKCTL1" signal="MCLK" pin_num="L7" pin_signal="GPIO_5">
                      <pin_features>
                         <pin_feature name="direction" value="OUTPUT"/>
+                     </pin_features>
+                  </pin>
+                  <pin peripheral="GPIO" signal="PIO0, 11" pin_num="M2" pin_signal="GPIO_11">
+                     <pin_features>
+                        <pin_feature name="identifier" value="WAKEUP_BTN"/>
+                        <pin_feature name="direction" value="INPUT"/>
                      </pin_features>
                   </pin>
                </pins>

@@ -40,6 +40,19 @@ void BOARD_InitBootPins(void);
 #define BOARD_INITPINS_MCLKOUT_PIN_MASK (1U << 5U)                /*!<@brief PORT pin mask */
                                                                   /* @} */
 
+/*! @name GPIO_11 (coord M2), J1[6]/WAKEUP_BTN
+  @{ */
+/* Routed pin properties */
+#define BOARD_INITPINS_WAKEUP_BTN_PERIPHERAL GPIO                   /*!<@brief Peripheral name */
+#define BOARD_INITPINS_WAKEUP_BTN_SIGNAL PIO0                       /*!<@brief Signal name */
+#define BOARD_INITPINS_WAKEUP_BTN_CHANNEL 11                        /*!<@brief Signal channel */
+#define BOARD_INITPINS_WAKEUP_BTN_GPIO GPIO                         /*!<@brief GPIO peripheral base pointer */
+#define BOARD_INITPINS_WAKEUP_BTN_GPIO_PIN 11U                      /*!<@brief GPIO pin number */
+#define BOARD_INITPINS_WAKEUP_BTN_PORT 0U                           /*!<@brief PORT number */
+#define BOARD_INITPINS_WAKEUP_BTN_PIN 11U                           /*!<@brief PORT pin number */
+#define BOARD_INITPINS_WAKEUP_BTN_PIN_MASK (1U << 11U)              /*!<@brief PORT pin mask */
+                                                                    /* @} */
+
 /*!
  * @brief 
  *
