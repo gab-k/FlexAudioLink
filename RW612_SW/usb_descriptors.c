@@ -41,25 +41,38 @@ uint8_t const * tud_descriptor_device_cb(void)
 #define EPNUM_AUDIO_INT_IN      0x82
 #define EPNUM_AUDIO_SPK_FB_IN   0x83
 
+// -- ADDED CDC ENDPOINTS --
+// Ensure these do not conflict with Audio EPs
+#define EPNUM_CDC_NOTIF         0x84
+#define EPNUM_CDC_OUT           0x02
+#define EPNUM_CDC_IN            0x85
+
 // ** FIX: Corrected macro name and usage **
 #define UAC1_EP_OUT_SIZE TUD_AUDIO_EP_SIZE(0, CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX)
 #define UAC1_EP_IN_SIZE  TUD_AUDIO_EP_SIZE(0, CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX)
 
 // High-Speed uses UAC2
 #if TUD_OPT_HIGH_SPEED
-#define CONFIG_UAC2_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO20_HEADSET_STEREO_DESC_LEN)
+
+#define CONFIG_UAC2_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO20_HEADSET_STEREO_DESC_LEN + CFG_TUD_CDC * TUD_CDC_DESC_LEN)
+
 uint8_t const desc_uac2_configuration[] =
 {
     // Config number, interface count, string index, total length, attribute, power in mA
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_UAC2_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    
     // Pass all endpoint numbers to your corrected descriptor macro
-    TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(/*_stridx*/ 5, EPNUM_AUDIO_SPK_OUT, EPNUM_AUDIO_MIC_IN, EPNUM_AUDIO_INT_IN, EPNUM_AUDIO_SPK_FB_IN)
+    TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(/*_stridx*/ 5, EPNUM_AUDIO_SPK_OUT, EPNUM_AUDIO_MIC_IN, EPNUM_AUDIO_INT_IN, EPNUM_AUDIO_SPK_FB_IN),
+
+    // Interface number, String index, EP notification address and size, EP data address (out, in) and size.
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 6, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
 };
 TU_VERIFY_STATIC(sizeof(desc_uac2_configuration) == CONFIG_UAC2_TOTAL_LEN, "Incorrect UAC2 size");
 #endif
 
 // Full-Speed uses UAC1
-#define CONFIG_UAC1_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_AUDIO10_HEADSET_STEREO_DESC_LEN(2))
+#define CONFIG_UAC1_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO10_HEADSET_STEREO_DESC_LEN(1) + CFG_TUD_CDC * TUD_CDC_DESC_LEN)
+
 uint8_t const desc_uac1_configuration[] =
 {
     // Config number, interface count, string index, total length, attribute, power in mA
@@ -71,8 +84,10 @@ uint8_t const desc_uac1_configuration[] =
         /* TX */ CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_TX,
         /* EP */ EPNUM_AUDIO_SPK_OUT, UAC1_EP_OUT_SIZE,
         /* EP */ EPNUM_AUDIO_MIC_IN,  UAC1_EP_IN_SIZE,
-        /* Freqs */ 44100, 48000
-    )
+        /* Freqs */ 48000
+    ),
+
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 6, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
 };
 TU_VERIFY_STATIC(sizeof(desc_uac1_configuration) == CONFIG_UAC1_TOTAL_LEN, "Incorrect UAC1 size");
 
@@ -124,6 +139,7 @@ static char const *string_desc_arr[] =
   "1234-ABCD-FB",                 // 3: Serial
   "UAC1 Headset",                 // 4: UAC1 Interface
   "UAC2 Async Headset",           // 5: UAC2 Interface
+  "TinyUSB CDC",                  // 6: CDC Interface
 };
 
 static uint16_t _desc_str[32 + 1];

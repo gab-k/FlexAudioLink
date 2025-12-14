@@ -101,7 +101,7 @@
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_CDC               0
+#define CFG_TUD_CDC               1
 #define CFG_TUD_MSC               0
 #define CFG_TUD_HID               0
 #define CFG_TUD_MIDI              0
@@ -166,6 +166,13 @@
 #define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ     TU_MAX(4 * CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT, 32 * CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT)
 
 #define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP          1
+
+// CDC FIFO size of TX and RX
+#define CFG_TUD_CDC_RX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
+#define CFG_TUD_CDC_TX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
+
+// CDC Endpoint transfer buffer size, more is faster
+#define CFG_TUD_CDC_EP_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
 
 #ifdef __cplusplus
 }

@@ -31,6 +31,8 @@ enum
   ITF_NUM_AUDIO_CONTROL = 0,
   ITF_NUM_AUDIO_STREAMING_SPK,
   ITF_NUM_AUDIO_STREAMING_MIC,
+  ITF_NUM_CDC,
+  ITF_NUM_CDC_DATA,
   ITF_NUM_TOTAL
 };
 
@@ -79,7 +81,7 @@ enum
 
 #define TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(_stridx, _epout, _epin, _epint, _epfb) \
     /* Standard Interface Association Descriptor (IAD) */\
-    TUD_AUDIO20_DESC_IAD(/*_firstitf*/ ITF_NUM_AUDIO_CONTROL, /*_nitfs*/ ITF_NUM_TOTAL, /*_stridx*/ 0x00),\
+    TUD_AUDIO20_DESC_IAD(/*_firstitf*/ ITF_NUM_AUDIO_CONTROL, /*_nitfs*/ 3, /*_stridx*/ 0x00),\
     /* Standard AC Interface Descriptor(4.7.1) */\
     TUD_AUDIO20_DESC_STD_AC(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_nEPs*/ 0x01, /*_stridx*/ _stridx),\
     /* Class-Specific AC Interface Header Descriptor(4.7.2) */\
@@ -106,17 +108,17 @@ enum
     TUD_AUDIO20_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_STREAMING_SPK, /*_altset*/ 0x00, /*_nEPs*/ 0x00, /*_stridx*/ _stridx),\
     /* Standard AS Interface Descriptor(4.9.1) */\
     /* Interface 1, Alternate 1 - alternate interface for data streaming */\
-    TUD_AUDIO20_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_STREAMING_SPK, /*_altset*/ 0x01, /*_nEPs*/ 0x02, /*_stridx*/ _stridx), /* <-- CHANGE #1: Number of endpoints is now 2 */\
+    TUD_AUDIO20_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_STREAMING_SPK, /*_altset*/ 0x01, /*_nEPs*/ 0x02, /*_stridx*/ _stridx),\
     /* Class-Specific AS Interface Descriptor(4.9.2) */\
     TUD_AUDIO20_DESC_CS_AS_INT(/*_termid*/ UAC2_ENTITY_SPK_INPUT_TERMINAL, /*_ctrl*/ AUDIO20_CTRL_NONE, /*_formattype*/ AUDIO20_FORMAT_TYPE_I, /*_formats*/ AUDIO20_DATA_FORMAT_TYPE_I_PCM, /*_nchannelsphysical*/ CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX, /*_channelcfg*/ AUDIO20_CHANNEL_CONFIG_NON_PREDEFINED, /*_stridx*/ 0x00),\
     /* Type I Format Type Descriptor(2.3.1.6 - Audio Formats) */\
     TUD_AUDIO20_DESC_TYPE_I_FORMAT(CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX),\
     /* Standard AS Isochronous Audio Data Endpoint Descriptor(4.10.1.1) */\
-    TUD_AUDIO20_DESC_STD_AS_ISO_EP(/*_ep*/ _epout, /*_attr*/ (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS | TUSB_ISO_EP_ATT_DATA), /*_maxEPsize*/ TUD_AUDIO_EP_SIZE(TUD_OPT_HIGH_SPEED, CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX), /*_interval*/ 0x01), /* <-- CHANGE #2: Changed ADAPTIVE to ASYNCHRONOUS */\
+    TUD_AUDIO20_DESC_STD_AS_ISO_EP(/*_ep*/ _epout, /*_attr*/ (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS | TUSB_ISO_EP_ATT_DATA), /*_maxEPsize*/ TUD_AUDIO_EP_SIZE(TUD_OPT_HIGH_SPEED, CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX), /*_interval*/ 0x01),\
     /* Class-Specific AS Isochronous Audio Data Endpoint Descriptor(4.10.1.2) */\
     TUD_AUDIO20_DESC_CS_AS_ISO_EP(/*_attr*/ AUDIO20_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK, /*_ctrl*/ AUDIO20_CTRL_NONE, /*_lockdelayunit*/ AUDIO20_CS_AS_ISO_DATA_EP_LOCK_DELAY_UNIT_MILLISEC, /*_lockdelay*/ 0x0001),\
     /* Standard AS Isochronous Feedback Endpoint Descriptor(4.10.2.1) */\
-    TUD_AUDIO20_DESC_STD_AS_ISO_FB_EP(/*_ep*/ _epfb, /*_epsize*/ 4, /*_interval*/ 4), /* <-- CHANGE #3: ADDED THIS ENTIRE DESCRIPTOR */\
+    TUD_AUDIO20_DESC_STD_AS_ISO_FB_EP(/*_ep*/ _epfb, /*_epsize*/ 4, /*_interval*/ 4),\
     /******************************************************************/\
     /*                Microphone Interface Descriptors                */\
     /******************************************************************/\
@@ -148,7 +150,7 @@ enum
 #define UAC1_ENTITY_MIC_OUTPUT_TERMINAL 0x13
 
 #define TUD_AUDIO10_HEADSET_STEREO_DESC_LEN(_nfreqs) (\
-    +TUD_AUDIO10_DESC_STD_AC_LEN\
+    + TUD_AUDIO10_DESC_STD_AC_LEN\
     + TUD_AUDIO10_DESC_CS_AC_LEN(2)\
     + TUD_AUDIO10_DESC_INPUT_TERM_LEN\
     + TUD_AUDIO10_DESC_FEATURE_UNIT_LEN(2)\

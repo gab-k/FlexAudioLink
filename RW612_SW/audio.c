@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------+
 // Audio Variables
 // ----------------------------------------------------------------+
-const uint32_t sample_rates[] = {44100, 48000};
+const uint32_t sample_rates[] = {48000};
 uint32_t current_sample_rate = 48000;
 #define N_SAMPLE_RATES TU_ARRAY_SIZE(sample_rates)
 #define AUDIO_DEBUG_LVL 0
