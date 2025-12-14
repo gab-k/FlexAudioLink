@@ -4,4 +4,5 @@
 	branch = master
 [submodule "RW612_SW/tinyusb"]
 	path = RW612_SW/tinyusb
-	url = https://github.com/hathach/tinyusb.git
+	url = https://github.com/gab-k/tinyusb.git
+	branch = support-nxp-rw612
