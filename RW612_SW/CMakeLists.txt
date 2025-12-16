@@ -26,6 +26,8 @@ mcux_add_source(
             hardware_init.c
             pin_mux.c
             pin_mux.h
+            cli.c
+            cli.h
 
             # FreeRTOS configuration files
             FreeRTOSConfig.h

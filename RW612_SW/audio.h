@@ -6,7 +6,7 @@
 #include "peripherals.h"
 
 void audio_task(void *pvParameters);
-void audio_feedback_task(void *pvParameters);
+void audio_fb_task(void *pvParameters);
 void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t completionStatus, void *userData);
 
 extern dma_handle_t FLEXCOMM0_TX_Handle;

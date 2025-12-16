@@ -282,7 +282,7 @@ void audio_task(void *pvParameters)
   }
 }  
 
-void audio_feedback_task(void *pvParameters)
+void audio_fb_task(void *pvParameters)
 {
   const TickType_t xFrequency = pdMS_TO_TICKS(100);
   TickType_t xLastWakeTime = xTaskGetTickCount();

@@ -99,6 +99,7 @@
     if ((x) == 0)                 \
     {                             \
         taskDISABLE_INTERRUPTS(); \
+        __BKPT(0);                \
         for (;;)                  \
             ;                     \
     }

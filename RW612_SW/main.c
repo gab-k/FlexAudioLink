@@ -24,6 +24,7 @@
 #include "board.h"
 #include "app.h"
 #include "audio.h"
+#include "cli.h"
 
 #include "wpl.h"
 
@@ -40,6 +41,7 @@
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define led_blinking_task_PRIORITY (tskIDLE_PRIORITY + 1)
 #define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
+#define cli_task_PRIORITY (tskIDLE_PRIORITY + 1)
 
 /*******************************************************************************
  * Prototypes
@@ -87,7 +89,7 @@ int main(void)
     }
 
     // Create audio feedback task.
-    if (xTaskCreate(audio_feedback_task, "audio_feedback", 4096 / sizeof(StackType_t), NULL, audio_feedback_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(audio_fb_task, "audio_fb", 4096 / sizeof(StackType_t), NULL, audio_feedback_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("audio feedback task creation failed!.\r\n");
         while (1);
@@ -97,6 +99,13 @@ int main(void)
     if (xTaskCreate(blink_task, "blink", configMINIMAL_STACK_SIZE, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("blink task creation failed!.\r\n");
+        while (1);
+    }
+
+    // Create CLI task.
+    if (xTaskCreate(cli_task, "cli", 2048 / sizeof(StackType_t), NULL, cli_task_PRIORITY, NULL) != pdPASS)
+    {
+        PRINTF("cli task creation failed!.\r\n");
         while (1);
     }
 
