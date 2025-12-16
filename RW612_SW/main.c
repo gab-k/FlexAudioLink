@@ -36,6 +36,7 @@
  ******************************************************************************/
 /* Task priorities. */
 #define audio_task_PRIORITY (configMAX_PRIORITIES - 2)
+#define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 4)
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define led_blinking_task_PRIORITY (tskIDLE_PRIORITY + 1)
 #define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
@@ -82,6 +83,13 @@ int main(void)
     if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("audio task creation failed!.\r\n");
+        while (1);
+    }
+
+    // Create audio feedback task.
+    if (xTaskCreate(audio_feedback_task, "audio_feedback", 4096 / sizeof(StackType_t), NULL, audio_feedback_task_PRIORITY, NULL) != pdPASS)
+    {
+        PRINTF("audio feedback task creation failed!.\r\n");
         while (1);
     }
 

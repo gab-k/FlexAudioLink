@@ -52,8 +52,6 @@ tu_fifo_t * spk_ff_ptr = NULL;
 tu_fifo_buffer_info_t spk_ff_info;
 
 
-// Speaker data size received in the last frame
-int spk_data_size;
 // Resolution per format
 const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX};
 // Current resolution, update on format change
@@ -61,173 +59,289 @@ uint8_t current_resolution;
 
 
 // --- Constants ---
-#define AUDIO_HALF_BLOCK_SIZE (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2)
+#define AUDIO_HALF_BUFFER_SIZE  (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2)
+#define START_THRESHOLD         (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 4)  // Wait for 50% fill before starting
+#define MINIMUM_DMA_BLOCK_SIZE  (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 4)  
+
+// --- Parallel Size Queue (Task -> ISR) ---
+// Must be at least as deep as the I2S driver queue (usually 4)
+#define SIZE_Q_DEPTH I2S_NUM_BUFFERS
+volatile uint32_t dma_size_queue[SIZE_Q_DEPTH] = {0, 0, 0, 0};
+volatile uint8_t  queue_wr_idx = 0;
+volatile uint8_t  queue_rd_idx = 0;
+
+typedef enum {
+    AUDIO_STATE_BUFFERING,
+    AUDIO_STATE_PLAYING
+} audio_state_t;
+
+// Audio state and buffer level
+// Used by feedback controller and for state management inside audio task
+volatile audio_state_t g_audio_state = AUDIO_STATE_BUFFERING;
+volatile uint16_t      g_audio_buf_level = 0;
 
 // --- External Handles from auto-generated code ---
 // These are defined in peripherals.c
 extern i2s_dma_handle_t FLEXCOMM0_Tx_DMA_Handle; 
 
 // --- Task Handle ---
-// You need to assign this when you create your audio task
 TaskHandle_t audio_task_handle = NULL;
-
-// --- State Variables ---
-static volatile uint16_t current_buffer_level = 0;
-extern uint32_t current_sample_rate; // e.g., 48000
-
-// Feedback controller constants
-const float KP = 0.500f;     
-const float KI = 0.001f;   
-const float MAX_RATE_ADJUSTMENT = 100.0f; 
-const int TARGET_BUFFER_LEVEL_SAMPLES = AUDIO_HALF_BLOCK_SIZE;
 
 // ----------------------------------------------------------------+
 // Audio Task and Buffer Level Variables
 // ----------------------------------------------------------------+
 
+// --- Helpers ---
 
-static void audio_feedback_controller(void)
+// This calculates how much data is currently "owned" by the DMA
+static inline uint16_t size_q_get_bytes_in_flight(void)
 {
-    static uint32_t count = 0;
-    static float integral_term = 0.0f;
-    // 1. Calculate Error
-    int16_t error = (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2) - current_buffer_level;
-
-    // 2. PI Calculation
-    float proportional = KP * error;
-    integral_term += KI * error;
-
-    // Anti-Windup
-    if (integral_term > MAX_RATE_ADJUSTMENT) integral_term = MAX_RATE_ADJUSTMENT;
-    else if (integral_term < -MAX_RATE_ADJUSTMENT) integral_term = -MAX_RATE_ADJUSTMENT;
-
-    // 3. Total Correction
-    float total_correction = proportional + integral_term;
-    if (total_correction > MAX_RATE_ADJUSTMENT) total_correction = MAX_RATE_ADJUSTMENT;
-    else if (total_correction < -MAX_RATE_ADJUSTMENT) total_correction = -MAX_RATE_ADJUSTMENT;
-
-    // 4. Calculate Feedback
-    float adjusted_rate = (float)current_sample_rate + total_correction;
-    
-    // RW612 is High Speed USB (Microframes, 125us) -> Divide by 8000.0f
-    // If Full Speed is forced (1ms frames) -> Divide by 1000.0f
-    float samples_per_frame = adjusted_rate / 8000.0f;
-    
-    // 16.16 Fixed Point
-    uint32_t feedback_value = (uint32_t)(samples_per_frame * 65536.0f);
-
-    tud_audio_fb_set(feedback_value);
-
-    #if AUDIO_DEBUG_LVL > 0
-    if (count % 100 == 0)
-    {
-      PRINTF("fs: %u, C: %d T: %u, E: %d, P: %d, I: %d\n", 
-          (unsigned int)adjusted_rate, 
-          (int)current_buffer_level,
-          (unsigned int) TARGET_BUFFER_LEVEL_SAMPLES,
-          (int)error,
-          (int)proportional, 
-          (int)integral_term);
+    uint16_t total = 0;
+    for (int i = 0; i < SIZE_Q_DEPTH; i++) {
+        total += dma_size_queue[i];
     }
-    #endif
-    
-    count++;
+    return total;
+}
+
+// Task calls this to save the xfer size of the data block submitted to DMA
+static void size_q_push(uint16_t size) {
+  // 1. Save size into queue
+  dma_size_queue[queue_wr_idx] = size;
+  // 2. Advance write index
+  queue_wr_idx = (queue_wr_idx + 1) % SIZE_Q_DEPTH;
+}
+
+// Task calls this to undo the latest saved xfer size
+static void size_q_undo_push(void) {
+    queue_wr_idx = (queue_wr_idx + SIZE_Q_DEPTH - 1) % SIZE_Q_DEPTH;
+    dma_size_queue[queue_wr_idx] = 0; // Zero out the abandoned slot
+}
+
+// ISR calls this to know the transfer size of the xfer that just finished
+static uint32_t size_q_pop(void) {
+  if (queue_wr_idx == queue_rd_idx){
+    configASSERT(false); // Queue underflow
+  } 
+  // 1. Get size of finished transfer
+  uint32_t size = dma_size_queue[queue_rd_idx];
+  // 2. Clear size entry of finished transfer
+  dma_size_queue[queue_rd_idx] = 0;
+  // 3. Advance read index
+  queue_rd_idx = (queue_rd_idx + 1) % SIZE_Q_DEPTH;
+  return size;
 }
 
 void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t completionStatus, void *userData)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    i2s_transfer_t next_xfer;
-    static bool toggle = false; // false = just finished A, true = just finished B
 
-    // 1. Advance TinyUSB FIFO (We consumed half the buffer)
-    // Note: spk_ff_ptr must be accessible here
-    tu_fifo_advance_read_pointer(spk_ff_ptr, AUDIO_HALF_BLOCK_SIZE);
-    
-    // 2. Snapshot buffer level for the PI Controller
-    current_buffer_level = tud_audio_available();
+    // 1. Retrieve the size of the block that just finished.
+    // Also clears the size entry in the queue.
+    uint32_t finished_size = size_q_pop();
 
-    // 3. Re-Submit Logic (Keep the DMA Queue full)
-    // If we just finished Block A (toggle=false), we must re-queue Block A 
-    // to run after the currently-playing Block B finishes.
-    
-    uint8_t *buffer_start = (uint8_t *)spk_ff_ptr->buffer;
-    
-    if (!toggle) {
-        next_xfer.data = buffer_start; // Re-queue Block A
-    } else {
-        next_xfer.data = buffer_start + AUDIO_HALF_BLOCK_SIZE; // Re-queue Block B
+    // 2. Advance the read pointer/index of TinyUSB buffer.
+    // Only if it was actual data (>0). If it was silence (0), do nothing.
+    if (finished_size > 0) 
+    {
+      tu_fifo_advance_read_pointer(spk_ff_ptr, finished_size);
     }
-    
-    next_xfer.dataSize = AUDIO_HALF_BLOCK_SIZE;
 
-    // Send to DMA queue (Non-blocking, just adds to list)
-    I2S_TxTransferSendDMA(base, handle, next_xfer);
-
-    // Flip toggle for next time
-    toggle = !toggle;
-
-    // 4. Notify Audio Task
+    // 3. Notify audio task, which queues more data if available.
     if (audio_task_handle != NULL) {
-        vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
+      vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
-    
-static void Start_Audio_Playback(void)
-{
-    i2s_transfer_t xfer;
-    uint8_t *buffer_start = (uint8_t *)spk_ff_ptr->buffer;
-
-    // 1. Submit Block A (First Half)
-    xfer.data = buffer_start;
-    xfer.dataSize = AUDIO_HALF_BLOCK_SIZE;
-    I2S_TxTransferSendDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, xfer);
-
-    // 2. Submit Block B (Second Half)
-    // The DMA will play A, then automatically switch to B.
-    // When A finishes, the Callback fires, re-queues A, and the loop continues.
-    xfer.data = buffer_start + AUDIO_HALF_BLOCK_SIZE;
-    xfer.dataSize = AUDIO_HALF_BLOCK_SIZE;
-    I2S_TxTransferSendDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, xfer);
-}
-    
+        
 void audio_task(void *pvParameters)
 {
-    static bool started = false;
+  // Initialize task handle for the DMA TX complete callback to wake this task up.
+  audio_task_handle = xTaskGetCurrentTaskHandle();
+  
+  i2s_transfer_t xfer;
+  uint16_t buf_level, flight;
+  static float smoothed_level = 0.0f; 
+  const float ALPHA = 0.1f; // 0.1 (smooth) to 0.5 (reactive)
+
+  for (;;)
+  {
+    // Wait for ISR notification or timeout
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2));
+
+    taskENTER_CRITICAL();
+    buf_level = tud_audio_available();
+    taskEXIT_CRITICAL();
+
+    // Apply Moving Average (Low Pass Filter)
+    // If this is the very first run, initialize strictly to buf_level
+    if (smoothed_level == 0.0f) smoothed_level = (float)buf_level;
+    else smoothed_level = (ALPHA * (float)buf_level) + ((1.0f - ALPHA) * smoothed_level);
     
-    // Initialize Task Handle for the Callback to use
-    audio_task_handle = xTaskGetCurrentTaskHandle();
+    // Update Global for Controller
+    g_audio_buf_level = (uint16_t)smoothed_level;
 
-    for (;;)
+    // Keep queuing while there is data available
+    while (1)
     {
-        // --- 1. Startup Logic ---
-        if (!started)
-        {
-            if (tud_audio_available() >= (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 16))
-            {
-                Start_Audio_Playback();
-                started = true;
-            }
-            else
-            {
-                // Wait at least 1 tick, or 1ms (whichever is larger)
-                TickType_t wait_ticks = pdMS_TO_TICKS(1);
-                if (wait_ticks == 0) wait_ticks = 1;
-                vTaskDelay(wait_ticks);
-                continue;
-            }
+      // 1. Check Queue Capacity (No Critical Section needed)
+      //    It is safe to read queue_rd_idx here. 
+      //    If ISR fires after this read, it only creates MORE space, which is safe.
+      if (((queue_wr_idx + 1) % SIZE_Q_DEPTH) == queue_rd_idx) {
+          // Queue is full. We cannot push more metadata.
+          break;
+      }
+
+      // 2. Get buffer information inside critical section
+      taskENTER_CRITICAL();
+      // Total available bytes in TinyUSB speaker buffer
+      buf_level = tud_audio_available();
+      // Total bytes currently "in flight" in the I2S DMA queue
+      flight = size_q_get_bytes_in_flight();
+      // Retrieve FIFO info which includes read pointers and lengths
+      tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+      taskEXIT_CRITICAL();
+
+      // 3. Handle states
+      if (g_audio_state == AUDIO_STATE_BUFFERING) {
+        if (buf_level >= START_THRESHOLD) {
+          // Switch to PLAYING state if there is enough data  
+          g_audio_state = AUDIO_STATE_PLAYING;
+          PRINTF("\nPLAY\n");
         }
+        else {
+          // Stay in BUFFERING state, exit loop
+          break; 
+        }
+      } else if (g_audio_state == AUDIO_STATE_PLAYING) {
+        if (buf_level == 0) {
+          // Switch to BUFFERING state if there is no data available
+          g_audio_state = AUDIO_STATE_BUFFERING;
+          PRINTF("\nBUF\n");
+          // Also exit loop, because no data needs to be queued
+          break;
+        }
+        else if(buf_level < MINIMUM_DMA_BLOCK_SIZE){
+          // Exit loop when the available amount of data is too small
+          // this is done so the DMA transfers have a sensible size.
+          break;
+        }
+      }
 
-        // --- 2. Runtime Logic ---
-        // Wait for notification from I2S_TX_DMA_Callback
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+      // 4. Safety Checks
+      // 'buf_level' is the total amount of data available in the TinyUSB buffer.
+      // 'flight' is the amount of data currently queued to the I2S DMA queue (i2sQueue).
+      // Therefore, (buf_level - flight) must always be >= 0.
+      if (flight > buf_level) { 
+        // Assert if flight exceeds available
+        configASSERT(false); 
+      }
 
-        // Run the Controller
-        audio_feedback_controller();
+      // 5. Calculate the amount of data pending to be queued to I2S DMA.
+      uint32_t virtual_avail = buf_level - flight;
+      if (virtual_avail == 0) {
+        // Break loop if there is nothing left to put into the I2S DMA queue.
+        break;
+      }
+
+      // 6. Calculate pointers and length of data to be queued
+      uint8_t *dma_ptr;
+      uint32_t dma_len;
+      if (flight < spk_ff_info.linear.len) {
+        // Next data block to be queued resides inside the linear part
+        dma_ptr = spk_ff_info.linear.ptr + flight;
+        dma_len = spk_ff_info.linear.len - flight;
+      } else {
+        // Next data block to be queued resides inside the wrapped part
+        uint32_t offset = flight - spk_ff_info.linear.len;
+        dma_ptr = spk_ff_info.wrapped.ptr + offset;
+        dma_len = spk_ff_info.wrapped.len - offset;
+      }
+
+      // 7. Limit dma_len to AUDIO_HALF_BUFFER_SIZE
+      if (dma_len > AUDIO_HALF_BUFFER_SIZE) dma_len = AUDIO_HALF_BUFFER_SIZE;
+
+      // 8. Set transfer pointer and size
+      xfer.data = dma_ptr;
+      xfer.dataSize = dma_len;
+
+      // 9. Add the size to queue, this needs to be done because the ISR could fire instantly.
+      size_q_push(dma_len);
+
+      // 10. Start DMA Transfer
+      status_t status = I2S_TxTransferSendDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle, xfer);
+      
+      // 11. Check Status
+      if (status != kStatus_Success) {
+        // DMA submission failed, undo the latest push!
+        size_q_undo_push();
+        // Exit loop and wait for the next notification
+        break;
+      }
     }
+  }
 }  
+
+void audio_feedback_task(void *pvParameters)
+{
+  const TickType_t xFrequency = pdMS_TO_TICKS(100);
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+
+  const float KP = 0.05f;     
+  const float MAX_RATE_ADJUSTMENT = 100.0f; 
+
+  float current_sample_rate_f = (float)current_sample_rate;
+  float proportional, adjusted_rate, samples_per_frame;
+  uint32_t feedback_value;
+
+  for (;;)
+  {
+    // Wait for specified delay
+    // 
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+
+    if (g_audio_state == AUDIO_STATE_PLAYING)
+    {
+      #if AUDIO_DEBUG_LVL > 0
+      static uint32_t count = 0;
+      #endif
+
+      // 1. Calculate Error
+      int16_t error = AUDIO_HALF_BUFFER_SIZE - g_audio_buf_level;
+
+      // 2. PI Calculation
+      proportional = KP * error;
+
+      // 3. Limit adjustment
+      if (proportional > MAX_RATE_ADJUSTMENT) proportional = MAX_RATE_ADJUSTMENT;
+      else if (proportional < -MAX_RATE_ADJUSTMENT) proportional = -MAX_RATE_ADJUSTMENT;
+
+      // 4. Calculate Feedback
+      adjusted_rate = current_sample_rate_f + proportional;
+      
+      // RW612 is High Speed USB (Microframes, 125us) -> Divide by 8000.0f
+      // If Full Speed is forced (1ms frames) -> Divide by 1000.0f
+      samples_per_frame = adjusted_rate / 8000.0f;
+      
+      // 16.16 Fixed Point
+      feedback_value = (uint32_t)(samples_per_frame * 65536.0f);
+
+      tud_audio_fb_set(feedback_value);
+
+      #if AUDIO_DEBUG_LVL > 0
+      if (count % 20 == 0)
+      {
+        PRINTF("fs: %u, LVL: %d E: %d, P: %d\n", 
+            (unsigned int)adjusted_rate, 
+            (int) g_audio_buf_level,
+            (int)error,
+            (int)proportional);
+      }
+      count++;
+      #endif
+    }
+  }
+}
 
 //--------------------------------------------------------------------+
 // Device callbacks
@@ -658,7 +772,6 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
   }
 
   // Clear buffer when streaming format is changed
-  spk_data_size = 0;
   if (alt != 0) {
     current_resolution = resolutions_per_format[alt - 1];
   }
