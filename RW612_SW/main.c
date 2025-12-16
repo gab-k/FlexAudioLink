@@ -36,12 +36,12 @@
  * Defines
  ******************************************************************************/
 /* Task priorities. */
-#define audio_task_PRIORITY (configMAX_PRIORITIES - 2)
+#define audio_task_PRIORITY (configMAX_PRIORITIES - 1)
 #define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 4)
-#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
-#define led_blinking_task_PRIORITY (tskIDLE_PRIORITY + 1)
+#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 1)
+#define led_blinking_task_PRIORITY (tskIDLE_PRIORITY)
 #define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
-#define cli_task_PRIORITY (tskIDLE_PRIORITY + 1)
+#define cli_task_PRIORITY (tskIDLE_PRIORITY)
 
 /*******************************************************************************
  * Prototypes
@@ -147,29 +147,6 @@ static void wifi_task(void *pvParameters)
         PRINTF("WPL_Start: Failed, error: %d\r\n", (uint32_t)err);
         while (1);
     }
-
-    // Scan for nearby Wi-Fi networks
-    char *scanData = NULL;
-    PRINTF("\r\nScanning for nearby Wi-Fi networks...\r\n");
-    scanData = WPL_Scan();
-    if (scanData == NULL)
-    {
-        PRINTF("Error while scanning!\r\n");
-    }
-    else
-    {
-        vPortFree(scanData);
-    }
-
-    #if (defined(SDK_DEBUGCONSOLE) && (SDK_DEBUGCONSOLE == DEBUGCONSOLE_REDIRECT_TO_SDK))
-    /*
-     * Scanning prints the found networks to the console.
-     * Wait for debug console output to be printed before returning from
-     * the command, otherwise shell prompt could be printed in
-     * the middle of the output of the network scan.
-     */
-    (void)DbgConsole_Flush();
-    #endif
 
     vTaskSuspend(NULL);
 }

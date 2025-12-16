@@ -41,12 +41,12 @@ static volatile bool cli_connected = false;
 /**
  * @brief The welcome message displayed when a terminal connects.
  */
-#define CLI_WELCOME_MESSAGE "Wireless Headset CLI\r\nType 'help' for commands\r\n> "
+#define CLI_WELCOME_MESSAGE "Wireless Headset CLI\r\nType 'help' for commands\r\n"
 
 /**
  * @brief The message displayed when the host sends commands without a newline character.
  */
-#define CLI_NO_NEWLINE_MESSAGE "Command doesn't end with a newline (\\n) character.\r\n> "
+#define CLI_NO_NEWLINE_MESSAGE "Command doesn't end with a newline (\\n) character.\r\n"
 
 /**
  *  @brief Flag to control echoing of received characters back to the host terminal. Disabled by default.
