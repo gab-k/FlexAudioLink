@@ -80,9 +80,17 @@
 #define configUSE_DAEMON_TASK_STARTUP_HOOK 0
 
 /* Run time and task stats gathering related definitions. */
-#define configGENERATE_RUN_TIME_STATS        0
+#define configGENERATE_RUN_TIME_STATS        1
+#define configRECORD_STACK_HIGH_ADDRESS      1
 #define configUSE_TRACE_FACILITY             1
 #define configUSE_STATS_FORMATTING_FUNCTIONS 1
+#define configRUN_TIME_COUNTER_TYPE          uint64_t
+
+void vConfigureTimerForRunTimeStats(void);
+uint64_t vGetRunTimeCounterValue64(void);
+
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() vConfigureTimerForRunTimeStats()
+#define portGET_RUN_TIME_COUNTER_VALUE()         vGetRunTimeCounterValue64()
 
 /* Co-routine related definitions. */
 #define configUSE_CO_ROUTINES           0
