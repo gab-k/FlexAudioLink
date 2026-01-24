@@ -16,6 +16,8 @@ board: FRDM-RW612
 pin_labels:
 - {pin_num: M2, pin_signal: GPIO_11, label: 'J1[6]/WAKEUP_BTN', identifier: WAKEUP;WAKEUP_BTN}
 - {pin_num: L7, pin_signal: GPIO_5, label: 'J1[7]/MCLK', identifier: MCLKOUT}
+- {pin_num: G13, pin_signal: GPIO_42, label: 'J4[2]', identifier: SOFTAP}
+- {pin_num: H10, pin_signal: GPIO_45, label: 'J4[6]', identifier: LATENCY}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -50,6 +52,8 @@ BOARD_InitPins:
   - {pin_num: F10, peripheral: FLEXCOMM0, signal: I2S_DATA, pin_signal: GPIO_2}
   - {pin_num: L7, peripheral: CLKCTL1, signal: MCLK, pin_signal: GPIO_5, direction: OUTPUT}
   - {pin_num: M2, peripheral: GPIO, signal: 'PIO0, 11', pin_signal: GPIO_11, identifier: WAKEUP_BTN, direction: INPUT}
+  - {pin_num: G13, peripheral: GPIO, signal: 'PIO1, 10', pin_signal: GPIO_42, direction: INPUT, pull_up_down: down}
+  - {pin_num: H10, peripheral: GPIO, signal: 'PIO1, 13', pin_signal: GPIO_45, direction: OUTPUT, pull_up_down: disable}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -65,6 +69,8 @@ void BOARD_InitPins(void)
 {
     /* Enables the clock for the GPIO0 module */
     GPIO_PortInit(GPIO, 0);
+    /* Enables the clock for the GPIO1 module */
+    GPIO_PortInit(GPIO, 1);
 
     gpio_pin_config_t WAKEUP_BTN_config = {
         .pinDirection = kGPIO_DigitalInput,
@@ -72,12 +78,34 @@ void BOARD_InitPins(void)
     };
     /* Initialize GPIO functionality on pin PIO0_11 (pin M2)  */
     GPIO_PinInit(BOARD_INITPINS_WAKEUP_BTN_GPIO, BOARD_INITPINS_WAKEUP_BTN_PORT, BOARD_INITPINS_WAKEUP_BTN_PIN, &WAKEUP_BTN_config);
+
+    gpio_pin_config_t SOFTAP_config = {
+        .pinDirection = kGPIO_DigitalInput,
+        .outputLogic = 0U
+    };
+    /* Initialize GPIO functionality on pin PIO1_10 (pin G13)  */
+    GPIO_PinInit(BOARD_INITPINS_SOFTAP_GPIO, BOARD_INITPINS_SOFTAP_PORT, BOARD_INITPINS_SOFTAP_PIN, &SOFTAP_config);
+
+    gpio_pin_config_t LATENCY_config = {
+        .pinDirection = kGPIO_DigitalOutput,
+        .outputLogic = 0U
+    };
+    /* Initialize GPIO functionality on pin PIO1_13 (pin H10)  */
+    GPIO_PinInit(BOARD_INITPINS_LATENCY_GPIO, BOARD_INITPINS_LATENCY_PORT, BOARD_INITPINS_LATENCY_PIN, &LATENCY_config);
     /* Initialize FC0_I2S functionality on pin GPIO_4, GPIO_3, GPIO_2 (pin F8_C13_F10) */
     IO_MUX_SetPinMux(IO_MUX_FC0_I2S);
     /* Initialize MCLK functionality on pin GPIO_5 (pin L7) */
     IO_MUX_SetPinMux(IO_MUX_MCLK);
     /* Initialize GPIO11 functionality on pin GPIO_11 (pin M2) */
     IO_MUX_SetPinMux(IO_MUX_GPIO11);
+    /* Initialize GPIO42 functionality on pin GPIO_42 (pin G13) */
+    IO_MUX_SetPinMux(IO_MUX_GPIO42);
+    /* Initialize GPIO45 functionality on pin GPIO_45 (pin H10) */
+    IO_MUX_SetPinMux(IO_MUX_GPIO45);
+    /* Set GPIO_42 (pin G13) configuration - Enable pull-down; strongest slew rate */
+    IO_MUX_SetPinConfig(BOARD_INITPINS_SOFTAP_GPIO_PIN, IO_MUX_PinConfigPullDown);
+    /* Set GPIO_45 (pin H10) configuration - Disable pull-up / pull-down; strongest slew rate */
+    IO_MUX_SetPinConfig(BOARD_INITPINS_LATENCY_GPIO_PIN, IO_MUX_PinConfigNoPull);
 
     SYSCTL1->MCLKPINDIR = ((SYSCTL1->MCLKPINDIR &
                             /* Mask bits to zero which are setting */

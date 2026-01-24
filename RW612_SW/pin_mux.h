@@ -53,6 +53,33 @@ void BOARD_InitBootPins(void);
 #define BOARD_INITPINS_WAKEUP_BTN_PIN_MASK (1U << 11U)              /*!<@brief PORT pin mask */
                                                                     /* @} */
 
+/*! @name GPIO_42 (coord G13), J4[2]
+  @{ */
+/* Routed pin properties */
+#define BOARD_INITPINS_SOFTAP_PERIPHERAL GPIO                   /*!<@brief Peripheral name */
+#define BOARD_INITPINS_SOFTAP_SIGNAL PIO1                       /*!<@brief Signal name */
+#define BOARD_INITPINS_SOFTAP_CHANNEL 10                        /*!<@brief Signal channel */
+#define BOARD_INITPINS_SOFTAP_GPIO GPIO                         /*!<@brief GPIO peripheral base pointer */
+#define BOARD_INITPINS_SOFTAP_GPIO_PIN 42U                      /*!<@brief GPIO pin number */
+#define BOARD_INITPINS_SOFTAP_PORT 1U                           /*!<@brief PORT number */
+#define BOARD_INITPINS_SOFTAP_PIN 10U                           /*!<@brief PORT pin number */
+#define BOARD_INITPINS_SOFTAP_PIN_MASK (1U << 10U)              /*!<@brief PORT pin mask */
+                                                                /* @} */
+
+/*! @name GPIO_45 (coord H10), J4[6]
+  @{ */
+/* Routed pin properties */
+#define BOARD_INITPINS_LATENCY_PERIPHERAL GPIO                    /*!<@brief Peripheral name */
+#define BOARD_INITPINS_LATENCY_SIGNAL PIO1                        /*!<@brief Signal name */
+#define BOARD_INITPINS_LATENCY_CHANNEL 13                         /*!<@brief Signal channel */
+#define BOARD_INITPINS_LATENCY_GPIO GPIO                          /*!<@brief GPIO peripheral base pointer */
+#define BOARD_INITPINS_LATENCY_INIT_GPIO_VALUE 0U                 /*!<@brief GPIO output initial state */
+#define BOARD_INITPINS_LATENCY_GPIO_PIN 45U                       /*!<@brief GPIO pin number */
+#define BOARD_INITPINS_LATENCY_PORT 1U                            /*!<@brief PORT number */
+#define BOARD_INITPINS_LATENCY_PIN 13U                            /*!<@brief PORT pin number */
+#define BOARD_INITPINS_LATENCY_PIN_MASK (1U << 13U)               /*!<@brief PORT pin mask */
+                                                                  /* @} */
+
 /*!
  * @brief 
  *

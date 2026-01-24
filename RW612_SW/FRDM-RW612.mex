@@ -41,6 +41,8 @@
             <pin_labels>
                <pin_label pin_num="M2" pin_signal="GPIO_11" label="J1[6]/WAKEUP_BTN" identifier="WAKEUP;WAKEUP_BTN"/>
                <pin_label pin_num="L7" pin_signal="GPIO_5" label="J1[7]/MCLK" identifier="MCLKOUT"/>
+               <pin_label pin_num="G13" pin_signal="GPIO_42" label="J4[2]" identifier="SOFTAP"/>
+               <pin_label pin_num="H10" pin_signal="GPIO_45" label="J4[6]" identifier="LATENCY"/>
             </pin_labels>
          </pins_profile>
          <functions_list>
@@ -81,6 +83,18 @@
                      <pin_features>
                         <pin_feature name="identifier" value="WAKEUP_BTN"/>
                         <pin_feature name="direction" value="INPUT"/>
+                     </pin_features>
+                  </pin>
+                  <pin peripheral="GPIO" signal="PIO1, 10" pin_num="G13" pin_signal="GPIO_42">
+                     <pin_features>
+                        <pin_feature name="direction" value="INPUT"/>
+                        <pin_feature name="pull_up_down" value="down"/>
+                     </pin_features>
+                  </pin>
+                  <pin peripheral="GPIO" signal="PIO1, 13" pin_num="H10" pin_signal="GPIO_45">
+                     <pin_features>
+                        <pin_feature name="direction" value="OUTPUT"/>
+                        <pin_feature name="pull_up_down" value="disable"/>
                      </pin_features>
                   </pin>
                </pins>

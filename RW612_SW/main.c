@@ -26,7 +26,7 @@
 #include "audio.h"
 #include "cli.h"
 
-#include "wpl.h"
+#include "wifi_app.h"
 
 /* TinyUSB includes */
 #include "tusb.h"
@@ -47,8 +47,6 @@
  * Prototypes
  ******************************************************************************/
 static void usb_device_task(void *pvParameters);
-static void wifi_task(void *pvParameters);
-static void link_status_change_cb(bool link_state);
 static void blink_task(void *pvParameters);
 
 /*******************************************************************************
@@ -124,42 +122,6 @@ static void usb_device_task(void *pvParameters)
     while (1)
     {
         tud_task();
-    }
-}
-
-static void wifi_task(void *pvParameters)
-{
-    // Initialize Wi-Fi driver and WPL layer
-    PRINTF("\r\nInitializing Wi-Fi driver...\r\n");
-    wpl_ret_t err = WPLRET_FAIL;
-    err = WPL_Init();
-    if (err != WPLRET_SUCCESS)
-    {
-        PRINTF("WPL_Init: Failed, error: %d\r\n", (uint32_t)err);
-        while (1);
-    }
-
-    // Start Wi-Fi driver and register an application link state callback.
-    PRINTF("\r\nStarting Wi-Fi driver...\r\n");
-    err = WPL_Start(link_status_change_cb);
-    if (err != WPLRET_SUCCESS)
-    {
-        PRINTF("WPL_Start: Failed, error: %d\r\n", (uint32_t)err);
-        while (1);
-    }
-
-    vTaskSuspend(NULL);
-}
-
-static void link_status_change_cb(bool link_state)
-{
-    if (link_state == false)
-    {
-        PRINTF("-------- LINK LOST --------\r\n");
-    }
-    else
-    {
-        PRINTF("-------- LINK REESTABLISHED --------\r\n");
     }
 }
 

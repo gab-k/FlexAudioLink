@@ -28,6 +28,10 @@ mcux_add_source(
             pin_mux.h
             cli.c
             cli.h
+            wifi_app.c
+            wifi_app.h
+            udp_tasks.c
+            udp_tasks.h
 
             # FreeRTOS configuration files
             FreeRTOSConfig.h
