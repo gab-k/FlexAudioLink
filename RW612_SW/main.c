@@ -25,7 +25,6 @@
 #include "app.h"
 #include "audio.h"
 #include "cli.h"
-
 #include "wifi_app.h"
 
 /* TinyUSB includes */
@@ -41,6 +40,7 @@
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 1)
 #define led_blinking_task_PRIORITY (tskIDLE_PRIORITY)
 #define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
+#define udp_task_PRIORITY (configMAX_PRIORITIES - 1)
 #define cli_task_PRIORITY (tskIDLE_PRIORITY)
 
 /*******************************************************************************
@@ -52,11 +52,6 @@ static void blink_task(void *pvParameters);
 /*******************************************************************************
  * Variables
  ******************************************************************************/
-TaskHandle_t g_wifi_task_handle = NULL;
-TaskHandle_t g_udp_task_handle = NULL;
-TaskHandle_t g_audio_task_handle = NULL;
-TaskHandle_t g_audio_fb_task_handle = NULL;
-
 extern uint32_t blink_interval_ms;
 
 /*******************************************************************************
@@ -84,9 +79,10 @@ int main(void)
         while (1);
     }
     vTaskSuspend(g_wifi_task_handle);
+    g_wifi_events = xEventGroupCreate();
 
     // Create UDP task.
-    if(xTaskCreate(udp_task, "udp_tx", 2048 / sizeof(StackType_t), NULL, (configMAX_PRIORITIES - 1), &g_udp_task_handle) != pdPASS)
+    if(xTaskCreate(udp_task, "udp_tx", 2048 / sizeof(StackType_t), NULL, udp_task_PRIORITY, &g_udp_task_handle) != pdPASS)
     {
         PRINTF("udp task creation failed!.\r\n");
         while (1);

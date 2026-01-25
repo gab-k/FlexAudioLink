@@ -2,11 +2,6 @@
 
 static volatile app_mode_t app_mode = MODE_IDLE;
 
-extern TaskHandle_t g_wifi_task_handle;
-extern TaskHandle_t g_udp_task_handle;
-extern TaskHandle_t g_audio_task_handle;
-extern TaskHandle_t g_audio_fb_task_handle;
-
 extern tusb_desc_device_t const desc_composite;
 extern tusb_desc_device_t const desc_cdc_only;
 

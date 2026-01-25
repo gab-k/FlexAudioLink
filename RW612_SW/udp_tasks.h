@@ -7,6 +7,8 @@
 #include "fsl_gpio.h"
 #include "wifi_app.h"
 
+extern TaskHandle_t g_udp_task_handle;
+
 void udp_task(void *pvParameters);
 
 #endif /* _UDP_TASKS_H_ */

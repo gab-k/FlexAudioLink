@@ -85,7 +85,8 @@ volatile uint16_t      g_audio_buf_level = 0;
 extern i2s_dma_handle_t FLEXCOMM0_Tx_DMA_Handle; 
 
 // --- Task Handle ---
-TaskHandle_t audio_task_handle = NULL;
+TaskHandle_t g_audio_task_handle = NULL;
+TaskHandle_t g_audio_fb_task_handle = NULL;
 
 // ----------------------------------------------------------------+
 // Audio Task and Buffer Level Variables

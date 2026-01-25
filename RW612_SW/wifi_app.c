@@ -11,6 +11,8 @@ static void wait_for_ip_address(int is_station_mode);
 static void start_ap(void);
 static void start_sta(void);
 
+TaskHandle_t g_wifi_task_handle = NULL;
+
 EventGroupHandle_t g_wifi_events;
 
 void wifi_task(void *pvParameters)
@@ -32,7 +34,6 @@ void wifi_task(void *pvParameters)
         while (1);
     }
 
-    g_wifi_events = xEventGroupCreate();
 
     while(1) {
         // Block here until set_current_app_mode() sends a notification.

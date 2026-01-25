@@ -5,7 +5,8 @@
 #define IP_AP "192.168.1.1"     // Dongle IP (Correct)
 #define IP_STA "192.168.1.255"  // Broadcast Address for 192.168.1.x subnet
 
-extern EventGroupHandle_t g_wifi_events;
+
+TaskHandle_t g_udp_task_handle = NULL;
 
 
 void udp_task(void *pvParameters)
