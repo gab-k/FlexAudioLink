@@ -19,7 +19,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
-#include <string.h>   // For strtok, strcmp, strncpy
+#include "mode.h"
+#include <string.h>   // For strtok, strcmp, strcasecmp, strncpy
 #include <stdio.h>    // For vsnprintf
 #include <stdarg.h>   // For va_list
 
@@ -71,6 +72,7 @@ static bool cli_cmd_help(char *args);
 static bool cli_cmd_reset(char *args);
 static bool cli_cmd_echo(char *args);
 static bool cli_cmd_scan(char *args);
+static bool cli_cmd_mode(char *args);
 
 //=====================================================================================================================
 // Public Function Definitions
@@ -359,22 +361,26 @@ static void cli_parse_and_execute(char *command_line)
 
   // --- Command Dispatch Table ---
   // Compare the command verb and call the corresponding handler.
-  if (strcmp(cmd_verb, "help") == 0)
+  if (strcasecmp(cmd_verb, "help") == 0)
   {
     handled = true;
     success = cli_cmd_help(args);
-  } else if (strcmp(cmd_verb, "reset") == 0)
+  } else if (strcasecmp(cmd_verb, "reset") == 0)
   {
     handled = true;
     success = cli_cmd_reset(args);
-  } else if (strcmp(cmd_verb, "echo") == 0)
+  } else if (strcasecmp(cmd_verb, "echo") == 0)
   {
     handled = true;
     success = cli_cmd_echo(args);
-  } else if (strcmp(cmd_verb, "scan") == 0)
+  } else if (strcasecmp(cmd_verb, "scan") == 0)
   {
     handled = true;
     success = cli_cmd_scan(args);
+  } else if (strcasecmp(cmd_verb, "mode") == 0)
+  {
+    handled = true;
+    success = cli_cmd_mode(args);
   }
 
   // --- Handle Command Execution Results ---
@@ -412,6 +418,7 @@ static bool cli_cmd_help(char *args)
   cli_printf("  reset                 - Software reset microcontroller\r\n");
   cli_printf("  echo [on|off]         - Enable/disable/toggle console echo\r\n");
   cli_printf("  scan                  - Scan for Wi-Fi networks\r\n");
+  cli_printf("  mode [usb|udp-dongle|udp-headset|ble]    - Set application mode\r\n");
   // Add help text for any other implemented commands here following the same format
 
   return true; // Help command execution is considered successful if called correctly
@@ -461,8 +468,7 @@ static bool cli_cmd_echo(char *args)
   } else
   {
     // Arguments provided: Check for "on" or "off"
-    // Using strcmp for case-sensitive comparison. Use strcasecmp if available and needed.
-    if (strcmp(args, "on") == 0)
+    if (strcasecmp(args, "on") == 0)
     {
       if (!cli_echo_enabled)
       {
@@ -470,7 +476,7 @@ static bool cli_cmd_echo(char *args)
         state_changed = true;
       }
       // else: Already on, no state change needed, but command is valid.
-    } else if (strcmp(args, "off") == 0)
+    } else if (strcasecmp(args, "off") == 0)
     {
       if (cli_echo_enabled)
       {
@@ -685,4 +691,69 @@ static bool cli_cmd_scan(char *args)
   }
 
   return true;
+}
+
+
+/**
+ * @brief Command handler to change the operating mode.
+ * @param args Pointer to the argument string. Expects "usb", "udp", or "ble".
+ * @return true on success, false on failure (e.g., invalid arguments).
+ */
+static bool cli_cmd_mode(char *args)
+{
+  app_mode_t current_mode = get_current_app_mode();
+  app_mode_t target_mode = current_mode;
+
+  // Check arguments
+  if (args == NULL || *args == '\0')
+  {
+    cli_printf("Current Mode: %s\r\n", get_app_mode_name(current_mode));
+    return true;
+  }
+  else {
+    if (strcasecmp(args, "usb") == 0) {
+      target_mode = MODE_USB_AUDIO;
+    }
+    else if (strcasecmp(args, "udp-dongle") == 0) {
+      target_mode = MODE_UDP_DONGLE_AUDIO;
+    }
+    else if (strcasecmp(args, "udp-headset") == 0) {
+      target_mode = MODE_UDP_HEADSET_AUDIO;
+    }
+    else if (strcasecmp(args, "ble") == 0) {
+      target_mode = MODE_BLE_AUDIO;
+    }
+    else {
+      cli_printf("Usage: mode [usb|udp-dongle|udp-headset|ble]\r\n");
+      return false; // Indicate command failure due to invalid argument
+    }
+  }
+
+  // Warn user that reconnecting might be needed if usb descriptor profile needs to be updated
+  usb_desc_profile_t current_profile = get_usb_profile_for_mode(current_mode);
+  usb_desc_profile_t target_profile = get_usb_profile_for_mode(target_mode);
+  if (current_profile != target_profile) {
+    cli_printf("Warning: Re-enumerating to %s mode may require re-connecting the CDC/VCP interface.\r\n", get_app_mode_name(target_mode));
+  }
+
+  // Check if mode change is needed
+  if (target_mode != current_mode) {
+    bool mode_change_success = false;
+    cli_printf("Changing mode from %s to %s...\r\n", get_app_mode_name(current_mode), get_app_mode_name(target_mode));
+    mode_change_success = set_current_app_mode(target_mode);
+    if (!mode_change_success)
+    {
+      cli_printf("Failed to switch to %s.\r\n", get_app_mode_name(target_mode));
+      return false;
+    }
+    cli_printf("Mode changed to: %s\r\n", get_app_mode_name(target_mode));
+  }
+  else {
+    cli_printf("Mode remains: %s\r\n", get_app_mode_name(current_mode));
+  }
+
+  
+
+  // Indicate command processed successfully
+  return true; 
 }

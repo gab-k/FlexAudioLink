@@ -36,6 +36,19 @@ enum
   ITF_NUM_TOTAL
 };
 
+enum 
+{
+    ITF_NUM_CDC_ONLY = 0,
+    ITF_NUM_CDC_DATA_ONLY,
+    ITF_NUM_TOTAL_CDC_ONLY
+};
+
+
+typedef enum {
+    USB_DESC_PROFILE_CDC_ONLY,
+    USB_DESC_PROFILE_COMPOSITE
+} usb_desc_profile_t;
+
 //--------------------------------------------------------------------+
 // UAC2 DESCRIPTOR TEMPLATES
 //--------------------------------------------------------------------+

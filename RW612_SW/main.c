@@ -52,6 +52,10 @@ static void blink_task(void *pvParameters);
 /*******************************************************************************
  * Variables
  ******************************************************************************/
+TaskHandle_t g_wifi_task_handle = NULL;
+TaskHandle_t g_audio_task_handle = NULL;
+TaskHandle_t g_audio_fb_task_handle = NULL;
+
 extern uint32_t blink_interval_ms;
 
 /*******************************************************************************
@@ -73,25 +77,28 @@ int main(void)
     }
 
     // Create Wi-Fi task.
-    if (xTaskCreate(wifi_task, "wifi", 4096 / sizeof(StackType_t), NULL, wifi_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(wifi_task, "wifi", 4096 / sizeof(StackType_t), NULL, wifi_task_PRIORITY, &g_wifi_task_handle) != pdPASS)
     {
         PRINTF("wifi task creation failed!.\r\n");
         while (1);
     }
+    vTaskSuspend(g_wifi_task_handle);
 
     // Create audio task.
-    if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, &g_audio_task_handle) != pdPASS)
     {
         PRINTF("audio task creation failed!.\r\n");
         while (1);
     }
+    vTaskSuspend(g_audio_task_handle);
 
     // Create audio feedback task.
-    if (xTaskCreate(audio_fb_task, "audio_fb", 4096 / sizeof(StackType_t), NULL, audio_feedback_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(audio_fb_task, "audio_fb", 4096 / sizeof(StackType_t), NULL, audio_feedback_task_PRIORITY, &g_audio_fb_task_handle) != pdPASS)
     {
         PRINTF("audio feedback task creation failed!.\r\n");
         while (1);
     }
+    vTaskSuspend(g_audio_fb_task_handle);
 
     // Create LED blinking task.
     if (xTaskCreate(blink_task, "blink", configMINIMAL_STACK_SIZE, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)

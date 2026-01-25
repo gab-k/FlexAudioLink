@@ -32,6 +32,8 @@ mcux_add_source(
             wifi_app.h
             udp_tasks.c
             udp_tasks.h
+            mode.c
+            mode.h
 
             # FreeRTOS configuration files
             FreeRTOSConfig.h
