@@ -17,7 +17,7 @@ typedef enum app_mode_t {
 
 const char* get_app_mode_name(app_mode_t mode);
 bool set_current_app_mode(app_mode_t new_mode);
-app_mode_t get_current_app_mode(void);
+app_mode_t get_app_mode(void);
 usb_desc_profile_t get_usb_profile_for_mode(app_mode_t mode);
 
 

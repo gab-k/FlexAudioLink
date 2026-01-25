@@ -1,88 +1,115 @@
 #include "wifi_app.h"
 
+#define SSID_AP "AP"
+#define PASSWORD_AP "12345678"
+#define WLAN_CHANNEL 36 // 5170–5190 MHz
+#define NETWORK_LABEL "default"
+
 // Prototypes
 static void link_status_change_cb(bool link_state);
 static void wait_for_ip_address(int is_station_mode);
+static void start_ap(void);
+static void start_sta(void);
+
+EventGroupHandle_t g_wifi_events;
 
 void wifi_task(void *pvParameters)
 {
-    wpl_ret_t err;
-    // Initialize Wi-Fi driver and WPL layer
+    wpl_ret_t ret_val;
     PRINTF("\r\nInitializing Wi-Fi driver...\r\n");
-    err = WPLRET_FAIL;
-    err = WPL_Init();
-    if (err != WPLRET_SUCCESS)
+    ret_val = WPL_Init();
+    if (ret_val != WPLRET_SUCCESS)
     {
-        PRINTF("WPL_Init: Failed, error: %d\r\n", (uint32_t)err);
+        PRINTF("WPL_Init() Failed, error: %d\r\n", ret_val);
         while (1);
     }
 
-    // Start Wi-Fi driver and register an application link state callback.
     PRINTF("\r\nStarting Wi-Fi driver...\r\n");
-    err = WPLRET_FAIL;
-    err = WPL_Start(link_status_change_cb);
-    if (err != WPLRET_SUCCESS)
+    ret_val = WPL_Start(link_status_change_cb);
+    if (ret_val != WPLRET_SUCCESS)
     {
-        PRINTF("WPL_Start: Failed, error: %d\r\n", (uint32_t)err);
+        PRINTF("WPL_Start() Failed, error: %d\r\n", ret_val);
         while (1);
     }
-    
-    if (GPIO_PinRead(BOARD_INITPINS_SOFTAP_GPIO, BOARD_INITPINS_SOFTAP_PORT, BOARD_INITPINS_SOFTAP_PIN))
-    {
-        err = WPLRET_FAIL;
-        err = WPL_Start_AP("WUMPA", "12345678", 36);
-        if (err == WPLRET_SUCCESS) {
-            PRINTF("SoftAP Started. Optimizing for Latency...\r\n");
-            
-            // Disable Aggregation on the AP interface (uAP)
-            wlan_uap_ampdu_tx_disable();
-            wlan_uap_ampdu_rx_disable();
 
-            // Confirm our own IP (Should be 192.168.1.1)
-            wait_for_ip_address(0); // 0 = AP Mode
-            // Launch Server
-            xTaskCreate(udp_server_task, "udp_rx", 2048 / sizeof(StackType_t), NULL, (configMAX_PRIORITIES - 1), NULL);
-        } else {
-            PRINTF("SoftAP Start Failed: %d\r\n", err);
-        }
-    }
-    else
-    {
-        PRINTF("Adding default Wi-Fi Network...\r\n");
-        err = WPLRET_FAIL;
-        err = WPL_AddNetwork("WUMPA", "12345678", "def_network");
-        if (err != WPLRET_SUCCESS)
-        {
-            PRINTF("WPL_AddNetwork: Failed, error: %d\r\n", (uint32_t)err);
-        }
+    g_wifi_events = xEventGroupCreate();
+
+    while(1) {
+        // Block here until set_current_app_mode() sends a notification.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Clear the connected flag immediately so UDP task stop processing
+        xEventGroupClearBits(g_wifi_events, WIFI_EVENT_IP_ACQUIRED);
         
-        PRINTF("Device joining the Wi-Fi Network using its STA interface...\r\n");
-        err = WPLRET_FAIL;
-        err = WPL_Join("def_network");
-        if (err != WPLRET_SUCCESS)
+        // Teardown previous AP or STA connection
+        WPL_Stop_AP();
+        WPL_Leave();
+
+        // Determine app mode
+        app_mode_t current_mode = get_app_mode();
+        if (current_mode == MODE_UDP_DONGLE_AUDIO) 
         {
-            PRINTF("WPL_Join: Failed, error: %d\r\n", (uint32_t)err);
+            PRINTF("Starting AP Mode...\r\n");
+            start_ap();
         }
-        else if (err == WPLRET_SUCCESS)
+        else if (current_mode == MODE_UDP_HEADSET_AUDIO) 
         {
-            PRINTF("Connected. Optimizing for Latency...\r\n");
-            // 1. Disable Power Save (Crucial: Stops AP from buffering data)
-            wlan_ieeeps_off();
-
-            // 2. Disable Aggregation (Crucial: Forces 1-packet-per-air-frame)
-            //    This ensures your "Toggle High -> Toggle Low" matches exactly one frame.
-            wlan_sta_ampdu_tx_disable(); // Don't merge outgoing packets
-            wlan_sta_ampdu_rx_disable(); // Tell AP not to merge incoming packets
-
-            wait_for_ip_address(1); // 1 = STA mode
-            // Launch Client
-            xTaskCreate(udp_client_task, "udp_tx", 2048 / sizeof(StackType_t), NULL, (configMAX_PRIORITIES - 1), NULL);
+            PRINTF("Starting STA Mode...\r\n");
+            start_sta();
         }
     }
-    
+}
 
+static void start_ap(void){
+    wpl_ret_t err = WPLRET_FAIL;
+    err = WPL_Start_AP(SSID_AP, PASSWORD_AP, WLAN_CHANNEL);
+    if (err == WPLRET_SUCCESS) {
+        PRINTF("SoftAP Started. Optimizing for Latency...\r\n");
+        
+        // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
+        wlan_uap_ampdu_tx_disable();
+        wlan_uap_ampdu_rx_disable();
+
+        // Confirm our own IP (Should be 192.168.1.1)
+        wait_for_ip_address(0); // 0 = AP Mode
+    } else {
+        PRINTF("WPL_Start_AP() Start Failed: %d\r\n", err);
+    }
+}
+
+static void start_sta(void){
+    wpl_ret_t err = WPLRET_FAIL;
     
-    vTaskSuspend(NULL);
+    PRINTF("Adding default Wi-Fi Network...\r\n");
+    
+    err = WPL_AddNetwork(SSID_AP, PASSWORD_AP, NETWORK_LABEL);
+    
+    if (err != WPLRET_SUCCESS)
+    {
+        PRINTF("WPL_AddNetwork() Failed, error: %d\r\n", (uint32_t)err);
+    }
+    
+    PRINTF("Device joining the Wi-Fi Network using its STA interface...\r\n");
+    
+    err = WPLRET_FAIL;
+    err = WPL_Join(NETWORK_LABEL);
+    
+    if (err == WPLRET_SUCCESS)
+    {
+        PRINTF("Connected. Optimizing for Latency...\r\n");
+        // Disable Power Save (Crucial: Stops AP from buffering data)
+        wlan_ieeeps_off();
+
+        // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
+        wlan_sta_ampdu_tx_disable();
+        wlan_sta_ampdu_rx_disable();
+
+        wait_for_ip_address(1); // 1 = STA mode
+    }
+    else if (err != WPLRET_SUCCESS)
+    {
+        PRINTF("WPL_Join() Failed, error: %d\r\n", (uint32_t)err);
+    }
 }
 
 static void link_status_change_cb(bool link_state)
@@ -116,7 +143,8 @@ static void wait_for_ip_address(int is_station_mode)
             strlen(ip_str) > 0)
         {
             PRINTF("IP Address Assigned: %s\r\n", ip_str);
-            //g_ip_acquired = true;
+            // Signal the IP Acquiration to the UDP task
+            xEventGroupSetBits(g_wifi_events, WIFI_EVENT_IP_ACQUIRED);
             break;
         }
 

@@ -65,7 +65,7 @@ tusb_desc_device_t const desc_cdc_only =
 uint8_t const * tud_descriptor_device_cb(void)
 {
   // Get the GLOBAL app mode
-  app_mode_t current_mode = get_current_app_mode();
+  app_mode_t current_mode = get_app_mode();
 
   switch (current_mode)
   {
@@ -159,7 +159,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
   (void)index;
 
   // Get the GLOBAL app mode
-  app_mode_t current_mode = get_current_app_mode();
+  app_mode_t current_mode = get_app_mode();
 
   // 2. Return CDC Only descriptor if we are in a Wireless Mode
   if (current_mode == MODE_UDP_HEADSET_AUDIO || current_mode == MODE_BLE_AUDIO || current_mode == MODE_IDLE) {

@@ -3,6 +3,7 @@
 static volatile app_mode_t app_mode = MODE_IDLE;
 
 extern TaskHandle_t g_wifi_task_handle;
+extern TaskHandle_t g_udp_task_handle;
 extern TaskHandle_t g_audio_task_handle;
 extern TaskHandle_t g_audio_fb_task_handle;
 
@@ -36,7 +37,8 @@ bool set_current_app_mode(app_mode_t target_mode)
 
     // This prevents HardFaults if xTaskCreate failed at boot.
     // Safety check for NULL task handles.
-    if (g_wifi_task_handle == NULL ) return false;
+    if (g_wifi_task_handle == NULL) return false;
+    if (g_udp_task_handle == NULL) return false;
     if (g_audio_task_handle == NULL) return false;
     if (g_audio_fb_task_handle == NULL) return false;
 
@@ -46,6 +48,7 @@ bool set_current_app_mode(app_mode_t target_mode)
 
     // Suspend tasks
     vTaskSuspend(g_wifi_task_handle);
+    vTaskSuspend(g_udp_task_handle);
     vTaskSuspend(g_audio_task_handle);
     vTaskSuspend(g_audio_fb_task_handle);
 
@@ -58,17 +61,19 @@ bool set_current_app_mode(app_mode_t target_mode)
             break;
 
         case MODE_UDP_DONGLE_AUDIO:
-            tud_connect();
             vTaskResume(g_wifi_task_handle);
+            vTaskResume(g_udp_task_handle);
             vTaskResume(g_audio_fb_task_handle);
+            // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
+            xTaskNotifyGive(g_wifi_task_handle);
             break;
         
         case MODE_UDP_HEADSET_AUDIO:
-            tud_disconnect();
-            vTaskDelay(pdMS_TO_TICKS(4000)); // Allow time for disconnect to process
-            tud_connect();
             vTaskResume(g_wifi_task_handle);
+            vTaskResume(g_udp_task_handle);
             vTaskResume(g_audio_task_handle);
+            // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
+            xTaskNotifyGive(g_wifi_task_handle);
             break;
 
         case MODE_BLE_AUDIO:
@@ -96,7 +101,7 @@ bool set_current_app_mode(app_mode_t target_mode)
     return true;
 }
 
-app_mode_t get_current_app_mode(void)
+app_mode_t get_app_mode(void)
 {
     return app_mode;
 }

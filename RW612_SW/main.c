@@ -53,6 +53,7 @@ static void blink_task(void *pvParameters);
  * Variables
  ******************************************************************************/
 TaskHandle_t g_wifi_task_handle = NULL;
+TaskHandle_t g_udp_task_handle = NULL;
 TaskHandle_t g_audio_task_handle = NULL;
 TaskHandle_t g_audio_fb_task_handle = NULL;
 
@@ -83,6 +84,14 @@ int main(void)
         while (1);
     }
     vTaskSuspend(g_wifi_task_handle);
+
+    // Create UDP task.
+    if(xTaskCreate(udp_task, "udp_tx", 2048 / sizeof(StackType_t), NULL, (configMAX_PRIORITIES - 1), &g_udp_task_handle) != pdPASS)
+    {
+        PRINTF("udp task creation failed!.\r\n");
+        while (1);
+    }
+    vTaskSuspend(g_udp_task_handle);
 
     // Create audio task.
     if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, &g_audio_task_handle) != pdPASS)

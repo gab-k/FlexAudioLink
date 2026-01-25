@@ -1,82 +1,88 @@
 #include "udp_tasks.h"
 
+#define UDP_AUDIO_PORT 5000
+#define SOCKET_RETRY_DELAY_MS 1000
+#define IP_AP "192.168.1.1"     // Dongle IP (Correct)
+#define IP_STA "192.168.1.255"  // Broadcast Address for 192.168.1.x subnet
 
-void udp_client_task(void *pvParameters)
+extern EventGroupHandle_t g_wifi_events;
+
+
+void udp_task(void *pvParameters)
 {
-    int sock;
-    struct sockaddr_in target_addr;
-    int counter = 0;
-    char msg[512];
+    int sock = -1;
+    struct sockaddr_in my_addr, dest_addr;
+    uint8_t buffer[1024]; // Temp buffer
+    
+    // Setup destination struct
+    memset(&dest_addr, 0, sizeof(dest_addr));
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(UDP_AUDIO_PORT);
 
-    PRINTF("[UDP Client] Starting...\r\n");
+    // Setup own address struct
+    memset(&my_addr, 0, sizeof(my_addr));
+    my_addr.sin_family = AF_INET;
+    my_addr.sin_port = htons(UDP_AUDIO_PORT);
+    my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    // 1. Create Socket
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        PRINTF("[UDP Client] Error: Socket creation failed\r\n");
-        vTaskDelete(NULL);
-    }
+    for (;;)
+    {
+        // Wait for IP address to be acquired.
+       xEventGroupWaitBits(
+            g_wifi_events,           // The Event Group
+            WIFI_EVENT_IP_ACQUIRED, // The Bit to wait for
+            pdFALSE,                 // Don't clear the bit on exit (keep it set for others)
+            pdTRUE,                  // Wait for the bit to be set
+            portMAX_DELAY            // Wait forever
+        );
 
-    // 2. Configure Target (The SoftAP's IP)
-    memset(&target_addr, 0, sizeof(target_addr));
-    target_addr.sin_family = AF_INET;
-    target_addr.sin_port = htons(5000);
-    target_addr.sin_addr.s_addr = inet_addr("192.168.1.1"); 
+        // Configure socket if not already done
+        if (sock < 0) {
+            sock = socket(AF_INET, SOCK_DGRAM, 0);
+            
+            // Listen to UDP_AUDIO_PORT
 
-    while (1) {
-        // 3. Prepare Message
-        sprintf(msg, "COUNTERRERERERERRRRRRRRRRRRRRRRRRRRRRRRRRRERRERERRRRRRRRRRRRRRRRRRERERERRERERERRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRCNTR: %d", counter++);
+            int ret_val = bind(sock, (struct sockaddr *)&my_addr, sizeof(my_addr));
+            if (ret_val != 0) {
+                int error_code = 0;
+                socklen_t len = sizeof(error_code);
+                getsockopt(sock, SOL_SOCKET, SO_ERROR, &error_code, &len);
+                PRINTF("bind() failed. Return: %d, Actual Error: %d\r\n", ret_val, error_code);
+                close(sock);
+                sock = -1;
+                PRINTF("Retrying in %d ms\r\n", SOCKET_RETRY_DELAY_MS);
+                vTaskDelay(pdMS_TO_TICKS(SOCKET_RETRY_DELAY_MS));
+                continue;
+            }
 
-        
-        // 4. Send
-        GPIO_PortToggle(BOARD_INITPINS_LATENCY_GPIO, BOARD_INITPINS_LATENCY_PORT, BOARD_INITPINS_LATENCY_PIN_MASK);
-        GPIO_PortToggle(BOARD_INITPINS_LATENCY_GPIO, BOARD_INITPINS_LATENCY_PORT, BOARD_INITPINS_LATENCY_PIN_MASK);
-        sendto(sock, msg, strlen(msg), 0, (struct sockaddr *)&target_addr, sizeof(target_addr));
-        //PRINTF("[TX] Sent to 192.168.1.1: %s\r\n", msg);
-        
-        vTaskDelay(pdMS_TO_TICKS(5)); // Send every 1000 ms
-    }
-}
+            // Set Timeout (Crucial for bi-directional loop)
+            // Wait 2ms for RX. If nothing, check TX.
+            struct timeval tv = {0, 2000}; 
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-void udp_server_task(void *pvParameters)
-{
-    int sock;
-    struct sockaddr_in server_addr, client_addr;
-    char rx_buffer[512];
-    socklen_t addr_len = sizeof(client_addr);
+            // Configure Target IP based on our Role
+            app_mode_t current_mode = get_app_mode();
+            if (current_mode == MODE_UDP_DONGLE_AUDIO) {
+                // We are AP, send to Headsets (Broadcast or Specific)
+                dest_addr.sin_addr.s_addr = inet_addr(IP_STA);
+            } else if(current_mode == MODE_UDP_HEADSET_AUDIO) {
+                // We are Headset, send to Dongle (Gateway)
+                dest_addr.sin_addr.s_addr = inet_addr(IP_AP);
+            }
+        }
 
-    PRINTF("[UDP Server] Starting on Port 5000...\r\n");
-
-    // 1. Create Socket
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        PRINTF("[UDP Server] Error: Socket creation failed\r\n");
-        vTaskDelete(NULL);
-    }
-
-    // 2. Bind to Port 5000
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(5000);
-    server_addr.sin_addr.s_addr = INADDR_ANY; // Listen on all interfaces
-
-    if (bind(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        PRINTF("[UDP Server] Error: Bind failed\r\n");
-        close(sock);
-        vTaskDelete(NULL);
-    }
-
-    PRINTF("[UDP Server] Listening...\r\n");
-
-    while (1) {
-        // 3. Receive Data (Blocking call)
-        int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0,
-                           (struct sockaddr *)&client_addr, &addr_len);
-        
+        // RX STEP: Check for incoming data
+        int len = recvfrom(sock, buffer, sizeof(buffer), 0, NULL, NULL);
         if (len > 0) {
-            GPIO_PortToggle(BOARD_INITPINS_LATENCY_GPIO, BOARD_INITPINS_LATENCY_PORT, BOARD_INITPINS_LATENCY_PIN_MASK);
-            GPIO_PortToggle(BOARD_INITPINS_LATENCY_GPIO, BOARD_INITPINS_LATENCY_PORT, BOARD_INITPINS_LATENCY_PIN_MASK);
-            rx_buffer[len] = 0; // Null terminate string
-            //PRINTF("RX: %s\r\n", rx_buffer);
-            //PRINTF("[RX] From %s: %s\r\n", inet_ntoa(client_addr.sin_addr), rx_buffer);
+            // Placeholder for received UDP packets...
+            // process_incoming_udp_audio(buffer, len);
+        }
+
+        // TX STEP: Check for Outgoing Audio or Feedback Data
+        // If there is data ready to send, send it now.
+        int tx_len = 0; //get_tx_audio_data(buffer); commented out for now. 
+        if (tx_len > 0) {
+            sendto(sock, buffer, tx_len, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         }
     }
 }

@@ -701,7 +701,7 @@ static bool cli_cmd_scan(char *args)
  */
 static bool cli_cmd_mode(char *args)
 {
-  app_mode_t current_mode = get_current_app_mode();
+  app_mode_t current_mode = get_app_mode();
   app_mode_t target_mode = current_mode;
 
   // Check arguments
