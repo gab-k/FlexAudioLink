@@ -148,8 +148,8 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
     }
 
     // 3. Notify audio task, which queues more data if available.
-    if (audio_task_handle != NULL) {
-      vTaskNotifyGiveFromISR(audio_task_handle, &xHigherPriorityTaskWoken);
+    if (g_audio_task_handle != NULL) {
+      vTaskNotifyGiveFromISR(g_audio_task_handle, &xHigherPriorityTaskWoken);
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
@@ -158,7 +158,7 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
 void audio_task(void *pvParameters)
 {
   // Initialize task handle for the DMA TX complete callback to wake this task up.
-  audio_task_handle = xTaskGetCurrentTaskHandle();
+  g_audio_task_handle = xTaskGetCurrentTaskHandle();
   
   i2s_transfer_t xfer;
   uint16_t buf_level, flight;
