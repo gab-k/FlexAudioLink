@@ -38,18 +38,16 @@ enum {
 
 uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
-// Audio controls
+// Audio controls (Not implemented yet)
 // Current states
 uint8_t mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];   // +1 for master channel 0
 int16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
 
-// Pointer to microphone data buffer
-tu_fifo_t * mic_ff_ptr = NULL;
-tu_fifo_buffer_info_t mic_ff_info;
+// Pointer to microphone data buffer (Not implemented yet)
+tu_fifo_t * g_mic_ff_ptr = NULL;
 
 // Pointer to speaker data buffer
-tu_fifo_t * spk_ff_ptr = NULL;
-tu_fifo_buffer_info_t spk_ff_info;
+tu_fifo_t * g_spk_ff_ptr = NULL;
 
 
 // Resolution per format
@@ -144,7 +142,7 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
     // Only if it was actual data (>0). If it was silence (0), do nothing.
     if (finished_size > 0) 
     {
-      tu_fifo_advance_read_pointer(spk_ff_ptr, finished_size);
+      tu_fifo_advance_read_pointer(g_spk_ff_ptr, finished_size);
     }
 
     // 3. Notify audio task, which queues more data if available.
@@ -156,11 +154,9 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
 }
         
 void audio_task(void *pvParameters)
-{
-  // Initialize task handle for the DMA TX complete callback to wake this task up.
-  g_audio_task_handle = xTaskGetCurrentTaskHandle();
-  
+{  
   i2s_transfer_t xfer;
+  tu_fifo_buffer_info_t spk_ff_info;
   uint16_t buf_level, flight;
   static float smoothed_level = 0.0f; 
   const float ALPHA = 0.1f; // 0.1 (smooth) to 0.5 (reactive)
@@ -170,8 +166,14 @@ void audio_task(void *pvParameters)
     // Wait for ISR notification or timeout
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2));
 
+    // Enter critical section because g_spk_ff_ptr could be changed by mode switch
     taskENTER_CRITICAL();
-    buf_level = tud_audio_available();
+    if (g_spk_ff_ptr == NULL) {
+      // Speaker FIFO not yet initialized or set to NULL due to mode switch
+      taskEXIT_CRITICAL();
+      continue;
+    }
+    buf_level = tu_fifo_count(g_spk_ff_ptr);
     taskEXIT_CRITICAL();
 
     // Apply Moving Average (Low Pass Filter)
@@ -195,12 +197,17 @@ void audio_task(void *pvParameters)
 
       // 2. Get buffer information inside critical section
       taskENTER_CRITICAL();
-      // Total available bytes in TinyUSB speaker buffer
-      buf_level = tud_audio_available();
+      // Mode switch could have happened while we were calculating smoothed_level above.
+      if (g_spk_ff_ptr == NULL) {
+          taskEXIT_CRITICAL();
+          break; // Break inner loop, go back to top
+      }
+      // Total available bytes in speaker buffer
+      buf_level = tu_fifo_count(g_spk_ff_ptr);
       // Total bytes currently "in flight" in the I2S DMA queue
       flight = size_q_get_bytes_in_flight();
       // Retrieve FIFO info which includes read pointers and lengths
-      tu_fifo_get_read_info(spk_ff_ptr, &spk_ff_info);
+      tu_fifo_get_read_info(g_spk_ff_ptr, &spk_ff_info);
       taskEXIT_CRITICAL();
 
       // 3. Handle states
@@ -768,8 +775,8 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
     blink_interval_ms = BLINK_STREAMING;
     
     // Get FIFO pointers
-    spk_ff_ptr = tud_audio_get_ep_out_ff();
-    mic_ff_ptr = tud_audio_get_ep_in_ff();
+    g_spk_ff_ptr = tud_audio_get_ep_out_ff();
+    g_mic_ff_ptr = tud_audio_get_ep_in_ff();
   }
 
   // Clear buffer when streaming format is changed
