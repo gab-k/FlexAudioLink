@@ -30,8 +30,8 @@ mcux_add_source(
             cli.h
             wifi_app.c
             wifi_app.h
-            udp_tasks.c
-            udp_tasks.h
+            udp.c
+            udp.h
             mode.c
             mode.h
 
