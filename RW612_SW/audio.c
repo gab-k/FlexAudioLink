@@ -20,7 +20,9 @@ enum {
   BLINK_MOUNTED = 1000,
   BLINK_SUSPENDED = 2500,
 };
+uint32_t g_blink_interval_ms = BLINK_NOT_MOUNTED;
 
+// Volume/Mute related audio controls (Not implemented yet)
 enum {
   VOLUME_CTRL_0_DB = 0,
   VOLUME_CTRL_10_DB = 2560,
@@ -36,18 +38,9 @@ enum {
   VOLUME_CTRL_SILENCE = 0x8000,
 };
 
-uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
-
-// Audio controls (Not implemented yet)
 // Current states
 uint8_t mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];   // +1 for master channel 0
 int16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
-
-// Pointer to microphone data buffer (Not implemented yet)
-tu_fifo_t * g_mic_ff_ptr = NULL;
-
-// Pointer to speaker data buffer
-tu_fifo_t * g_spk_ff_ptr = NULL;
 
 
 // Resolution per format
@@ -73,6 +66,12 @@ typedef enum {
     AUDIO_STATE_PLAYING
 } audio_state_t;
 
+// These are the active FIFOs used by the audio task and ISR
+// Depending on mode these point to different FIFOs
+// When reset or not initialized, they are NULL
+static tu_fifo_t * spk_ff = NULL;
+static tu_fifo_t * mic_ff = NULL;
+
 // Audio state and buffer level
 // Used by feedback controller and for state management inside audio task
 volatile audio_state_t g_audio_state = AUDIO_STATE_BUFFERING;
@@ -91,6 +90,7 @@ TaskHandle_t g_audio_fb_task_handle = NULL;
 // ----------------------------------------------------------------+
 
 // --- Helpers ---
+static void audio_feedback_forward_metric(uint32_t value_16_16);
 
 // This calculates how much data is currently "owned" by the DMA
 static inline uint16_t size_q_get_bytes_in_flight(void)
@@ -130,6 +130,14 @@ static uint32_t size_q_pop(void) {
   return size;
 }
 
+static void size_q_clear(void) {
+    queue_wr_idx = 0;
+    queue_rd_idx = 0;
+    for (int i = 0; i < SIZE_Q_DEPTH; i++) {
+        dma_size_queue[i] = 0;
+    }
+}
+
 void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t completionStatus, void *userData)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -138,11 +146,18 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
     // Also clears the size entry in the queue.
     uint32_t finished_size = size_q_pop();
 
+    // 2. Check for NULL pointer
+    if (spk_ff == NULL) {
+      // No active speaker FIFO, should not happen.
+      configASSERT(false); 
+      return;
+    }
+
     // 2. Advance the read pointer/index of TinyUSB buffer.
     // Only if it was actual data (>0). If it was silence (0), do nothing.
     if (finished_size > 0) 
     {
-      tu_fifo_advance_read_pointer(g_spk_ff_ptr, finished_size);
+      tu_fifo_advance_read_pointer(spk_ff, finished_size);
     }
 
     // 3. Notify audio task, which queues more data if available.
@@ -156,8 +171,8 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
 void audio_task(void *pvParameters)
 {  
   i2s_transfer_t xfer;
-  tu_fifo_buffer_info_t spk_ff_info;
   uint16_t buf_level, flight;
+  tu_fifo_buffer_info_t spk_ff_info;
   static float smoothed_level = 0.0f; 
   const float ALPHA = 0.1f; // 0.1 (smooth) to 0.5 (reactive)
 
@@ -166,14 +181,17 @@ void audio_task(void *pvParameters)
     // Wait for ISR notification or timeout
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2));
 
-    // Enter critical section because g_spk_ff_ptr could be changed by mode switch
-    taskENTER_CRITICAL();
-    if (g_spk_ff_ptr == NULL) {
-      // Speaker FIFO not yet initialized or set to NULL due to mode switch
-      taskEXIT_CRITICAL();
+    // Pass address of FIFO pointers, as its pass by-value in C
+    get_active_fifos(&spk_ff, &mic_ff);
+
+    // Speaker FIFO pointer will be NULL if not yet initialized or set to NULL due to mode switch
+    if (spk_ff == NULL) {
       continue;
     }
-    buf_level = tu_fifo_count(g_spk_ff_ptr);
+
+    // Enter critical section because spk_ff_ptr could be changed by mode switch
+    taskENTER_CRITICAL();
+    buf_level = tu_fifo_count(spk_ff);
     taskEXIT_CRITICAL();
 
     // Apply Moving Average (Low Pass Filter)
@@ -197,17 +215,12 @@ void audio_task(void *pvParameters)
 
       // 2. Get buffer information inside critical section
       taskENTER_CRITICAL();
-      // Mode switch could have happened while we were calculating smoothed_level above.
-      if (g_spk_ff_ptr == NULL) {
-          taskEXIT_CRITICAL();
-          break; // Break inner loop, go back to top
-      }
       // Total available bytes in speaker buffer
-      buf_level = tu_fifo_count(g_spk_ff_ptr);
+      buf_level = tu_fifo_count(spk_ff);
       // Total bytes currently "in flight" in the I2S DMA queue
       flight = size_q_get_bytes_in_flight();
       // Retrieve FIFO info which includes read pointers and lengths
-      tu_fifo_get_read_info(g_spk_ff_ptr, &spk_ff_info);
+      tu_fifo_get_read_info(spk_ff, &spk_ff_info);
       taskEXIT_CRITICAL();
 
       // 3. Handle states
@@ -334,7 +347,7 @@ void audio_fb_task(void *pvParameters)
       // 16.16 Fixed Point
       feedback_value = (uint32_t)(samples_per_frame * 65536.0f);
 
-      tud_audio_fb_set(feedback_value);
+      audio_feedback_forward_metric(feedback_value);
 
       #if AUDIO_DEBUG_LVL > 0
       if (count % 20 == 0)
@@ -351,18 +364,73 @@ void audio_fb_task(void *pvParameters)
   }
 }
 
+/**
+ * @brief Routes the calculated feedback value to either its own USB 
+ * endpoint or alternatively to the dongle's USB endpoint via UDP.
+ * @details Checks the global application mode and calls the 
+ * appropriate feedback mechanism. For USB, it updates the endpoint.
+ * For UDP, it queues a control packet.
+ * * @param value_16_16 The calculated feedback value in 16.16 fixed-point format.
+ * (e.g., relative to the sample rate).
+ */
+static void audio_feedback_forward_metric(uint32_t value_16_16)
+{
+    // Check the current application mode to decide where to send feedback
+    app_mode_t current_mode = get_app_mode();
+
+    switch (current_mode)
+    {
+        case MODE_USB_AUDIO:
+            // Send directly via USB feedback endpoint
+            tud_audio_fb_set(value_16_16);
+            break;
+
+        case MODE_UDP_HEADSET_AUDIO:
+            // Forward feedback metric via UDP to the dongle which then sets its USB endpoint
+            // udp_queue_feedback(value_16_16); TODO: Implement
+            break;
+
+        case MODE_UDP_DONGLE_AUDIO:
+            // The dongle doesn't forward the feedback, it sets the USB endpoint but does not
+            // forward the metric itself. The feedback metric is received via UDP from the headset.
+            configASSERT(false); // Should not be reached in normal operation
+            break;
+
+        default:
+            break;
+    }
+}
+
+void audio_reset_state(void)
+{
+    // Ensure audio task is stopped before touching shared resources.
+    // Safe to call even if already suspended. Don't call from audio task, it would suspend itself.
+    vTaskSuspend(g_audio_task_handle);
+
+    // 1. Hard Stop DMA
+    I2S_TransferAbortDMA(FLEXCOMM0_PERIPHERAL, &FLEXCOMM0_Tx_DMA_Handle);
+
+    // 2. Clear Queue
+    size_q_clear();
+
+    // 3. Nullify pointers
+    spk_ff = NULL;
+    mic_ff = NULL;
+}
+
+
 //--------------------------------------------------------------------+
 // Device callbacks
 //--------------------------------------------------------------------+
 
 // Invoked when device is mounted
 void tud_mount_cb(void) {
-  blink_interval_ms = BLINK_MOUNTED;
+  g_blink_interval_ms = BLINK_MOUNTED;
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void) {
-  blink_interval_ms = BLINK_NOT_MOUNTED;
+  g_blink_interval_ms = BLINK_NOT_MOUNTED;
 }
 
 // Invoked when usb bus is suspended
@@ -370,12 +438,12 @@ void tud_umount_cb(void) {
 // Within 7ms, device must draw an average of current less than 2.5 mA from bus
 void tud_suspend_cb(bool remote_wakeup_en) {
   (void) remote_wakeup_en;
-  blink_interval_ms = BLINK_SUSPENDED;
+  g_blink_interval_ms = BLINK_SUSPENDED;
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void) {
-  blink_interval_ms = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
+  g_blink_interval_ms = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
 }
 
 //--------------------------------------------------------------------+
@@ -759,7 +827,7 @@ bool tud_audio_set_itf_close_ep_cb(uint8_t rhport, tusb_control_request_t const 
   uint8_t const alt = tu_u16_low(tu_le16toh(p_request->wValue));
 
   if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt == 0) {
-    blink_interval_ms = BLINK_MOUNTED;
+    g_blink_interval_ms = BLINK_MOUNTED;
   }
 
   return true;
@@ -772,11 +840,7 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 
   TU_LOG2("Set interface %d alt %d\r\n", itf, alt);
   if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt != 0) {
-    blink_interval_ms = BLINK_STREAMING;
-    
-    // Get FIFO pointers
-    g_spk_ff_ptr = tud_audio_get_ep_out_ff();
-    g_mic_ff_ptr = tud_audio_get_ep_in_ff();
+    g_blink_interval_ms = BLINK_STREAMING;
   }
 
   // Clear buffer when streaming format is changed

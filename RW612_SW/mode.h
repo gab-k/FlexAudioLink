@@ -22,6 +22,7 @@ const char* get_app_mode_name(app_mode_t mode);
 bool set_current_app_mode(app_mode_t new_mode);
 app_mode_t get_app_mode(void);
 usb_desc_profile_t get_usb_profile_for_mode(app_mode_t mode);
+void get_active_fifos(tu_fifo_t **spk_ff_ptr, tu_fifo_t **mic_ff_ptr);
 
 
 

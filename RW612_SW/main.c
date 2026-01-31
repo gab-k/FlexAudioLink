@@ -26,6 +26,7 @@
 #include "audio.h"
 #include "cli.h"
 #include "wifi_app.h"
+#include "udp_tasks.h"
 
 /* TinyUSB includes */
 #include "tusb.h"
@@ -52,7 +53,7 @@ static void blink_task(void *pvParameters);
 /*******************************************************************************
  * Variables
  ******************************************************************************/
-extern uint32_t blink_interval_ms;
+extern uint32_t g_blink_interval_ms;
 
 /*******************************************************************************
  * Code
@@ -65,6 +66,9 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
     
+    // Initialize UDP audio FIFOs in any case, even when UDP audio is not used.
+    udp_audio_ff_init();
+
     // Create USB device task.
     if (xTaskCreate(usb_device_task, "usbd", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, NULL) != pdPASS)
     {
@@ -145,8 +149,8 @@ static void blink_task(void *pvParameters)
         // Toggle First
         GPIO_PortToggle(GPIO, BOARD_INITLEDPINS_LED_GREEN_PORT, BOARD_INITLEDPINS_LED_GREEN_PIN_MASK);
 
-        // Delay for blink_interval_ms milliseconds
-        delay_ticks = pdMS_TO_TICKS(blink_interval_ms);
+        // Delay for g_blink_interval_ms milliseconds
+        delay_ticks = pdMS_TO_TICKS(g_blink_interval_ms);
         configASSERT(delay_ticks > 0);
         vTaskDelay(delay_ticks);
     }

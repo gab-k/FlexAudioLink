@@ -4,10 +4,12 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "peripherals.h"
+#include "mode.h"
 
 void audio_task(void *pvParameters);
 void audio_fb_task(void *pvParameters);
 void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t completionStatus, void *userData);
+void audio_reset_state(void);
 
 extern TaskHandle_t g_audio_task_handle;
 extern TaskHandle_t g_audio_fb_task_handle;
