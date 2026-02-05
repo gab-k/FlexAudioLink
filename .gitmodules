@@ -1,8 +1,4 @@
-[submodule "STM32_SW/Appli/tinyusb"]
-	path = STM32_SW/Appli/tinyusb
-	url = https://github.com/hathach/tinyusb.git
-	branch = master
-[submodule "RW612_SW/tinyusb"]
-	path = RW612_SW/tinyusb
+[submodule "firmware/tinyusb"]
+	path = firmware/tinyusb
 	url = https://github.com/hathach/tinyusb.git
 	branch = master
