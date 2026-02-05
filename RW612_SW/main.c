@@ -86,7 +86,7 @@ int main(void)
     g_wifi_events = xEventGroupCreate();
 
     // Create UDP task.
-    if(xTaskCreate(udp_task, "udp_tx", 2048 / sizeof(StackType_t), NULL, udp_task_PRIORITY, &g_udp_task_handle) != pdPASS)
+    if(xTaskCreate(udp_task, "udp", 32768 / sizeof(StackType_t), NULL, udp_task_PRIORITY, &g_udp_task_handle) != pdPASS)
     {
         PRINTF("udp task creation failed!.\r\n");
         while (1);

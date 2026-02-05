@@ -8,14 +8,23 @@
 
 TaskHandle_t g_udp_task_handle = NULL;
 
-#define UDP_SPK_BUF_SIZE   2048
-#define UDP_MIC_BUF_SIZE   2048
+// TODO: Revise all the buffer sizes in this file and #define them
+// TODO: Consider making buffer sizes configurable via cli.
+
+#define UDP_SPK_BUF_SIZE   8192
+#define UDP_MIC_BUF_SIZE   8192
+
+#define UDP_SPK_AUDIO_PAYLOAD_SIZE (UDP_SPK_BUF_SIZE/4)
+#define UDP_MIC_AUDIO_PAYLOAD_SIZE (UDP_MIC_BUF_SIZE/4)
 
 TU_ATTR_ALIGNED(4) static uint8_t udp_spk_buf[UDP_SPK_BUF_SIZE];
 TU_ATTR_ALIGNED(4) static uint8_t udp_mic_buf[UDP_MIC_BUF_SIZE];
 
 static tu_fifo_t udp_spk_ff;
 static tu_fifo_t udp_mic_ff;
+
+static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode);
+static int udp_process_tx(uint8_t *buffer, app_mode_t mode);
 
 void udp_audio_ff_init(void)
 {
@@ -35,7 +44,9 @@ tu_fifo_t* udp_get_mic_fifo(void) {
     return &udp_mic_ff;
 }
 
-/// UDP Header structure, in case of audio stream data transmission, the data follows this header!
+// UDP Header structure, data follows this header!
+// For audio packets, raw PCM data is appended after this header.
+// For feedback packets, the data following the header is a 16.16 fixed-point value.
 typedef struct {
     // [Byte 0] Message Type
     // 0 = Audio Stream (Payload is raw PCM appended after this header)
@@ -51,13 +62,6 @@ typedef struct {
     // [Bytes 2-3] Sequence Number
     // Used to detect packet loss, out-of-order packets.
     uint16_t sequence;
-    
-    // [Bytes 4-7] Generic Payload
-    // For Feedback: 16.16 Fixed point sample rate adjustment value.
-    // For Volume Cmd: The volume level.
-    // For Audio: Length of data following this header.
-    uint32_t payload;
-
 } udp_header_t;
 
 typedef enum {
@@ -72,8 +76,17 @@ void udp_task(void *pvParameters)
 {
     int sock = -1;
     struct sockaddr_in my_addr, dest_addr;
-    uint8_t buffer[1024]; // Temp buffer
-    
+    uint8_t rx_buffer[1500];
+    uint8_t tx_buffer[1500];
+
+    // Cache variables to track state changes
+    app_mode_t current_mode;
+    app_mode_t cached_mode = MODE_IDLE; 
+
+    // Pre-calculate IP addresses as integers (Avoids string parsing in the loop)
+    const uint32_t ip_addr_ap  = inet_addr(IP_AP);
+    const uint32_t ip_addr_sta = inet_addr(IP_STA);
+
     // Setup destination struct
     memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
@@ -119,50 +132,123 @@ void udp_task(void *pvParameters)
             // Wait 2ms for RX. If nothing, check TX.
             struct timeval tv = {0, 2000}; 
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        }
 
-            // Configure Target IP based on our Role
-            app_mode_t current_mode = get_app_mode();
+        // Configure Target IP based on our Role
+        // Only update dest_addr if the mode has changed!
+        current_mode = get_app_mode();
+        if (current_mode != cached_mode) {
             if (current_mode == MODE_UDP_DONGLE_AUDIO) {
-                // We are AP, send to Headsets (Broadcast or Specific)
-                dest_addr.sin_addr.s_addr = inet_addr(IP_STA);
-            } else if(current_mode == MODE_UDP_HEADSET_AUDIO) {
-                // We are Headset, send to Dongle (Gateway)
-                dest_addr.sin_addr.s_addr = inet_addr(IP_AP);
+                dest_addr.sin_addr.s_addr = ip_addr_sta;
+            } else {
+                dest_addr.sin_addr.s_addr = ip_addr_ap;
             }
+            cached_mode = current_mode;
         }
 
-        // RX STEP: Check for incoming data
-        int len = recvfrom(sock, buffer, sizeof(buffer), 0, NULL, NULL);
+        // RX STEP: Block with timeout (2ms)
+        int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0, NULL, NULL);
         if (len > 0) {
-
-            udp_header_t *hdr = (udp_header_t*)buffer;
-            uint8_t *audio_data = &buffer[sizeof(udp_header_t)];
-            
-            switch (hdr->type)
-            {
-            case UDP_DATATYPE_SPEAKER_AUDIO:
-                tu_fifo_write_n(&udp_spk_ff, audio_data, len - sizeof(udp_header_t));
-                break;
-            case UDP_DATATYPE_MIC_AUDIO:
-                tu_fifo_write_n(&udp_mic_ff, audio_data, len - sizeof(udp_header_t));
-                break;
-            case UDP_DATATYPE_FEEDBACK:
-                tud_audio_fb_set(hdr->payload);
-                break;
-            case UDP_DATATYPE_COMMAND:
-                // TODO: Implement command handling (Mute, Volume, Play/Pause)
-                break;
-            default:
-                PRINTF("Unknown UDP Data Type: %d\r\n", hdr->type);
-                break;
-            }
+            udp_process_rx(rx_buffer, len, current_mode);
         }
 
-        // TX STEP: Check for Outgoing Audio or Feedback Data
-        // If there is data ready to send, send it now.
-        int tx_len = 0; //get_tx_audio_data(buffer); commented out for now. 
+        // TX STEP: Check if there is anything to send
+        int tx_len = udp_process_tx(tx_buffer, current_mode);
+        // Perform the Send
         if (tx_len > 0) {
-            sendto(sock, buffer, tx_len, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            sendto(sock, tx_buffer, tx_len, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
         }
     }
+}
+
+
+// ---------------------------------------------------------
+// RX PROCESSOR: Validates and Routes Incoming Data
+// ---------------------------------------------------------
+static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
+{
+    if (len < sizeof(udp_header_t)) 
+    {
+        PRINTF("Received packet too small: %d bytes\r\n", len);
+        configASSERT(false);
+        return;
+    }
+
+    udp_header_t *p_hdr = (udp_header_t*)buffer;
+    uint8_t *p_payload = &buffer[sizeof(udp_header_t)];
+    int payload_len = len - sizeof(udp_header_t);
+
+    switch (p_hdr->type)
+    {
+    case UDP_DATATYPE_SPEAKER_AUDIO:
+        // Only HEADSET should receive Speaker Audio (from Dongle)
+        if (mode == MODE_UDP_HEADSET_AUDIO) {
+            tu_fifo_write_n(&udp_spk_ff, p_payload, payload_len);
+        } else {
+            PRINTF("[Error] Received speaker audio when not in headset mode!\r\n");
+            configASSERT(false);
+        }
+        break;
+
+    case UDP_DATATYPE_MIC_AUDIO:
+        // Only DONGLE should receive Mic Audio (from Headset)
+        if (mode == MODE_UDP_DONGLE_AUDIO) {
+            tu_fifo_write_n(&udp_mic_ff, p_payload, payload_len);
+        } else {
+            PRINTF("[Error] Received mic audio when not in dongle mode!\r\n");
+            configASSERT(false);
+        }
+        break;
+
+    case UDP_DATATYPE_FEEDBACK:
+        // Only DONGLE should receive Feedback (to sync with USB Host)
+        if (mode == MODE_UDP_DONGLE_AUDIO) {
+            uint32_t feedback_val;
+            memcpy(&feedback_val, p_payload, sizeof(uint32_t));
+            tud_audio_fb_set(feedback_val);
+        } else {
+            // A Headset receiving feedback implies a logic error on the sender
+            PRINTF("[Error] Received Feedback packet when not in dongle mode!\r\n");
+            configASSERT(false);
+        }
+        break;
+
+    case UDP_DATATYPE_COMMAND:
+        // TODO: Implement command processing
+        // Both might handle commands, or specific ones
+        // process_command(p_hdr, p_payload);
+        break;
+
+    default:
+        PRINTF("Unknown UDP Type: %d\r\n", p_hdr->type);
+        configASSERT(false);
+        break;
+    }
+}
+
+// ---------------------------------------------------------
+// TX PROCESSOR: Checks Sources and Sends Data
+// ---------------------------------------------------------
+static int udp_process_tx(uint8_t *buffer, app_mode_t mode)
+{
+    udp_header_t *p_hdr = (udp_header_t*)buffer;
+    uint8_t *p_payload = &buffer[sizeof(udp_header_t)];
+    int tx_len = 0;
+
+    if (mode == MODE_UDP_DONGLE_AUDIO)
+    {
+        // Check if there is USB Audio available for sending to headset.
+        uint16_t available = tud_audio_available();
+        if (available >= 1024) 
+        {
+            p_hdr->type = UDP_DATATYPE_SPEAKER_AUDIO;
+            uint16_t read = tud_audio_read(p_payload, 1024);
+            tx_len = sizeof(udp_header_t) + read;
+        }
+    }
+    else if (mode == MODE_UDP_HEADSET_AUDIO)
+    {
+        // TODO: Implement Uplink Mic Audio and Feedback sending.
+    }
+    return tx_len;
 }

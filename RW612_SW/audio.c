@@ -1,5 +1,7 @@
 #include "audio.h"
 
+// TODO: Seperate I2S related playback/record code and USB related audio callbacks into different files.
+
 // ----------------------------------------------------------------+
 // Audio Variables
 // ----------------------------------------------------------------+
@@ -48,11 +50,6 @@ const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {CFG_TUD_
 // Current resolution, update on format change
 uint8_t current_resolution;
 
-
-// --- Constants ---
-#define AUDIO_HALF_BUFFER_SIZE  (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 2)
-#define START_THRESHOLD         (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 4)  // Wait for 50% fill before starting
-#define MINIMUM_DMA_BLOCK_SIZE  (CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ / 4)  
 
 // --- Parallel Size Queue (Task -> ISR) ---
 // Must be at least as deep as the I2S driver queue (usually 4)
@@ -168,6 +165,7 @@ void I2S_TX_DMA_Callback(I2S_Type *base, i2s_dma_handle_t *handle, status_t comp
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
         
+// Todo: Rename into something clearer that this is used for playback/recording and CODEC related.
 void audio_task(void *pvParameters)
 {  
   i2s_transfer_t xfer;
@@ -175,6 +173,11 @@ void audio_task(void *pvParameters)
   tu_fifo_buffer_info_t spk_ff_info;
   static float smoothed_level = 0.0f; 
   const float ALPHA = 0.1f; // 0.1 (smooth) to 0.5 (reactive)
+
+  uint16_t fifo_depth;
+  uint16_t start_threshold;
+  uint16_t min_dma_block_size;
+  uint16_t max_dma_len;
 
   for (;;)
   {
@@ -188,6 +191,18 @@ void audio_task(void *pvParameters)
     if (spk_ff == NULL) {
       continue;
     }
+
+    // Calculate thresholds based on the actual FIFO size they can differ depending on mode.
+    fifo_depth = tu_fifo_depth(spk_ff);
+    
+    // Start playing when buffer is 50% full
+    start_threshold = fifo_depth / 2; 
+    
+    // Minimum transfer to avoid tiny DMA interrupts overhead
+    min_dma_block_size = 224;
+    
+    // Max transfer size
+    max_dma_len = 448;
 
     // Enter critical section because spk_ff_ptr could be changed by mode switch
     taskENTER_CRITICAL();
@@ -225,10 +240,10 @@ void audio_task(void *pvParameters)
 
       // 3. Handle states
       if (g_audio_state == AUDIO_STATE_BUFFERING) {
-        if (buf_level >= START_THRESHOLD) {
+        if (buf_level >= start_threshold) {
           // Switch to PLAYING state if there is enough data  
           g_audio_state = AUDIO_STATE_PLAYING;
-          PRINTF("\nPLAY\n");
+          PRINTF("\nP\n");
         }
         else {
           // Stay in BUFFERING state, exit loop
@@ -238,11 +253,11 @@ void audio_task(void *pvParameters)
         if (buf_level == 0) {
           // Switch to BUFFERING state if there is no data available
           g_audio_state = AUDIO_STATE_BUFFERING;
-          PRINTF("\nBUF\n");
+          PRINTF("\nB\n");
           // Also exit loop, because no data needs to be queued
           break;
         }
-        else if(buf_level < MINIMUM_DMA_BLOCK_SIZE){
+        else if(buf_level < min_dma_block_size){
           // Exit loop when the available amount of data is too small
           // this is done so the DMA transfers have a sensible size.
           break;
@@ -279,8 +294,8 @@ void audio_task(void *pvParameters)
         dma_len = spk_ff_info.wrapped.len - offset;
       }
 
-      // 7. Limit dma_len to AUDIO_HALF_BUFFER_SIZE
-      if (dma_len > AUDIO_HALF_BUFFER_SIZE) dma_len = AUDIO_HALF_BUFFER_SIZE;
+      // 7. Limit dma_len to max_dma_len
+      if (dma_len > max_dma_len) dma_len = max_dma_len;
 
       // 8. Set transfer pointer and size
       xfer.data = dma_ptr;
@@ -328,7 +343,7 @@ void audio_fb_task(void *pvParameters)
       #endif
 
       // 1. Calculate Error
-      int16_t error = AUDIO_HALF_BUFFER_SIZE - g_audio_buf_level;
+      int16_t error = tu_fifo_depth(spk_ff)/2 - g_audio_buf_level;
 
       // 2. PI Calculation
       proportional = KP * error;
