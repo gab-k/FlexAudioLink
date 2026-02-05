@@ -1,3 +1,8 @@
+# Setup audio devices via pyaudiowpatch and optionally record a test .wav file.
+# Initializes a UDP client to stream data to a target IP.
+# Note: The UDP loop is currently configured to send generated test integers
+# (for network debugging) rather than the live audio stream.
+
 import pyaudiowpatch
 import wave
 import sys

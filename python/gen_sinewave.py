@@ -1,3 +1,8 @@
+# Utility for testing/debugging purposes,
+# generates a stereo sine wave (PCM 16-bit),
+# plots it, saves it to a file, and prints
+# a formatted C-style uint8_t array.
+
 import numpy as np
 import matplotlib.pyplot as plt
 import struct
