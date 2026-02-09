@@ -12,7 +12,10 @@
       "toolchainFile": "$env{SdkRootDirPath}/mcuxsdk/cmake/toolchain/armgcc.cmake",
       "inherits": "flash_debug-env",
       "cacheVariables": {
-        "APP_DIR": "${fileDir}",
+        "APP_DIR": {
+          "value": "${fileDir}",
+          "type": "PATH"
+        },
         "CMAKE_BUILD_TYPE": "flash_debug",
         "SdkRootDirPath": "$env{SdkRootDirPath}/mcuxsdk",
         "CONFIG_TOOLCHAIN": "armgcc",
@@ -32,7 +35,10 @@
       "toolchainFile": "$env{SdkRootDirPath}/mcuxsdk/cmake/toolchain/armgcc.cmake",
       "inherits": "flash_release-env",
       "cacheVariables": {
-        "APP_DIR": "${fileDir}",
+        "APP_DIR": {
+          "value": "${fileDir}",
+          "type": "PATH"
+        },
         "CMAKE_BUILD_TYPE": "flash_release",
         "SdkRootDirPath": "$env{SdkRootDirPath}/mcuxsdk",
         "CONFIG_TOOLCHAIN": "armgcc",

@@ -5,7 +5,7 @@
   "trustZoneType": "none",
   "multicoreType": "none",
   "projectType": "sdk-v2-freestanding",
-  "projectName": "RW612_SW",
+  "projectName": "FlexAudioLink",
   "sdk": {
     "path": "c:\\NXP\\mcuxsdk",
     "version": "25.12.0",
