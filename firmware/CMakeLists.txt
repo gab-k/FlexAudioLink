@@ -9,7 +9,7 @@ include(${SdkRootDirPath}/cmake/extension/mcux.cmake)
 
 file(RELATIVE_PATH BOARD_REL_PATH "${SdkRootDirPath}" "${CMAKE_CURRENT_SOURCE_DIR}")
 
-project(rw612_sw LANGUAGES C CXX ASM PROJECT_BOARD_PORT_PATH ${BOARD_REL_PATH})
+project(FlexAudioLink LANGUAGES C CXX ASM PROJECT_BOARD_PORT_PATH ${BOARD_REL_PATH})
 
 include(${SdkRootDirPath}/CMakeLists.txt)
 
