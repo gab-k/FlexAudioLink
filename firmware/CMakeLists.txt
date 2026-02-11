@@ -16,9 +16,7 @@ include(${SdkRootDirPath}/CMakeLists.txt)
 
 mcux_add_source(
     SOURCES 
-            # Regular application files
-            main.c
-            audio.c
+            # HW config related
             peripherals.c
             peripherals.h
             clock_config.c
@@ -26,6 +24,10 @@ mcux_add_source(
             hardware_init.c
             pin_mux.c
             pin_mux.h
+            
+            # Application related
+            main.c
+            audio.c
             cli.c
             cli.h
             wifi_app.c
@@ -35,7 +37,11 @@ mcux_add_source(
             mode.c
             mode.h
 
-            # FreeRTOS configuration files
+            # LwIP related
+            lwipopts.h
+            lwippools.h
+
+            # FreeRTOS related
             FreeRTOSConfig.h
             FreeRTOSConfigBoard.h
             
