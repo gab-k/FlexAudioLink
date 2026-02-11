@@ -74,7 +74,7 @@ void sys_mark_tcpip_thread(void);
 
 #define TCPIP_THREAD_NAME      "tcp/ip"
 #define TCPIP_THREAD_STACKSIZE 768
-#define TCPIP_THREAD_PRIO      2
+#define TCPIP_THREAD_PRIO      (configMAX_PRIORITIES - 3)
 #ifdef CONFIG_NETWORK_HIGH_PERF
 #define TCPIP_MBOX_SIZE 64
 #else
@@ -93,7 +93,7 @@ void sys_mark_tcpip_thread(void);
  * NETCONN_UDP. The queue size value itself is platform-dependent, but is passed
  * to sys_mbox_new() when the recvmbox is created.
  */
-#define DEFAULT_UDP_RECVMBOX_SIZE 12
+#define DEFAULT_UDP_RECVMBOX_SIZE 32
 
 /**
  * DEFAULT_TCP_RECVMBOX_SIZE: The mailbox size for the incoming packets on a

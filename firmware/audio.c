@@ -262,6 +262,11 @@ void audio_task(void *pvParameters)
           // this is done so the DMA transfers have a sensible size.
           break;
         }
+        // TODO: Remove when finished with debugging
+        // else if(buf_level > (9*fifo_depth)/10) {
+        //   configASSERT(false);
+        //   break;
+        // }
       }
 
       // 4. Safety Checks

@@ -62,19 +62,42 @@ void wifi_task(void *pvParameters)
 }
 
 static void start_ap(void){
+    // Force 20MHz for better SNR/Wall penetration
+    if(wlan_uap_set_bandwidth(1) != WPLRET_SUCCESS) {
+        PRINTF("Failed to set AP bandwidth\r\n");
+    }
+
+    // Start AP
     wpl_ret_t err = WPLRET_FAIL;
     err = WPL_Start_AP(SSID_AP, PASSWORD_AP, WLAN_CHANNEL);
     if (err == WPLRET_SUCCESS) {
-        PRINTF("SoftAP Started. Optimizing for Latency...\r\n");
-        
-        // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
-        wlan_uap_ampdu_tx_disable();
-        wlan_uap_ampdu_rx_disable();
-
-        // Confirm our own IP (Should be 192.168.1.1)
-        wait_for_ip_address(0); // 0 = AP Mode
-    } else {
+        PRINTF("SoftAP Started.");
+    }
+    else {
         PRINTF("WPL_Start_AP() Start Failed: %d\r\n", err);
+    }
+      
+    // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
+    // Disable TX Aggregation: Send frames immediately, don't batch.
+    wlan_uap_ampdu_tx_disable();
+    // Disable RX Aggregation: Process incoming frames one-by-one.
+    wlan_uap_ampdu_rx_disable();
+        
+    // Confirm our own IP (Should be 192.168.1.1)
+    wait_for_ip_address(0); // 0 = AP Mode
+        
+    // Set RTS threshold > 2346 (max packet size).
+    // Effectively disables RTS/CTS handshake overhead for all packets.
+    PRINTF("Waiting for Headset to connect to apply RTS Optimization...\r\n");
+    while (1) {
+        // Try to set RTS threshold
+        if (wlan_set_uap_rts(2347) == WM_SUCCESS) {
+            PRINTF("Success: RTS Threshold set to 2347 (Disabled).\r\n");
+            break;
+        }
+        
+        // If failed, it means no client/STA is connected yet. Wait and retry.
+        vTaskDelay(pdMS_TO_TICKS(2000)); 
     }
 }
 
@@ -99,11 +122,25 @@ static void start_sta(void){
     {
         PRINTF("Connected. Optimizing for Latency...\r\n");
         // Disable Power Save (Crucial: Stops AP from buffering data)
-        wlan_ieeeps_off();
+        if (wlan_ieeeps_off() != WPLRET_SUCCESS) {
+            PRINTF("Failed to disable Power Save mode\r\n");
+        }
 
-        // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
+        // Disable Aggregate MAC Protocol Data Unit (AMPDU) for both RX and TX.
+        // Disable TX Aggregation: Send frames immediately, don't batch.
         wlan_sta_ampdu_tx_disable();
+        // Disable RX Aggregation: Process incoming frames one-by-one.
         wlan_sta_ampdu_rx_disable();
+
+        if (wlan_set_roaming(0, 0) != WPLRET_SUCCESS) {
+            PRINTF("Failed to disable roaming\r\n");
+        }
+
+        // Set RTS threshold > 2346 (max packet size).
+        // Effectively disables RTS/CTS handshake overhead for all packets.
+        if(wlan_set_rts(2347) != WPLRET_SUCCESS) {
+            PRINTF("Failed to set RTS threshold\r\n");
+        }
 
         wait_for_ip_address(1); // 1 = STA mode
     }

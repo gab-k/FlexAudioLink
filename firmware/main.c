@@ -36,12 +36,12 @@
  * Defines
  ******************************************************************************/
 /* Task priorities. */
-#define audio_task_PRIORITY (configMAX_PRIORITIES - 1)
+#define audio_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 4)
-#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 1)
+#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define led_blinking_task_PRIORITY (tskIDLE_PRIORITY)
 #define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
-#define udp_task_PRIORITY (configMAX_PRIORITIES - 1)
+#define udp_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define cli_task_PRIORITY (tskIDLE_PRIORITY)
 
 /*******************************************************************************

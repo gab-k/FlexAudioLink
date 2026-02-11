@@ -50,6 +50,8 @@ bool set_current_app_mode(app_mode_t target_mode)
     // Reset audio state and abort I2S DMA.
     audio_reset_state();
 
+    app_mode = target_mode;
+
     // Resume needed tasks
     switch (target_mode)
     {
@@ -81,8 +83,6 @@ bool set_current_app_mode(app_mode_t target_mode)
         default:
             break;
     }
-
-    app_mode = target_mode;
 
     // Only switch if the profile is actually different
     if (current_profile != target_profile) 

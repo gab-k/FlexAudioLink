@@ -163,7 +163,7 @@
 
 // Rx flow control needs buffer size >= 4* EP size to work correctly
 // Example read FIFO every 1ms (8 HS frames), so buffer size should be 8 times larger for HS device
-#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ     TU_MAX(32 * CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT, 32 * CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT)
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ     TU_MAX(8 * CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT, 32 * CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT)
 
 #define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP          1
 

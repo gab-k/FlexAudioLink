@@ -3,19 +3,26 @@
 #define UDP_AUDIO_PORT 5000
 #define SOCKET_RETRY_DELAY_MS 1000
 #define IP_AP "192.168.1.1"     // Dongle IP (Correct)
-#define IP_STA "192.168.1.255"  // Broadcast Address for 192.168.1.x subnet
+#define IP_STA "192.168.1.2"  // Broadcast Address for 192.168.1.x subnet
 
+// Latency Tuning:
+// 48kHz * 2 channels * 2 bytes = 192 bytes per millisecond.
+// 512 bytes = 2.66 ms
+// 480 bytes = 2.5 ms
+// 240 bytes = 1.25 ms
+// 192 bytes = 1 ms
+#define UDP_PACKET_SIZE  240
 
-TaskHandle_t g_udp_task_handle = NULL;
 
 // TODO: Revise all the buffer sizes in this file and #define them
 // TODO: Consider making buffer sizes configurable via cli.
-
 #define UDP_SPK_BUF_SIZE   8192
 #define UDP_MIC_BUF_SIZE   8192
 
-#define UDP_SPK_AUDIO_PAYLOAD_SIZE (UDP_SPK_BUF_SIZE/4)
-#define UDP_MIC_AUDIO_PAYLOAD_SIZE (UDP_MIC_BUF_SIZE/4)
+TaskHandle_t g_udp_task_handle = NULL;
+
+uint16_t tx_udp_packet_counter = 0;
+uint16_t rx_udp_packet_counter = 0;
 
 TU_ATTR_ALIGNED(4) static uint8_t udp_spk_buf[UDP_SPK_BUF_SIZE];
 TU_ATTR_ALIGNED(4) static uint8_t udp_mic_buf[UDP_MIC_BUF_SIZE];
@@ -101,7 +108,7 @@ void udp_task(void *pvParameters)
     for (;;)
     {
         // Wait for IP address to be acquired.
-       xEventGroupWaitBits(
+        xEventGroupWaitBits(
             g_wifi_events,           // The Event Group
             WIFI_EVENT_IP_ACQUIRED, // The Bit to wait for
             pdFALSE,                 // Don't clear the bit on exit (keep it set for others)
@@ -109,12 +116,11 @@ void udp_task(void *pvParameters)
             portMAX_DELAY            // Wait forever
         );
 
-        // Configure socket if not already done
+        // Socket Setup & Callback Registration
         if (sock < 0) {
             sock = socket(AF_INET, SOCK_DGRAM, 0);
             
             // Listen to UDP_AUDIO_PORT
-
             int ret_val = bind(sock, (struct sockaddr *)&my_addr, sizeof(my_addr));
             if (ret_val != 0) {
                 int error_code = 0;
@@ -127,11 +133,23 @@ void udp_task(void *pvParameters)
                 vTaskDelay(pdMS_TO_TICKS(SOCKET_RETRY_DELAY_MS));
                 continue;
             }
+            
+            // Set IP Type of Service to EF (Expedited Forwarding) or Voice
+            int tos = 0xE0; // Critical/Voice
+            setsockopt(sock, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
 
-            // Set Timeout (Crucial for bi-directional loop)
-            // Wait 2ms for RX. If nothing, check TX.
-            struct timeval tv = {0, 2000}; 
+            // Set receive timeout to 1 ms.
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 1000; // 1000us = 1ms
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            
+            // Ensure Blocking Mode (Default, but good to be explicit vs previous code)
+            int flags = fcntl(sock, F_GETFL, 0);
+            fcntl(sock, F_SETFL, flags & ~O_NONBLOCK);
+
+            // Force address update 
+            cached_mode = MODE_IDLE; 
         }
 
         // Configure Target IP based on our Role
@@ -146,21 +164,37 @@ void udp_task(void *pvParameters)
             cached_mode = current_mode;
         }
 
-        // RX STEP: Block with timeout (2ms)
+        // ---------------------------------------------------------
+        // RX and TX Processing Loop
+        // ---------------------------------------------------------
+        
+        // 1. RX Step (Blocking, but wakes on data)
+        // If data arrives at 0.3ms, this returns at 0.3ms. 
+        // If no data, it returns at 1.0ms.
         int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0, NULL, NULL);
         if (len > 0) {
             udp_process_rx(rx_buffer, len, current_mode);
+            
+            // Optimization: If we just got a packet, check for MORE immediately
+            // without waiting for the timeout, to drain bursts.
+            int flags = fcntl(sock, F_GETFL, 0);
+            fcntl(sock, F_SETFL, flags | O_NONBLOCK); // Temp switch to Non-Blocking
+            while((len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0, NULL, NULL)) > 0) {
+                 udp_process_rx(rx_buffer, len, current_mode);
+            }
+            fcntl(sock, F_SETFL, flags & ~O_NONBLOCK); // Switch back to Blocking
         }
 
-        // TX STEP: Check if there is anything to send
+        // 2. TX Step (Polled)
+        // This runs at least once every 1ms.
+        // Since USB audio chunks (192-240 bytes) cover ~1ms of time, checking
+        // every 1ms is sufficient to keep the pipe full.
         int tx_len = udp_process_tx(tx_buffer, current_mode);
-        // Perform the Send
         if (tx_len > 0) {
             sendto(sock, tx_buffer, tx_len, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
         }
     }
 }
-
 
 // ---------------------------------------------------------
 // RX PROCESSOR: Validates and Routes Incoming Data
@@ -184,6 +218,10 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         // Only HEADSET should receive Speaker Audio (from Dongle)
         if (mode == MODE_UDP_HEADSET_AUDIO) {
             tu_fifo_write_n(&udp_spk_ff, p_payload, payload_len);
+            if (p_hdr->sequence != rx_udp_packet_counter) {
+                PRINTF("Packet Loss Detected! Expected Seq: %d, Got: %d\r\n", rx_udp_packet_counter, p_hdr->sequence);
+            }
+            rx_udp_packet_counter = p_hdr->sequence + 1;
         } else {
             PRINTF("[Error] Received speaker audio when not in headset mode!\r\n");
             configASSERT(false);
@@ -239,10 +277,11 @@ static int udp_process_tx(uint8_t *buffer, app_mode_t mode)
     {
         // Check if there is USB Audio available for sending to headset.
         uint16_t available = tud_audio_available();
-        if (available >= 1024) 
+        if (available >= UDP_PACKET_SIZE) 
         {
             p_hdr->type = UDP_DATATYPE_SPEAKER_AUDIO;
-            uint16_t read = tud_audio_read(p_payload, 1024);
+            p_hdr->sequence = tx_udp_packet_counter++;
+            uint16_t read = tud_audio_read(p_payload, UDP_PACKET_SIZE);
             tx_len = sizeof(udp_header_t) + read;
         }
     }
