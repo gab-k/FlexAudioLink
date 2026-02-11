@@ -2,6 +2,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "mode.h"
+#include "fsl_ocotp.h"
 
 //--------------------------------------------------------------------+
 // PID MAPPING 
@@ -202,37 +203,78 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
 //--------------------------------------------------------------------+
 // String Descriptors
 //--------------------------------------------------------------------+
+
+// Helper function for getting unique ID from OCOTP
+static void get_unique_id(uint8_t id[], uint32_t * len)
+{
+    if (*len < 16) {
+        PRINTF("Provided buffer is too small for UID\r\n");
+        *len = 0;
+        return;
+    }
+    status_t ret;
+    ret = OCOTP_ReadUniqueID(id, len);
+    if (ret != kStatus_Success) {
+        PRINTF("Failed to read unique ID from OCOTP, error: %d\r\n", ret);
+        while (1);
+    }
+    else {
+        PRINTF("Unique ID (len: %d): ", *len);
+        for (uint8_t i = 0; i < *len; i++) {
+            PRINTF("%02X", id[i]);
+        }
+        PRINTF("\r\n");
+    }
+}
+
 static char const *string_desc_arr[] =
 {
   (const char[]) { 0x09, 0x04 },  // 0: English
   "TinyUSB",                      // 1: Manufacturer
   "TinyUSB Headset",              // 2: Product
-  "1234-ABCD-FB",                 // 3: Serial
+  "ERROR: Can't Retrieve!",       // 3: Serial
   "UAC1 Headset",                 // 4: UAC1 Interface
   "UAC2 Async Headset",           // 5: UAC2 Interface
   "TinyUSB CDC",                  // 6: CDC Interface
 };
 
-static uint16_t _desc_str[32 + 1];
+static uint16_t _desc_str[34 + 1];
 
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
   (void) langid;
+  const char* str;
+  char uid_str[35]; // Buffer for UID string
   size_t chr_count;
+  size_t const max_count = sizeof(_desc_str) / sizeof(_desc_str[0]) - 1;
 
   if ( index == 0) {
     memcpy(&_desc_str[1], string_desc_arr[0], 2);
-    chr_count = 1;
+    _desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * 1 + 2));
+    return _desc_str;
+  }
+  
+  if (index == 3) {
+    uint8_t uid[16]; // Buffer for raw UID bytes
+    uint32_t uid_len = sizeof(uid);
+    get_unique_id(uid, &uid_len);
+    // Convert the raw UID to a hex string (ASCII)
+    sprintf(uid_str, "0x");
+    for (size_t i = 0; i < uid_len; i++) {
+        sprintf(uid_str + strlen(uid_str), "%02X", uid[i]);
+    }
+    // Point to the UID string
+    str = uid_str;
   } else {
     if ( !(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0])) ) return NULL;
+    str = string_desc_arr[index];
+  }
 
-    const char* str = string_desc_arr[index];
-    chr_count = strlen(str);
-    size_t const max_count = sizeof(_desc_str) / sizeof(_desc_str[0]) - 1;
-    if ( chr_count > max_count ) chr_count = max_count;
-
-    for (size_t i = 0; i < chr_count; i++) {
-      _desc_str[1 + i] = str[i];
-    }
+  chr_count = strlen(str);
+  if ( chr_count > max_count ) chr_count = max_count;
+  
+  // Convert ASCII string into UTF-16
+  for (size_t i = 0; i < chr_count; i++) {
+    _desc_str[1 + i] = str[i];
   }
 
   _desc_str[0] = (uint16_t) ((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));

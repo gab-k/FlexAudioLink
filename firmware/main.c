@@ -15,11 +15,12 @@
 #include "queue.h"
 #include "timers.h"
 
-/* Freescale includes. */
+/* Driver includes. */
 #include "fsl_device_registers.h"
 #include "fsl_debug_console.h"
 #include "fsl_gpio.h"
 
+/* Application includes. */
 #include "pin_mux.h"
 #include "board.h"
 #include "app.h"
@@ -156,15 +157,6 @@ static void blink_task(void *pvParameters)
     }
 }
   
-
-void board_get_unique_id(uint8_t id[], uint8_t max_len)
-{
-    // For now, return a fixed dummy ID to make the build pass.
-    for (uint8_t i = 0; i < max_len; i++)
-    {
-        id[i] = (uint8_t)(i + 1); 
-    }
-}
 
 static uint32_t last_cycle_count = 0;
 static uint64_t high_res_full_count = 0;
