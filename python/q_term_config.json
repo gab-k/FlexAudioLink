@@ -1,0 +1,22 @@
+[
+    {
+        "name": "JLink Headset",
+        "usb_serial": "001066062303",
+        "baud": 115200
+    },
+    {
+        "name": "JLink Dongle",
+        "usb_serial": "001068276901",
+        "baud": 115200
+    },
+    {
+        "name": "CDC Headset",
+        "usb_serial": "0x75A7A0AF50404A62A9F84E867DAA1EED",
+        "baud": 115200
+    },
+    {
+        "name": "CDC Dongle",
+        "usb_serial": "0x3248B3186C7449C9AC25B0C6A55EA648",
+        "baud": 115200
+    }
+]
