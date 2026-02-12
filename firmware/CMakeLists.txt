@@ -36,6 +36,8 @@ mcux_add_source(
             udp.h
             mode.c
             mode.h
+            util.c
+            util.h
 
             # LwIP related
             lwipopts.h
