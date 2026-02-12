@@ -15,5 +15,6 @@ extern TaskHandle_t g_audio_task_handle;
 extern TaskHandle_t g_audio_fb_task_handle;
 extern dma_handle_t FLEXCOMM0_TX_Handle;
 extern i2s_dma_handle_t FLEXCOMM0_Tx_DMA_Handle;
+extern uint32_t g_blink_interval_ms;
 
 #endif /* _AUDIO_H_ */

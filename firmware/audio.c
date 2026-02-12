@@ -243,7 +243,7 @@ void audio_task(void *pvParameters)
         if (buf_level >= start_threshold) {
           // Switch to PLAYING state if there is enough data  
           g_audio_state = AUDIO_STATE_PLAYING;
-          PRINTF("\nP\n");
+          PRINTF("\nPlaying...\n");
         }
         else {
           // Stay in BUFFERING state, exit loop
@@ -253,7 +253,7 @@ void audio_task(void *pvParameters)
         if (buf_level == 0) {
           // Switch to BUFFERING state if there is no data available
           g_audio_state = AUDIO_STATE_BUFFERING;
-          PRINTF("\nB\n");
+          PRINTF("\nBuffering...\n");
           // Also exit loop, because no data needs to be queued
           break;
         }
@@ -262,11 +262,16 @@ void audio_task(void *pvParameters)
           // this is done so the DMA transfers have a sensible size.
           break;
         }
-        // TODO: Remove when finished with debugging
-        // else if(buf_level > (9*fifo_depth)/10) {
-        //   configASSERT(false);
-        //   break;
-        // }
+        // Warn on 90% Buffer fill state 
+        // TODO: Possibly remove when finished with debugging
+        else if(buf_level > (9*fifo_depth)/10) {
+          PRINTF("W: B @ 90%%!\n");
+        }
+        // Warn on 10% Buffer fill state
+        // TODO: Possibly remove when finished with debugging
+        else if(buf_level < fifo_depth/10) {
+          PRINTF("W: B @ 10%%!\n");
+        }
       }
 
       // 4. Safety Checks
