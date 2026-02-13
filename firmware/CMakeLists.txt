@@ -38,6 +38,8 @@ mcux_add_source(
             mode.h
             util.c
             util.h
+            log.c
+            log.h
 
             # LwIP related
             lwipopts.h

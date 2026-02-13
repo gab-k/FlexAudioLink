@@ -1,7 +1,7 @@
 #include "util.h"
 
 // LED blinking task changes LED color depending on mode
-void blink_task(void *pvParameters) 
+void led_task(void *pvParameters) 
 {
     TickType_t delay_ticks;
     while(1)

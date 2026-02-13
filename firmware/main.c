@@ -29,6 +29,7 @@
 #include "wifi_app.h"
 #include "udp.h"
 #include "util.h"
+#include "log.h"
 
 /* TinyUSB includes */
 #include "tusb.h"
@@ -41,7 +42,8 @@
 #define audio_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 4)
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
-#define led_blinking_task_PRIORITY (tskIDLE_PRIORITY)
+#define led_task_PRIORITY (tskIDLE_PRIORITY)
+#define log_task_PRIORITY (tskIDLE_PRIORITY + 1)
 #define wifi_task_PRIORITY (configMAX_PRIORITIES - 4)
 #define udp_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define cli_task_PRIORITY (tskIDLE_PRIORITY)
@@ -65,6 +67,13 @@ int main(void)
 {
     /* Init board hardware. */
     BOARD_InitHardware();
+
+    // Initialize log queue
+    log_init_q();
+
+    // Queue boot message, Note: PRINTF is still used for task creation errors due to log_task not running yet!
+    // That means this message won't even be displayed when task creation fails!
+    log_print("Booting...\r\n");
     
     // Initialize UDP audio FIFOs in any case, even when UDP audio is not used.
     udp_audio_ff_init();
@@ -109,10 +118,10 @@ int main(void)
     }
     vTaskSuspend(g_audio_fb_task_handle);
 
-    // Create LED blinking task.
-    if (xTaskCreate(blink_task, "blink", configMINIMAL_STACK_SIZE, NULL, led_blinking_task_PRIORITY, NULL) != pdPASS)
+    // Create LED task.
+    if (xTaskCreate(led_task, "led", configMINIMAL_STACK_SIZE, NULL, led_task_PRIORITY, NULL) != pdPASS)
     {
-        PRINTF("blink task creation failed!.\r\n");
+        PRINTF("led task creation failed!.\r\n");
         while (1);
     }
 
@@ -123,6 +132,11 @@ int main(void)
         while (1);
     }
 
+    // Create Log task
+    if (xTaskCreate(log_task, "log", 1024 / sizeof(StackType_t), NULL, log_task_PRIORITY, NULL) != pdPASS) {
+        PRINTF("log task creation failed!.\r\n");
+        while (1);
+    }
 
     vTaskStartScheduler();
     while (1);

@@ -4,6 +4,6 @@
 #include "pin_mux.h"
 #include "audio.h"
 
-void blink_task(void *pvParameters);
+void led_task(void *pvParameters);
 
 #endif /* UTIL_H_ */
