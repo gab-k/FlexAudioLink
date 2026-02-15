@@ -1,12 +1,8 @@
 #ifndef _UDP_TASKS_H_
 #define _UDP_TASKS_H_
 
-#include "lwip/sockets.h"
-#include "stdio.h"
-#include "pin_mux.h"
-#include "fsl_gpio.h"
-#include "wifi_app.h"
 #include "tusb.h"
+#include "task.h"
 
 extern TaskHandle_t g_udp_task_handle;
 

@@ -1,4 +1,5 @@
 #include "util.h"
+#include "fsl_gpio.h"
 
 // LED blinking task changes LED color depending on mode
 void led_task(void *pvParameters) 

@@ -1,8 +1,6 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include <stdint.h>
-
 void log_init_q(void);
 void log_task(void *pvParameters);
 void log_print(const char *format, ...);

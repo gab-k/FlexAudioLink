@@ -1,4 +1,9 @@
 #include "audio.h"
+#include "tusb.h"
+#include "usb_descriptors.h"
+#include "peripherals.h"
+#include "mode.h"
+#include "log.h"
 
 // TODO: Seperate I2S related playback/record code and USB related audio callbacks into different files.
 
@@ -243,7 +248,7 @@ void audio_task(void *pvParameters)
         if (buf_level >= start_threshold) {
           // Switch to PLAYING state if there is enough data  
           g_audio_state = AUDIO_STATE_PLAYING;
-          PRINTF("\nPlaying...\n");
+          log_print("\nPlaying...\n");
         }
         else {
           // Stay in BUFFERING state, exit loop
@@ -253,7 +258,7 @@ void audio_task(void *pvParameters)
         if (buf_level == 0) {
           // Switch to BUFFERING state if there is no data available
           g_audio_state = AUDIO_STATE_BUFFERING;
-          PRINTF("\nBuffering...\n");
+          log_print("\nBuffering...\n");
           // Also exit loop, because no data needs to be queued
           break;
         }
@@ -265,12 +270,12 @@ void audio_task(void *pvParameters)
         // Warn on 90% Buffer fill state 
         // TODO: Possibly remove when finished with debugging
         else if(buf_level > (9*fifo_depth)/10) {
-          PRINTF("W: B @ 90%%!\n");
+          log_print("W: B @ 90%%!\n");
         }
         // Warn on 10% Buffer fill state
         // TODO: Possibly remove when finished with debugging
         else if(buf_level < fifo_depth/10) {
-          PRINTF("W: B @ 10%%!\n");
+          log_print("W: B @ 10%%!\n");
         }
       }
 
@@ -377,11 +382,11 @@ void audio_fb_task(void *pvParameters)
       #if AUDIO_DEBUG_LVL > 0
       if (count % 20 == 0)
       {
-        PRINTF("fs: %u, LVL: %d E: %d, P: %d\n", 
-            (unsigned int)adjusted_rate, 
-            (int) g_audio_buf_level,
-            (int)error,
-            (int)proportional);
+        log_print("fs: %u, LVL: %d E: %d, P: %d\n", 
+                  (unsigned int)adjusted_rate, 
+                  (int) g_audio_buf_level,
+                  (int)error,
+                  (int)proportional);
       }
       count++;
       #endif

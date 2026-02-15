@@ -31,6 +31,7 @@ void log_init_q(void) {
 void log_task(void *pvParameters) {
     log_msg_t rx_msg;
     if (log_q == NULL) {
+        // Use the standard blocking PRINTF for this emergency alert
         PRINTF("ERROR: loq_init_q was not called!\r\n");
 
         // Terminate this task so it doesn't crash the scheduler

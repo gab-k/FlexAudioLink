@@ -1,4 +1,11 @@
 #include "udp.h"
+#include "lwip/sockets.h"
+#include "stdio.h"
+#include "pin_mux.h"
+#include "fsl_gpio.h"
+#include "wifi_app.h"
+#include "log.h"
+#include "mode.h"
 
 #define UDP_AUDIO_PORT 5000
 #define SOCKET_RETRY_DELAY_MS 1000
@@ -110,7 +117,7 @@ void udp_task(void *pvParameters)
         // Wait for IP address to be acquired.
         xEventGroupWaitBits(
             g_wifi_events,           // The Event Group
-            WIFI_EVENT_IP_ACQUIRED, // The Bit to wait for
+            WIFI_EVENT_IP_ACQUIRED,  // The Bit to wait for
             pdFALSE,                 // Don't clear the bit on exit (keep it set for others)
             pdTRUE,                  // Wait for the bit to be set
             portMAX_DELAY            // Wait forever
@@ -126,10 +133,10 @@ void udp_task(void *pvParameters)
                 int error_code = 0;
                 socklen_t len = sizeof(error_code);
                 getsockopt(sock, SOL_SOCKET, SO_ERROR, &error_code, &len);
-                PRINTF("bind() failed. Return: %d, Actual Error: %d\r\n", ret_val, error_code);
+                log_print("bind() failed. Return: %d, Actual Error: %d\r\n", ret_val, error_code);
                 close(sock);
                 sock = -1;
-                PRINTF("Retrying in %d ms\r\n", SOCKET_RETRY_DELAY_MS);
+                log_print("Retrying in %d ms\r\n", SOCKET_RETRY_DELAY_MS);
                 vTaskDelay(pdMS_TO_TICKS(SOCKET_RETRY_DELAY_MS));
                 continue;
             }
@@ -203,8 +210,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
 {
     if (len < sizeof(udp_header_t)) 
     {
-        PRINTF("Received packet too small: %d bytes\r\n", len);
-        configASSERT(false);
+        log_print("WARN: Received packet too small: %d bytes\r\n", len);
         return;
     }
 
@@ -219,11 +225,11 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         if (mode == MODE_UDP_HEADSET_AUDIO) {
             tu_fifo_write_n(&udp_spk_ff, p_payload, payload_len);
             if (p_hdr->sequence != rx_udp_packet_counter) {
-                PRINTF("Packet Loss Detected! Expected Seq: %d, Got: %d\r\n", rx_udp_packet_counter, p_hdr->sequence);
+                log_print("Packet Loss Detected! Expected Seq: %d, Got: %d\r\n", rx_udp_packet_counter, p_hdr->sequence);
             }
             rx_udp_packet_counter = p_hdr->sequence + 1;
         } else {
-            PRINTF("[Error] Received speaker audio when not in headset mode!\r\n");
+            log_print("ERROR: Received speaker audio when not in headset mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -233,7 +239,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         if (mode == MODE_UDP_DONGLE_AUDIO) {
             tu_fifo_write_n(&udp_mic_ff, p_payload, payload_len);
         } else {
-            PRINTF("[Error] Received mic audio when not in dongle mode!\r\n");
+            log_print("ERROR: Received mic audio when not in dongle mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -246,7 +252,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
             tud_audio_fb_set(feedback_val);
         } else {
             // A Headset receiving feedback implies a logic error on the sender
-            PRINTF("[Error] Received Feedback packet when not in dongle mode!\r\n");
+            log_print("ERROR: Received Feedback packet when not in dongle mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -258,7 +264,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         break;
 
     default:
-        PRINTF("Unknown UDP Type: %d\r\n", p_hdr->type);
+        log_print("Unknown UDP Type: %d\r\n", p_hdr->type);
         configASSERT(false);
         break;
     }

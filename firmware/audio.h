@@ -1,10 +1,11 @@
 #ifndef _AUDIO_H_
 #define _AUDIO_H_
 
-#include "tusb.h"
-#include "usb_descriptors.h"
-#include "peripherals.h"
-#include "mode.h"
+#include <stdint.h>
+#include "fsl_i2s_dma.h"
+#include "fsl_common.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 void audio_task(void *pvParameters);
 void audio_fb_task(void *pvParameters);
