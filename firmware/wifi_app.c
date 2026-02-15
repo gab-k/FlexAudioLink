@@ -24,19 +24,19 @@ EventGroupHandle_t g_wifi_events;
 void wifi_task(void *pvParameters)
 {
     wpl_ret_t ret_val;
-    log_print("\r\nInitializing Wi-Fi driver...\r\n");
+    PRINTF("\r\nInitializing Wi-Fi driver...\r\n");
     ret_val = WPL_Init();
     if (ret_val != WPLRET_SUCCESS)
     {
-        log_print("WPL_Init() Failed, error: %d\r\n", ret_val);
+        PRINTF("WPL_Init() Failed, error: %d\r\n", ret_val);
         while (1);
     }
 
-    log_print("\r\nStarting Wi-Fi driver...\r\n");
+    PRINTF("\r\nStarting Wi-Fi driver...\r\n");
     ret_val = WPL_Start(link_status_change_cb);
     if (ret_val != WPLRET_SUCCESS)
     {
-        log_print("WPL_Start() Failed, error: %d\r\n", ret_val);
+        PRINTF("WPL_Start() Failed, error: %d\r\n", ret_val);
         while (1);
     }
 
@@ -56,12 +56,12 @@ void wifi_task(void *pvParameters)
         app_mode_t current_mode = get_app_mode();
         if (current_mode == MODE_UDP_DONGLE_AUDIO) 
         {
-            log_print("Starting AP Mode...\r\n");
+            PRINTF("Starting AP Mode...\r\n");
             start_ap();
         }
         else if (current_mode == MODE_UDP_HEADSET_AUDIO) 
         {
-            log_print("Starting STA Mode...\r\n");
+            PRINTF("Starting STA Mode...\r\n");
             start_sta();
         }
     }
@@ -70,17 +70,17 @@ void wifi_task(void *pvParameters)
 static void start_ap(void){
     // Force 20MHz for better SNR/Wall penetration
     if(wlan_uap_set_bandwidth(1) != WPLRET_SUCCESS) {
-        log_print("Failed to set AP bandwidth\r\n");
+        PRINTF("Failed to set AP bandwidth\r\n");
     }
 
     // Start AP
     wpl_ret_t err = WPLRET_FAIL;
     err = WPL_Start_AP(SSID_AP, PASSWORD_AP, WLAN_CHANNEL);
     if (err == WPLRET_SUCCESS) {
-        log_print("SoftAP Started.");
+        PRINTF("SoftAP Started.");
     }
     else {
-        log_print("WPL_Start_AP() Start Failed: %d\r\n", err);
+        PRINTF("WPL_Start_AP() Start Failed: %d\r\n", err);
     }
       
     // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
@@ -94,11 +94,11 @@ static void start_ap(void){
         
     // Set RTS threshold > 2346 (max packet size).
     // Effectively disables RTS/CTS handshake overhead for all packets.
-    log_print("Waiting for Headset to connect to apply RTS Optimization...\r\n");
+    PRINTF("Waiting for Headset to connect to apply RTS Optimization...\r\n");
     while (1) {
         // Try to set RTS threshold
         if (wlan_set_uap_rts(2347) == WM_SUCCESS) {
-            log_print("Success: RTS Threshold set to 2347 (Disabled).\r\n");
+            PRINTF("Success: RTS Threshold set to 2347 (Disabled).\r\n");
             break;
         }
         
@@ -110,26 +110,26 @@ static void start_ap(void){
 static void start_sta(void){
     wpl_ret_t err = WPLRET_FAIL;
     
-    log_print("Adding default Wi-Fi Network...\r\n");
+    PRINTF("Adding default Wi-Fi Network...\r\n");
     
     err = WPL_AddNetwork(SSID_AP, PASSWORD_AP, NETWORK_LABEL);
     
     if (err != WPLRET_SUCCESS)
     {
-        log_print("WPL_AddNetwork() Failed, error: %d\r\n", (uint32_t)err);
+        PRINTF("WPL_AddNetwork() Failed, error: %d\r\n", (uint32_t)err);
     }
     
-    log_print("Device joining the Wi-Fi Network using its STA interface...\r\n");
+    PRINTF("Device joining the Wi-Fi Network using its STA interface...\r\n");
     
     err = WPLRET_FAIL;
     err = WPL_Join(NETWORK_LABEL);
     
     if (err == WPLRET_SUCCESS)
     {
-        log_print("Connected. Optimizing for Latency...\r\n");
+        PRINTF("Connected. Optimizing for Latency...\r\n");
         // Disable Power Save (Crucial: Stops AP from buffering data)
         if (wlan_ieeeps_off() != WPLRET_SUCCESS) {
-            log_print("Failed to disable Power Save mode\r\n");
+            PRINTF("Failed to disable Power Save mode\r\n");
         }
 
         // Disable Aggregate MAC Protocol Data Unit (AMPDU) for both RX and TX.
@@ -139,20 +139,20 @@ static void start_sta(void){
         wlan_sta_ampdu_rx_disable();
 
         if (wlan_set_roaming(0, 0) != WPLRET_SUCCESS) {
-            log_print("Failed to disable roaming\r\n");
+            PRINTF("Failed to disable roaming\r\n");
         }
 
         // Set RTS threshold > 2346 (max packet size).
         // Effectively disables RTS/CTS handshake overhead for all packets.
         if(wlan_set_rts(2347) != WPLRET_SUCCESS) {
-            log_print("Failed to set RTS threshold\r\n");
+            PRINTF("Failed to set RTS threshold\r\n");
         }
 
         wait_for_ip_address(1); // 1 = STA mode
     }
     else if (err != WPLRET_SUCCESS)
     {
-        log_print("WPL_Join() Failed, error: %d\r\n", (uint32_t)err);
+        PRINTF("WPL_Join() Failed, error: %d\r\n", (uint32_t)err);
     }
 }
 
@@ -160,11 +160,11 @@ static void link_status_change_cb(bool link_state)
 {
     if (link_state == false)
     {
-        log_print("-------- LINK LOST --------\r\n");
+        PRINTF("-------- LINK LOST --------\r\n");
     }
     else
     {
-        log_print("-------- LINK REESTABLISHED --------\r\n");
+        PRINTF("-------- LINK REESTABLISHED --------\r\n");
     }
 }
 
@@ -174,7 +174,7 @@ static void wait_for_ip_address(int is_station_mode)
     wpl_ret_t ret;
     int role_param = is_station_mode ? 1 : 0; // 1=STA, 0=AP
 
-    log_print("Waiting for IP address...\r\n");
+    PRINTF("Waiting for IP address...\r\n");
 
     while (1)
     {
@@ -186,7 +186,7 @@ static void wait_for_ip_address(int is_station_mode)
             strcmp(ip_str, "0.0.0.0") != 0 && 
             strlen(ip_str) > 0)
         {
-            log_print("IP Address Assigned: %s\r\n", ip_str);
+            PRINTF("IP Address Assigned: %s\r\n", ip_str);
             // Signal the IP Acquiration to the UDP task
             xEventGroupSetBits(g_wifi_events, WIFI_EVENT_IP_ACQUIRED);
             break;

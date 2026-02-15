@@ -248,7 +248,7 @@ void audio_task(void *pvParameters)
         if (buf_level >= start_threshold) {
           // Switch to PLAYING state if there is enough data  
           g_audio_state = AUDIO_STATE_PLAYING;
-          log_print("\nPlaying...\n");
+          PRINTF("\nPlaying...\n");
         }
         else {
           // Stay in BUFFERING state, exit loop
@@ -258,7 +258,7 @@ void audio_task(void *pvParameters)
         if (buf_level == 0) {
           // Switch to BUFFERING state if there is no data available
           g_audio_state = AUDIO_STATE_BUFFERING;
-          log_print("\nBuffering...\n");
+          PRINTF("\nBuffering...\n");
           // Also exit loop, because no data needs to be queued
           break;
         }
@@ -270,12 +270,12 @@ void audio_task(void *pvParameters)
         // Warn on 90% Buffer fill state 
         // TODO: Possibly remove when finished with debugging
         else if(buf_level > (9*fifo_depth)/10) {
-          log_print("W: B @ 90%%!\n");
+          PRINTF("W: B @ 90%%!\n");
         }
         // Warn on 10% Buffer fill state
         // TODO: Possibly remove when finished with debugging
         else if(buf_level < fifo_depth/10) {
-          log_print("W: B @ 10%%!\n");
+          PRINTF("W: B @ 10%%!\n");
         }
       }
 
@@ -382,11 +382,11 @@ void audio_fb_task(void *pvParameters)
       #if AUDIO_DEBUG_LVL > 0
       if (count % 20 == 0)
       {
-        log_print("fs: %u, LVL: %d E: %d, P: %d\n", 
-                  (unsigned int)adjusted_rate, 
-                  (int) g_audio_buf_level,
-                  (int)error,
-                  (int)proportional);
+        PRINTF("fs: %u, LVL: %d E: %d, P: %d\n", 
+              (unsigned int)adjusted_rate, 
+              (int) g_audio_buf_level,
+              (int)error,
+              (int)proportional);
       }
       count++;
       #endif

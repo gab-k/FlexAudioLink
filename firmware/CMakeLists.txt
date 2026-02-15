@@ -1,4 +1,3 @@
-
 # Copyright 2025 NXP
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -24,6 +23,8 @@ mcux_add_source(
             hardware_init.c
             pin_mux.c
             pin_mux.h
+            board.c
+            board.h
             
             # Application related
             main.c
@@ -68,6 +69,20 @@ mcux_add_include(
     INCLUDES    .
                 ./tinyusb/src
                 ./tinyusb/hw
+)
+
+# --------------------------------------------------------------------------
+# GLOBAL HEADER INJECTION & LOG REDIRECTION
+# --------------------------------------------------------------------------
+# Force the compiler to include 'log.h' at the top of every compilation unit 
+# (both .c files and SDK sources).
+#
+# This allows 'log.h' to:
+# 1. Intercept the standard SDK 'fsl_debug_console.h'
+# 2. Undefine the SDK's blocking 'PRINTF' macro
+# 3. Redefine 'PRINTF' to point to 'log_print' function
+target_compile_options(FlexAudioLink PRIVATE 
+    "-include${CMAKE_CURRENT_SOURCE_DIR}/log.h"
 )
 
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)

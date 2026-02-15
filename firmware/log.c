@@ -11,11 +11,12 @@
 
 // --- Configuration ---
 #define LOG_QUEUE_LENGTH    20      // How many messages can buffer before dropping
-#define LOG_MAX_MSG_LEN     80      // Max characters per line
+#define LOG_MAX_MSG_LEN     128     // Max characters per line
 #define LOG_UART_BASE       USART3
 
 // --- Data Types ---
 typedef struct {
+    uint16_t length;
     char buffer[LOG_MAX_MSG_LEN];
 } log_msg_t;
 
@@ -31,8 +32,8 @@ void log_init_q(void) {
 void log_task(void *pvParameters) {
     log_msg_t rx_msg;
     if (log_q == NULL) {
-        // Use the standard blocking PRINTF for this emergency alert
-        PRINTF("ERROR: loq_init_q was not called!\r\n");
+        // Use the Debug consoles printf for this emergency alert
+        DbgConsole_Printf("ERROR: loq_q == NULL, was log_init_q() called?\r\n");
 
         // Terminate this task so it doesn't crash the scheduler
         vTaskDelete(NULL);
@@ -40,12 +41,8 @@ void log_task(void *pvParameters) {
     while (1) {
         // Block here indefinitely until a message arrives
         if (xQueueReceive(log_q, &rx_msg, portMAX_DELAY) == pdPASS) {
-            
-            // Calculate length purely for the UART write
-            size_t len = strlen(rx_msg.buffer);
-            
             // TODO: Consider DMA write here in the future
-            USART_WriteBlocking(LOG_UART_BASE, (uint8_t *)rx_msg.buffer, len);
+            USART_WriteBlocking(LOG_UART_BASE, (uint8_t *)rx_msg.buffer, rx_msg.length);
         }
     }
 }
@@ -56,8 +53,8 @@ void log_print(const char *format, ...) {
 
     if (log_q == NULL) {
         if (!init_warn_shown) {
-            // Use the standard blocking PRINTF for this emergency alert
-            PRINTF("\r\nERROR: loq_q is NULL, was log_init() called? log_print() logs will be dropped!\r\n");
+            // Use the Debug consoles printf for this emergency alert
+            DbgConsole_Printf("ERROR: loq_q == NULL, was log_init_q() called?\r\n");
             init_warn_shown = true;
         }
         return;
@@ -72,6 +69,10 @@ void log_print(const char *format, ...) {
     
     // vsnprintf protects against buffer overflows
     int len = vsnprintf(msg.buffer, LOG_MAX_MSG_LEN, format, args);
+    if (len >= 0) {
+        // If len > sizeof(buffer), it was truncated, so we cap it
+        msg.length = (len < sizeof(msg.buffer)) ? (uint16_t)len : (uint16_t)(sizeof(msg.buffer) - 1);
+    }
     va_end(args);
 
     // Check for formatting errors

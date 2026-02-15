@@ -73,7 +73,7 @@ int main(void)
 
     // Queue boot message, Note: PRINTF is still used for task creation errors due to log_task not running yet!
     // That means this message won't even be displayed when task creation fails!
-    log_print("Booting...\r\n");
+    PRINTF("Booting...\r\n");
     
     // Initialize UDP audio FIFOs in any case, even when UDP audio is not used.
     udp_audio_ff_init();
@@ -82,14 +82,14 @@ int main(void)
     if (xTaskCreate(usb_device_task, "usbd", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("usbd task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
 
     // Create Wi-Fi task.
     if (xTaskCreate(wifi_task, "wifi", 4096 / sizeof(StackType_t), NULL, wifi_task_PRIORITY, &g_wifi_task_handle) != pdPASS)
     {
         PRINTF("wifi task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
     vTaskSuspend(g_wifi_task_handle);
     g_wifi_events = xEventGroupCreate();
@@ -98,7 +98,7 @@ int main(void)
     if(xTaskCreate(udp_task, "udp", 32768 / sizeof(StackType_t), NULL, udp_task_PRIORITY, &g_udp_task_handle) != pdPASS)
     {
         PRINTF("udp task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
     vTaskSuspend(g_udp_task_handle);
 
@@ -106,7 +106,7 @@ int main(void)
     if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, &g_audio_task_handle) != pdPASS)
     {
         PRINTF("audio task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
     vTaskSuspend(g_audio_task_handle);
 
@@ -114,7 +114,7 @@ int main(void)
     if (xTaskCreate(audio_fb_task, "audio_fb", 4096 / sizeof(StackType_t), NULL, audio_feedback_task_PRIORITY, &g_audio_fb_task_handle) != pdPASS)
     {
         PRINTF("audio feedback task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
     vTaskSuspend(g_audio_fb_task_handle);
 
@@ -122,20 +122,20 @@ int main(void)
     if (xTaskCreate(led_task, "led", configMINIMAL_STACK_SIZE, NULL, led_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("led task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
 
     // Create CLI task.
     if (xTaskCreate(cli_task, "cli", 2048 / sizeof(StackType_t), NULL, cli_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("cli task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
 
     // Create Log task
     if (xTaskCreate(log_task, "log", 1024 / sizeof(StackType_t), NULL, log_task_PRIORITY, NULL) != pdPASS) {
         PRINTF("log task creation failed!.\r\n");
-        while (1);
+        configASSERT(false);
     }
 
     vTaskStartScheduler();
