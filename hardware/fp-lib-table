@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "FlexAudioLink_Footprints")(type "KiCad")(uri "${KIPRJMOD}/FlexAudioLink_Footprints.pretty")(options "")(descr ""))
+)

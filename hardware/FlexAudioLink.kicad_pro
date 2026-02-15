@@ -613,6 +613,14 @@
     [
       "83ca152a-d93c-4f75-91ae-8c2c15978816",
       "Root"
+    ],
+    [
+      "c5ee7932-8f65-4d20-90f4-e3967d6f0740",
+      "INPUT, CHARGER & POWER"
+    ],
+    [
+      "9f93f3a7-9648-4b2c-94a2-03082a9ecf38",
+      "MCU"
     ]
   ],
   "text_variables": {}
