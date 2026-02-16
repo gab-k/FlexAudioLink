@@ -133,10 +133,10 @@ void udp_task(void *pvParameters)
                 int error_code = 0;
                 socklen_t len = sizeof(error_code);
                 getsockopt(sock, SOL_SOCKET, SO_ERROR, &error_code, &len);
-                log_print("bind() failed. Return: %d, Actual Error: %d\r\n", ret_val, error_code);
+                PRINTF("bind() failed. Return: %d, Actual Error: %d\r\n", ret_val, error_code);
                 close(sock);
                 sock = -1;
-                log_print("Retrying in %d ms\r\n", SOCKET_RETRY_DELAY_MS);
+                PRINTF("Retrying in %d ms\r\n", SOCKET_RETRY_DELAY_MS);
                 vTaskDelay(pdMS_TO_TICKS(SOCKET_RETRY_DELAY_MS));
                 continue;
             }
@@ -210,7 +210,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
 {
     if (len < sizeof(udp_header_t)) 
     {
-        log_print("WARN: Received packet too small: %d bytes\r\n", len);
+        PRINTF("WARN: Received packet too small: %d bytes\r\n", len);
         return;
     }
 
@@ -225,11 +225,11 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         if (mode == MODE_UDP_HEADSET_AUDIO) {
             tu_fifo_write_n(&udp_spk_ff, p_payload, payload_len);
             if (p_hdr->sequence != rx_udp_packet_counter) {
-                log_print("Packet Loss Detected! Expected Seq: %d, Got: %d\r\n", rx_udp_packet_counter, p_hdr->sequence);
+                PRINTF("Packet Loss Detected! Expected Seq: %d, Got: %d\r\n", rx_udp_packet_counter, p_hdr->sequence);
             }
             rx_udp_packet_counter = p_hdr->sequence + 1;
         } else {
-            log_print("ERROR: Received speaker audio when not in headset mode!\r\n");
+            PRINTF("ERROR: Received speaker audio when not in headset mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -239,7 +239,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         if (mode == MODE_UDP_DONGLE_AUDIO) {
             tu_fifo_write_n(&udp_mic_ff, p_payload, payload_len);
         } else {
-            log_print("ERROR: Received mic audio when not in dongle mode!\r\n");
+            PRINTF("ERROR: Received mic audio when not in dongle mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -252,7 +252,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
             tud_audio_fb_set(feedback_val);
         } else {
             // A Headset receiving feedback implies a logic error on the sender
-            log_print("ERROR: Received Feedback packet when not in dongle mode!\r\n");
+            PRINTF("ERROR: Received Feedback packet when not in dongle mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -264,7 +264,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         break;
 
     default:
-        log_print("Unknown UDP Type: %d\r\n", p_hdr->type);
+        PRINTF("Unknown UDP Type: %d\r\n", p_hdr->type);
         configASSERT(false);
         break;
     }

@@ -209,22 +209,22 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
 static void get_unique_id(uint8_t id[], uint32_t * len)
 {
     if (*len < 16) {
-        log_print("Provided buffer is too small for UID\r\n");
+        PRINTF("Provided buffer is too small for UID\r\n");
         *len = 0;
         return;
     }
     status_t ret;
     ret = OCOTP_ReadUniqueID(id, len);
     if (ret != kStatus_Success) {
-        log_print("Failed to read unique ID from OCOTP, error: %d\r\n", ret);
+        PRINTF("Failed to read unique ID from OCOTP, error: %d\r\n", ret);
         while (1);
     }
     else {
-        log_print("Unique ID (len: %d): ", *len);
+        PRINTF("Unique ID (len: %d): ", *len);
         for (uint8_t i = 0; i < *len; i++) {
-            log_print("%02X", id[i]);
+            PRINTF("%02X", id[i]);
         }
-        log_print("\r\n");
+        PRINTF("\r\n");
     }
 }
 

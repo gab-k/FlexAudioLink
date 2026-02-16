@@ -77,7 +77,8 @@ void log_print(const char *format, ...) {
 
     // Check for formatting errors
     if (len < 0) {
-        PRINTF("\r\nERROR: log_print vsnprintf failed with code: %d\r\n", len);
+        // Use the Debug consoles printf for this emergency alert
+        DbgConsole_Printf("ERROR: vsnprintf failed with code: %d\r\n", len);
         return;
     }
 
