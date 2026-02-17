@@ -71,6 +71,7 @@ bool set_current_app_mode(app_mode_t target_mode)
             vTaskResume(g_wifi_task_handle);
             vTaskResume(g_udp_task_handle);
             vTaskResume(g_audio_task_handle);
+            vTaskResume(g_audio_fb_task_handle);
             // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
             xTaskNotifyGive(g_wifi_task_handle);
             break;

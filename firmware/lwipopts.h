@@ -74,7 +74,7 @@ void sys_mark_tcpip_thread(void);
 
 #define TCPIP_THREAD_NAME      "tcp/ip"
 #define TCPIP_THREAD_STACKSIZE 768
-#define TCPIP_THREAD_PRIO      (configMAX_PRIORITIES - 3)
+#define TCPIP_THREAD_PRIO      (configMAX_PRIORITIES - 1)
 #ifdef CONFIG_NETWORK_HIGH_PERF
 #define TCPIP_MBOX_SIZE 64
 #else

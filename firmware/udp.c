@@ -18,7 +18,7 @@
 // 480 bytes = 2.5 ms
 // 240 bytes = 1.25 ms
 // 192 bytes = 1 ms
-#define UDP_PACKET_SIZE  240
+#define UDP_PACKET_SIZE  192
 
 
 // TODO: Revise all the buffer sizes in this file and #define them
@@ -28,6 +28,9 @@
 
 TaskHandle_t g_udp_task_handle = NULL;
 
+static volatile bool g_feedback_pending = false;
+static volatile uint32_t g_feedback_value = 0;
+
 uint16_t tx_udp_packet_counter = 0;
 uint16_t rx_udp_packet_counter = 0;
 
@@ -36,27 +39,6 @@ TU_ATTR_ALIGNED(4) static uint8_t udp_mic_buf[UDP_MIC_BUF_SIZE];
 
 static tu_fifo_t udp_spk_ff;
 static tu_fifo_t udp_mic_ff;
-
-static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode);
-static int udp_process_tx(uint8_t *buffer, app_mode_t mode);
-
-void udp_audio_ff_init(void)
-{
-    // Glue the Speaker FIFO to the Speaker Buffer
-    // true = Overwritable (Circular Mode)
-    tu_fifo_config(&udp_spk_ff, udp_spk_buf, UDP_SPK_BUF_SIZE, true);
-
-    // Glue the Mic FIFO to the Mic Buffer
-    tu_fifo_config(&udp_mic_ff, udp_mic_buf, UDP_MIC_BUF_SIZE, true);
-}
-
-tu_fifo_t* udp_get_spk_fifo(void) {
-    return &udp_spk_ff;
-}
-
-tu_fifo_t* udp_get_mic_fifo(void) {
-    return &udp_mic_ff;
-}
 
 // UDP Header structure, data follows this header!
 // For audio packets, raw PCM data is appended after this header.
@@ -84,6 +66,29 @@ typedef enum {
     UDP_DATATYPE_FEEDBACK      = 2, // Audio rate matching (clock drift compensation)
     UDP_DATATYPE_COMMAND       = 3, // Mute, Vol, Pairing
 } udp_datatype_t;
+
+
+static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode);
+static int udp_process_tx(uint8_t *buffer, app_mode_t mode);
+
+
+void udp_audio_ff_init(void)
+{
+    // Glue the Speaker FIFO to the Speaker Buffer
+    // true = Overwritable (Circular Mode)
+    tu_fifo_config(&udp_spk_ff, udp_spk_buf, UDP_SPK_BUF_SIZE, true);
+
+    // Glue the Mic FIFO to the Mic Buffer
+    tu_fifo_config(&udp_mic_ff, udp_mic_buf, UDP_MIC_BUF_SIZE, true);
+}    
+
+tu_fifo_t* udp_get_spk_fifo(void) {
+    return &udp_spk_ff;
+}    
+
+tu_fifo_t* udp_get_mic_fifo(void) {
+    return &udp_mic_ff;
+}    
 
 
 void udp_task(void *pvParameters)
@@ -293,7 +298,31 @@ static int udp_process_tx(uint8_t *buffer, app_mode_t mode)
     }
     else if (mode == MODE_UDP_HEADSET_AUDIO)
     {
-        // TODO: Implement Uplink Mic Audio and Feedback sending.
+        // TODO: Implement Uplink Mic Audio
+        if (g_feedback_pending)
+        {
+            // Enter critical section to ensure we don't clear flag while writing new one
+            taskENTER_CRITICAL();
+            uint32_t val_to_send = g_feedback_value;
+            g_feedback_pending = false; // Clear the mailbox
+            taskEXIT_CRITICAL();
+
+            p_hdr->type = UDP_DATATYPE_FEEDBACK;
+            p_hdr->sequence = tx_udp_packet_counter++;
+            p_hdr->flags = 0;
+
+            // Copy the 4-byte 16.16 value into payload
+            memcpy(p_payload, &val_to_send, sizeof(uint32_t));
+            
+            tx_len = sizeof(udp_header_t) + sizeof(uint32_t);
+        }
     }
     return tx_len;
+}
+
+
+void udp_queue_feedback(uint32_t value_16_16)
+{
+    g_feedback_value = value_16_16;
+    g_feedback_pending = true;
 }

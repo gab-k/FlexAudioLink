@@ -13,7 +13,7 @@
 const uint32_t sample_rates[] = {48000};
 uint32_t current_sample_rate = 48000;
 #define N_SAMPLE_RATES TU_ARRAY_SIZE(sample_rates)
-#define AUDIO_DEBUG_LVL 0
+#define AUDIO_DEBUG_LVL 1
 
 /* Blink pattern
  * - 25 ms   : streaming data
@@ -270,12 +270,12 @@ void audio_task(void *pvParameters)
         // Warn on 90% Buffer fill state 
         // TODO: Possibly remove when finished with debugging
         else if(buf_level > (9*fifo_depth)/10) {
-          PRINTF("W: B @ 90%%!\n");
+          //PRINTF("W: B @ 90%%!\n");
         }
         // Warn on 10% Buffer fill state
         // TODO: Possibly remove when finished with debugging
         else if(buf_level < fifo_depth/10) {
-          PRINTF("W: B @ 10%%!\n");
+          //PRINTF("W: B @ 10%%!\n");
         }
       }
 
@@ -335,7 +335,7 @@ void audio_task(void *pvParameters)
 
 void audio_fb_task(void *pvParameters)
 {
-  const TickType_t xFrequency = pdMS_TO_TICKS(100);
+  const TickType_t xFrequency = pdMS_TO_TICKS(50);
   TickType_t xLastWakeTime = xTaskGetTickCount();
 
   const float KP = 0.05f;     
@@ -380,7 +380,7 @@ void audio_fb_task(void *pvParameters)
       audio_feedback_forward_metric(feedback_value);
 
       #if AUDIO_DEBUG_LVL > 0
-      if (count % 20 == 0)
+      if (count % 1 == 0)
       {
         PRINTF("fs: %u, LVL: %d E: %d, P: %d\n", 
               (unsigned int)adjusted_rate, 
@@ -417,7 +417,7 @@ static void audio_feedback_forward_metric(uint32_t value_16_16)
 
         case MODE_UDP_HEADSET_AUDIO:
             // Forward feedback metric via UDP to the dongle which then sets its USB endpoint
-            // udp_queue_feedback(value_16_16); TODO: Implement
+            udp_queue_feedback(value_16_16);
             break;
 
         case MODE_UDP_DONGLE_AUDIO:
