@@ -23,8 +23,8 @@
 
 // TODO: Revise all the buffer sizes in this file and #define them
 // TODO: Consider making buffer sizes configurable via cli.
-#define UDP_SPK_BUF_SIZE   8192
-#define UDP_MIC_BUF_SIZE   8192
+#define UDP_SPK_BUF_SIZE   2048
+#define UDP_MIC_BUF_SIZE   2048
 
 TaskHandle_t g_udp_task_handle = NULL;
 
