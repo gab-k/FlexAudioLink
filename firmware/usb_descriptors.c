@@ -2,8 +2,8 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "mode.h"
-#include "fsl_ocotp.h"
 #include "log.h"
+#include "util.h"
 
 //--------------------------------------------------------------------+
 // PID MAPPING 
@@ -205,28 +205,6 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
 // String Descriptors
 //--------------------------------------------------------------------+
 
-// Helper function for getting unique ID from OCOTP
-static void get_unique_id(uint8_t id[], uint32_t * len)
-{
-    if (*len < 16) {
-        PRINTF("Provided buffer is too small for UID\r\n");
-        *len = 0;
-        return;
-    }
-    status_t ret;
-    ret = OCOTP_ReadUniqueID(id, len);
-    if (ret != kStatus_Success) {
-        PRINTF("Failed to read unique ID from OCOTP, error: %d\r\n", ret);
-        while (1);
-    }
-    else {
-        PRINTF("Unique ID (len: %d): ", *len);
-        for (uint8_t i = 0; i < *len; i++) {
-            PRINTF("%02X", id[i]);
-        }
-        PRINTF("\r\n");
-    }
-}
 
 static char const *string_desc_arr[] =
 {
