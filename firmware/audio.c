@@ -13,7 +13,7 @@
 const uint32_t sample_rates[] = {48000};
 uint32_t current_sample_rate = 48000;
 #define N_SAMPLE_RATES TU_ARRAY_SIZE(sample_rates)
-#define AUDIO_DEBUG_LVL 1
+#define AUDIO_DEBUG_LVL 0
 
 /* Blink pattern
  * - 25 ms   : streaming data
@@ -177,7 +177,7 @@ void audio_task(void *pvParameters)
   uint16_t buf_level, flight;
   tu_fifo_buffer_info_t spk_ff_info;
   static float smoothed_level = 0.0f; 
-  const float ALPHA = 0.1f; // 0.1 (smooth) to 0.5 (reactive)
+  const float ALPHA = 0.05f; // 0.1 (smooth) to 0.5 (reactive)
 
   uint16_t fifo_depth;
   uint16_t start_threshold;
@@ -335,7 +335,7 @@ void audio_task(void *pvParameters)
 
 void audio_fb_task(void *pvParameters)
 {
-  const TickType_t xFrequency = pdMS_TO_TICKS(50);
+  const TickType_t xFrequency = pdMS_TO_TICKS(100);
   TickType_t xLastWakeTime = xTaskGetTickCount();
 
   const float KP = 0.05f;     
