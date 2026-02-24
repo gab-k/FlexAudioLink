@@ -175,11 +175,11 @@ class AutoSerialConsole(tk.LabelFrame):
                         lines = rx_buffer.split('\n')
                         for line in lines[:-1]:
                             clean = line.strip('\r')
-                            if clean: self.log(f"RX: {clean}", 'rx')
+                            if clean: self.log(f"{clean}", 'rx')
                         rx_buffer = lines[-1]
                 else:
                     if rx_buffer and (time.time() - last_rx_time > BUFFER_TIMEOUT):
-                        self.log(f"RX: {rx_buffer.strip()}", 'rx')
+                        self.log(f"{rx_buffer.strip()}", 'rx')
                         rx_buffer = ""
                     time.sleep(0.01)
 

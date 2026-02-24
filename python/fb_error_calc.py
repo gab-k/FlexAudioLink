@@ -38,11 +38,12 @@ def calculate_average_abs_error(filepath):
 if __name__ == "__main__":
     # You can list your specific files here
     files_to_process = [
-        "50ms_0p1alpha.yaml", 
-        "100ms_0p1alpha.yaml", 
-        "100ms_0p05alpha.yaml", 
-        "200ms_0p1alpha.yaml",
-	"200ms_0p05alpha.yaml"
+	"100ms_0p05alpha_0p5KP.yaml",
+        "100ms_0p05alpha_0p3KP.yaml",
+	"100ms_0p05alpha_0p2KP.yaml",
+	"100ms_0p05alpha_0p15KP.yaml",
+        "100ms_0p05alpha_0p1KP.yaml",
+        "100ms_0p05alpha_0p05KP.yaml",
     ]
 
     # Or uncomment the line below to run on files passed via command line
