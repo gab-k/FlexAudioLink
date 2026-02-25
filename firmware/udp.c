@@ -12,21 +12,14 @@
 #define IP_AP "192.168.1.1"     // Dongle IP (Correct)
 #define IP_STA "192.168.1.2"  // Broadcast Address for 192.168.1.x subnet
 
-// Latency Tuning:
-// 48kHz * 2 channels * 2 bytes = 192 bytes per millisecond.
-// 512 bytes = 2.66 ms
-// 480 bytes = 2.5 ms
-// 240 bytes = 1.25 ms
-// 192 bytes = 1 ms
-#define UDP_PACKET_SIZE  192
-
 
 // TODO: Revise all the buffer sizes in this file and #define them
 // TODO: Consider making buffer sizes configurable via cli.
-#define UDP_SPK_BUF_SIZE   2048
-#define UDP_MIC_BUF_SIZE   2048
+#define UDP_SPK_BUF_SIZE   (2*1920)
+#define UDP_MIC_BUF_SIZE   (2*1920)
 
-TaskHandle_t g_udp_task_handle = NULL;
+TaskHandle_t g_udp_rx_task_handle = NULL;
+TaskHandle_t g_udp_tx_task_handle = NULL;
 
 static volatile bool g_feedback_pending = false;
 static volatile uint32_t g_feedback_value = 0;
@@ -68,9 +61,34 @@ typedef enum {
 } udp_datatype_t;
 
 
+// Volatile because RX writes it, TX reads it.
+// Initialize to -1 to indicate "Not Ready"
+volatile int g_udp_sock = -1; 
+
+// IP Addresses (Pre-calculated constants)
+// Ideally these are defined in a header or passed in
+#define IP_AP_INT  inet_addr(IP_AP)
+#define IP_STA_INT inet_addr(IP_STA)
+
+
 static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode);
 static int udp_process_tx(uint8_t *buffer, app_mode_t mode);
 
+const char* get_socket_error_string(int err) {
+    switch (err) {
+        case 9:  return "EBADF (Bad file descriptor / Socket closed)";
+        case 11: return "EAGAIN / EWOULDBLOCK (Resource temporarily unavailable)";
+        case 12: return "ENOMEM (Out of memory / LwIP pbuf pool empty)";
+        case 103: return "ECONNABORTED (Software caused connection abort)";
+        case 104: return "ECONNRESET (Connection reset by peer)";
+        case 112: return "EHOSTDOWN (Host is down)";
+        case 113: return "EHOSTUNREACH (No route to host)";
+        case 118: return "ENOTCONN (Socket is not connected)";
+        case 119: return "ETOOMANYREFS (Too many references / cannot splice)";
+        case 128: return "ENOTCONN (Transport endpoint is not connected)";
+        default:  return "Unknown Error";
+    }
+}
 
 void udp_audio_ff_init(void)
 {
@@ -91,25 +109,10 @@ tu_fifo_t* udp_get_mic_fifo(void) {
 }    
 
 
-void udp_task(void *pvParameters)
+void udp_rx_task(void *pvParameters)
 {
-    int sock = -1;
-    struct sockaddr_in my_addr, dest_addr;
-    uint8_t rx_buffer[1500];
-    uint8_t tx_buffer[1500];
-
-    // Cache variables to track state changes
-    app_mode_t current_mode;
-    app_mode_t cached_mode = MODE_IDLE; 
-
-    // Pre-calculate IP addresses as integers (Avoids string parsing in the loop)
-    const uint32_t ip_addr_ap  = inet_addr(IP_AP);
-    const uint32_t ip_addr_sta = inet_addr(IP_STA);
-
-    // Setup destination struct
-    memset(&dest_addr, 0, sizeof(dest_addr));
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(UDP_AUDIO_PORT);
+    struct sockaddr_in my_addr;
+    static uint8_t rx_buffer[500]; // Static to save stack
 
     // Setup own address struct
     memset(&my_addr, 0, sizeof(my_addr));
@@ -119,91 +122,113 @@ void udp_task(void *pvParameters)
 
     for (;;)
     {
-        // Wait for IP address to be acquired.
-        xEventGroupWaitBits(
-            g_wifi_events,           // The Event Group
-            WIFI_EVENT_IP_ACQUIRED,  // The Bit to wait for
-            pdFALSE,                 // Don't clear the bit on exit (keep it set for others)
-            pdTRUE,                  // Wait for the bit to be set
-            portMAX_DELAY            // Wait forever
-        );
+        // Blocking wait for WIFI_INIT_DONE
+        xEventGroupWaitBits(g_wifi_events, WIFI_INIT_DONE, 
+                            pdFALSE, pdTRUE, portMAX_DELAY);
 
-        // Socket Setup & Callback Registration
+        // Create Socket
+        int sock = socket(AF_INET, SOCK_DGRAM, 0);
         if (sock < 0) {
-            sock = socket(AF_INET, SOCK_DGRAM, 0);
-            
-            // Listen to UDP_AUDIO_PORT
-            int ret_val = bind(sock, (struct sockaddr *)&my_addr, sizeof(my_addr));
-            if (ret_val != 0) {
-                int error_code = 0;
-                socklen_t len = sizeof(error_code);
-                getsockopt(sock, SOL_SOCKET, SO_ERROR, &error_code, &len);
-                PRINTF("bind() failed. Return: %d, Actual Error: %d\r\n", ret_val, error_code);
-                close(sock);
-                sock = -1;
-                PRINTF("Retrying in %d ms\r\n", SOCKET_RETRY_DELAY_MS);
-                vTaskDelay(pdMS_TO_TICKS(SOCKET_RETRY_DELAY_MS));
-                continue;
-            }
-            
-            // Set IP Type of Service to EF (Expedited Forwarding) or Voice
-            int tos = 0xE0; // Critical/Voice
-            setsockopt(sock, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
-
-            // Set receive timeout to 1 ms.
-            struct timeval tv;
-            tv.tv_sec = 0;
-            tv.tv_usec = 1000; // 1000us = 1ms
-            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-            
-            // Ensure Blocking Mode (Default, but good to be explicit vs previous code)
-            int flags = fcntl(sock, F_GETFL, 0);
-            fcntl(sock, F_SETFL, flags & ~O_NONBLOCK);
-
-            // Force address update 
-            cached_mode = MODE_IDLE; 
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
         }
 
-        // Configure Target IP based on our Role
-        // Only update dest_addr if the mode has changed!
-        current_mode = get_app_mode();
+        // Bind
+        int ret = bind(sock, (struct sockaddr *)&my_addr, sizeof(my_addr));
+        if (ret != 0) {
+            close(sock);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+
+        // Configure QoS to Voice/Critical (0xE0)
+        int tos = 0xE0;
+        setsockopt(sock, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+
+        // Configure Receive Timeout to 0 (Infinite Blocking)
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        
+        // Publish Socket to TX Task
+        // The TX task will see this variable change and start sending.
+        g_udp_sock = sock;
+
+        // Processing Loop
+        // Runs as long as the socket is valid
+        while (1) {
+            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0, NULL, NULL);
+            if (len > 0) {
+                // Process the packet
+                udp_process_rx(rx_buffer, len, get_app_mode());
+            } 
+            else {
+                PRINTF("Socket Error or Closed. Errno: %d\n", errno);
+                break; // Break inner loop -> Close sock -> Wait for IP again
+            }
+        }
+
+        // 8. Cleanup
+        g_udp_sock = -1; // Stop TX task immediately
+        PRINTF("Closing Socket...");
+        close(sock);
+    }
+}
+
+
+void udp_tx_task(void *pvParameters)
+{
+    struct sockaddr_in dest_addr;
+    static uint8_t tx_buffer[500];
+
+    // State tracking
+    app_mode_t cached_mode = MODE_IDLE; 
+    
+    // Initialize Destination Struct
+    memset(&dest_addr, 0, sizeof(dest_addr));
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(UDP_AUDIO_PORT);
+
+    for (;;)
+    {
+        // Wait until EITHER USB OR I2S gives the signal.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+
+        // If socket isn't ready (RX task hasn't created it yet), skip.
+        int sock = g_udp_sock; // Local copy to ensure atomicity
+        if (sock < 0) {
+            continue; 
+        }
+
+        // 3. Update Destination Address (if mode changed)
+        app_mode_t current_mode = get_app_mode();
         if (current_mode != cached_mode) {
             if (current_mode == MODE_UDP_DONGLE_AUDIO) {
-                dest_addr.sin_addr.s_addr = ip_addr_sta;
+                dest_addr.sin_addr.s_addr = IP_STA_INT;
             } else {
-                dest_addr.sin_addr.s_addr = ip_addr_ap;
+                dest_addr.sin_addr.s_addr = IP_AP_INT;
             }
             cached_mode = current_mode;
         }
 
-        // ---------------------------------------------------------
-        // RX and TX Processing Loop
-        // ---------------------------------------------------------
-        
-        // 1. RX Step (Blocking, but wakes on data)
-        // If data arrives at 0.3ms, this returns at 0.3ms. 
-        // If no data, it returns at 1.0ms.
-        int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0, NULL, NULL);
-        if (len > 0) {
-            udp_process_rx(rx_buffer, len, current_mode);
-            
-            // Optimization: If we just got a packet, check for MORE immediately
-            // without waiting for the timeout, to drain bursts.
-            int flags = fcntl(sock, F_GETFL, 0);
-            fcntl(sock, F_SETFL, flags | O_NONBLOCK); // Temp switch to Non-Blocking
-            while((len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0, NULL, NULL)) > 0) {
-                 udp_process_rx(rx_buffer, len, current_mode);
-            }
-            fcntl(sock, F_SETFL, flags & ~O_NONBLOCK); // Switch back to Blocking
-        }
-
-        // 2. TX Step (Polled)
-        // This runs at least once every 1ms.
-        // Since USB audio chunks (192-240 bytes) cover ~1ms of time, checking
-        // every 1ms is sufficient to keep the pipe full.
+        // 4. TX Processing
+        // Check if we have enough audio data to send a chunk
         int tx_len = udp_process_tx(tx_buffer, current_mode);
+        
         if (tx_len > 0) {
-            sendto(sock, tx_buffer, tx_len, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
+            int sent = -1;
+            sent = sendto(sock, tx_buffer, tx_len, 0, 
+                            (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            if (sent < 0) {
+                PRINTF("WARN: sendto() failed! tx_count=%u | errno=%d | error=\"%s\" \r\n",
+                        tx_udp_packet_counter, errno, get_socket_error_string(errno));
+            } 
+            else {
+                // Success! The packet is in LwIP. Increment sequence.
+                tx_udp_packet_counter++;
+            }
         }
     }
 }
@@ -228,12 +253,54 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
     case UDP_DATATYPE_SPEAKER_AUDIO:
         // Only HEADSET should receive Speaker Audio (from Dongle)
         if (mode == MODE_UDP_HEADSET_AUDIO) {
-            tu_fifo_write_n(&udp_spk_ff, p_payload, payload_len);
-            if (p_hdr->sequence != rx_udp_packet_counter) {
-                PRINTF("Packet Loss Detected! Expected Seq: %d, Got: %d\r\n", rx_udp_packet_counter, p_hdr->sequence);
+            
+            int32_t diff = (int32_t)(p_hdr->sequence - rx_udp_packet_counter);
+
+            // Drop late/out-of-order packets instantly
+            if (diff < 0) {
+                PRINTF("WARN: Dropped late packet Seq: %u\r\n", p_hdr->sequence);
+                return; // Bail out
             }
+
+            // Drop packet if buffer is full
+            if (tu_fifo_remaining(&udp_spk_ff) < payload_len) {
+                PRINTF("WARN: udp_spk_ff FULL! Dropped Seq: %u\r\n", p_hdr->sequence);
+                rx_udp_packet_counter = p_hdr->sequence + 1; // Keep counter moving
+                return; // Bail out
+            }
+
+            // Handle packet loss
+            if (diff > 0) {
+                PRINTF("WARN: %u Packet(s) Lost! Expected: %u, Got: %u\r\n",
+                        diff,
+                        rx_udp_packet_counter,
+                        p_hdr->sequence);
+                // TODO: Reception of the very first packet needs to be handled, the counters are not synchronized!
+                // If not it will insert a huge amount of silence on the first packet.
+                // static const uint8_t silence[UDP_PACKET_SIZE] = {0};
+                
+                // // Only insert as much silence as there is room for, minus 1 for the payload
+                // int32_t max_silence_packets = (tu_fifo_remaining(&udp_spk_ff) / payload_len) - 1;
+                // int32_t insert_count = (diff > max_silence_packets) ? max_silence_packets : diff;
+
+                // for (int32_t i = 0; i < insert_count; i++) {
+                //     tu_fifo_write_n(&udp_spk_ff, silence, payload_len);
+                // }
+            }
+
+            // --- REGULAR WRITE TO SPEAKER BUFFER ---
+            tu_fifo_write_n(&udp_spk_ff, p_payload, payload_len);
             rx_udp_packet_counter = p_hdr->sequence + 1;
-        } else {
+            // Wake the audio task
+            if (g_audio_task_handle == NULL) {
+                PRINTF("ERROR: Tried to wake audio task when handle is NULL pointer!\r\n");
+            }
+            else if (!q_full()) {
+                //PRINTF("INFO: Waking audio_task from udp_rx_task!\n");
+                xTaskNotifyGive(g_audio_task_handle); 
+            }
+        }
+        else {
             PRINTF("ERROR: Received speaker audio when not in headset mode!\r\n");
             configASSERT(false);
         }
@@ -291,7 +358,7 @@ static int udp_process_tx(uint8_t *buffer, app_mode_t mode)
         if (available >= UDP_PACKET_SIZE) 
         {
             p_hdr->type = UDP_DATATYPE_SPEAKER_AUDIO;
-            p_hdr->sequence = tx_udp_packet_counter++;
+            p_hdr->sequence = tx_udp_packet_counter;
             uint16_t read = tud_audio_read(p_payload, UDP_PACKET_SIZE);
             tx_len = sizeof(udp_header_t) + read;
         }

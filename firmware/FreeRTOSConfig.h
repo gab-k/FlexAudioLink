@@ -43,9 +43,9 @@
 #define configUSE_TICKLESS_IDLE                 0
 #define configCPU_CLOCK_HZ                      (SystemCoreClock)
 #define configTICK_RATE_HZ                      ((TickType_t)1000)
-#define configMAX_PRIORITIES                    5
+#define configMAX_PRIORITIES                    10
 #define configMINIMAL_STACK_SIZE                ((unsigned short)128)
-#define configMAX_TASK_NAME_LEN                 10
+#define configMAX_TASK_NAME_LEN                 20
 #define configUSE_16_BIT_TICKS                  0
 #define configIDLE_SHOULD_YIELD                 1
 #define configUSE_TASK_NOTIFICATIONS            1
@@ -98,7 +98,7 @@ uint64_t vGetRunTimeCounterValue64(void);
 
 /* Software timer related definitions. */
 #define configUSE_TIMERS             1
-#define configTIMER_TASK_PRIORITY    4
+#define configTIMER_TASK_PRIORITY    ( configMAX_PRIORITIES - 1 )
 #define configTIMER_QUEUE_LENGTH     5
 #define configTIMER_TASK_STACK_DEPTH (configMINIMAL_STACK_SIZE)
 

@@ -83,6 +83,8 @@ mcux_add_include(
 # 3. Redefine 'PRINTF' to point to 'log_print' function
 target_compile_options(FlexAudioLink PRIVATE 
     "-include${CMAKE_CURRENT_SOURCE_DIR}/log.h"
+    #"-DCONFIG_11AX=0" 
+    #"-DCONFIG_11AC=0"
 )
 
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)

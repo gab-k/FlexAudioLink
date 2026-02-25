@@ -40,12 +40,13 @@
  ******************************************************************************/
 /* Task priorities. */
 #define audio_task_PRIORITY (configMAX_PRIORITIES - 2)
-#define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 2)
-#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 3)
+#define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 5)
+#define usb_device_task_PRIORITY (configMAX_PRIORITIES - 2)
 #define led_task_PRIORITY (tskIDLE_PRIORITY)
-#define log_task_PRIORITY (tskIDLE_PRIORITY + 1)
-#define wifi_task_PRIORITY (tskIDLE_PRIORITY + 1)
-#define udp_task_PRIORITY (configMAX_PRIORITIES - 2)
+#define log_task_PRIORITY (tskIDLE_PRIORITY)
+#define wifi_init_task_PRIORITY (tskIDLE_PRIORITY)
+#define udp_rx_task_PRIORITY (configMAX_PRIORITIES - 3)
+#define udp_tx_task_PRIORITY (configMAX_PRIORITIES - 4)
 #define cli_task_PRIORITY (tskIDLE_PRIORITY)
 
 /*******************************************************************************
@@ -71,36 +72,42 @@ int main(void)
     // Initialize log queue
     log_init_q();
 
-    // Queue boot message, Note: PRINTF is still used for task creation errors due to log_task not running yet!
-    // That means this message won't even be displayed when task creation fails!
     PRINTF("Booting...\r\n");
     
     // Initialize UDP audio FIFOs in any case, even when UDP audio is not used.
     udp_audio_ff_init();
 
     // Create USB device task.
-    if (xTaskCreate(usb_device_task, "usbd", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(usb_device_task, "usb_device", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, NULL) != pdPASS)
     {
         PRINTF("usbd task creation failed!.\r\n");
         configASSERT(false);
     }
 
-    // Create Wi-Fi task.
-    if (xTaskCreate(wifi_task, "wifi", 4096 / sizeof(StackType_t), NULL, wifi_task_PRIORITY, &g_wifi_task_handle) != pdPASS)
+    // Create Wi-Fi init task.
+    if (xTaskCreate(wifi_init_task, "wifi_init", 4096 / sizeof(StackType_t), NULL, wifi_init_task_PRIORITY, &g_wifi_init_task_handle) != pdPASS)
     {
-        PRINTF("wifi task creation failed!.\r\n");
+        PRINTF("wifi_init task creation failed!.\r\n");
         configASSERT(false);
     }
-    vTaskSuspend(g_wifi_task_handle);
+    vTaskSuspend(g_wifi_init_task_handle);
     g_wifi_events = xEventGroupCreate();
 
-    // Create UDP task.
-    if(xTaskCreate(udp_task, "udp", 32768 / sizeof(StackType_t), NULL, udp_task_PRIORITY, &g_udp_task_handle) != pdPASS)
+    // Create UDP RX task.
+    if(xTaskCreate(udp_rx_task, "udp_rx", 16384 / sizeof(StackType_t), NULL, udp_rx_task_PRIORITY, &g_udp_rx_task_handle) != pdPASS)
     {
-        PRINTF("udp task creation failed!.\r\n");
+        PRINTF("udp_rx task creation failed!.\r\n");
         configASSERT(false);
     }
-    vTaskSuspend(g_udp_task_handle);
+    vTaskSuspend(g_udp_rx_task_handle);
+
+    // Create UDP TX task.
+    if(xTaskCreate(udp_tx_task, "udp_tx", 16384 / sizeof(StackType_t), NULL, udp_tx_task_PRIORITY, &g_udp_tx_task_handle) != pdPASS)
+    {
+        PRINTF("udp_tx task creation failed!.\r\n");
+        configASSERT(false);
+    }
+    vTaskSuspend(g_udp_tx_task_handle);
 
     // Create audio task.
     if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, &g_audio_task_handle) != pdPASS)
@@ -133,7 +140,7 @@ int main(void)
     }
 
     // Create Log task
-    if (xTaskCreate(log_task, "log", 1024 / sizeof(StackType_t), NULL, log_task_PRIORITY, NULL) != pdPASS) {
+    if (xTaskCreate(log_task, "log", 2048 / sizeof(StackType_t), NULL, log_task_PRIORITY, NULL) != pdPASS) {
         PRINTF("log task creation failed!.\r\n");
         configASSERT(false);
     }

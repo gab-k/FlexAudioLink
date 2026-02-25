@@ -32,8 +32,9 @@ bool set_current_app_mode(app_mode_t target_mode)
 
     // This prevents HardFaults if xTaskCreate failed at boot.
     // Safety check for NULL task handles.
-    if (g_wifi_task_handle == NULL) return false;
-    if (g_udp_task_handle == NULL) return false;
+    if (g_wifi_init_task_handle == NULL) return false;
+    if (g_udp_rx_task_handle == NULL) return false;
+    if (g_udp_tx_task_handle == NULL) return false;
     if (g_audio_task_handle == NULL) return false;
     if (g_audio_fb_task_handle == NULL) return false;
 
@@ -42,8 +43,9 @@ bool set_current_app_mode(app_mode_t target_mode)
     usb_desc_profile_t target_profile  = get_usb_profile_for_mode(target_mode);
 
     // Suspend tasks
-    vTaskSuspend(g_wifi_task_handle);
-    vTaskSuspend(g_udp_task_handle);
+    vTaskSuspend(g_wifi_init_task_handle);
+    vTaskSuspend(g_udp_rx_task_handle);
+    vTaskSuspend(g_udp_tx_task_handle);
     vTaskSuspend(g_audio_task_handle);
     vTaskSuspend(g_audio_fb_task_handle);
 
@@ -61,19 +63,21 @@ bool set_current_app_mode(app_mode_t target_mode)
             break;
 
         case MODE_UDP_DONGLE_AUDIO:
-            vTaskResume(g_wifi_task_handle);
-            vTaskResume(g_udp_task_handle);
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_udp_rx_task_handle);
+            vTaskResume(g_udp_tx_task_handle);
             // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
-            xTaskNotifyGive(g_wifi_task_handle);
+            xTaskNotifyGive(g_wifi_init_task_handle);
             break;
         
         case MODE_UDP_HEADSET_AUDIO:
-            vTaskResume(g_wifi_task_handle);
-            vTaskResume(g_udp_task_handle);
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_udp_rx_task_handle);
+            vTaskResume(g_udp_tx_task_handle);
             vTaskResume(g_audio_task_handle);
             vTaskResume(g_audio_fb_task_handle);
             // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
-            xTaskNotifyGive(g_wifi_task_handle);
+            xTaskNotifyGive(g_wifi_init_task_handle);
             break;
 
         case MODE_BLE_AUDIO:
