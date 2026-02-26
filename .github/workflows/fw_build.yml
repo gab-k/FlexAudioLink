@@ -1,0 +1,80 @@
+name: RW612 Firmware Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build flash_debug
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive 
+
+      - name: Install System Dependencies (GCC)
+        run: |
+          sudo apt-get update
+          # We only need the compiler from apt now
+          sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Build Tools (Python, CMake, Ninja)
+        # Added jsonschema.
+        # Moved cmake and ninja here so we get the latest versions (>3.30 and >1.12)
+        run: python -m pip install --upgrade pip west kconfiglib jsonschema cmake ninja
+
+      - name: Cache NXP Workspace
+        id: cache-nxp
+        uses: actions/cache@v5
+        with:
+          # Use the absolute workspace path so 'act' doesn't get lost
+          path: ${{ github.workspace }}/nxp-workspace
+          key: ${{ runner.os }}-nxp-sdk-v25.12.00-full
+
+      - name: Fetch MCUXpresso SDK
+        if: steps.cache-nxp.outputs.cache-hit != 'true'
+        run: |
+          west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git --mr v25.12.00 nxp-workspace
+          cd nxp-workspace
+          west update
+          
+      - name: Configure CMake
+        # NXP's toolchain file explicitly looks for this environment variable
+        env:
+          ARMGCC_DIR: /usr
+        run: |
+          cmake -B firmware/flash_debug -G Ninja \
+            -DCMAKE_BUILD_TYPE=flash_debug \
+            -DCONFIG_TOOLCHAIN=armgcc \
+            -DWEST=TRUE \
+            -Dboard=frdmrw612 \
+            -DSdkRootDirPath=${{ github.workspace }}/nxp-workspace/mcuxsdk \
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/nxp-workspace/mcuxsdk/cmake/toolchain/armgcc.cmake \
+            -S firmware
+
+      - name: Build Firmware
+        env:
+          ARMGCC_DIR: /usr
+        run: cmake --build firmware/flash_debug
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rw612-firmware-flash_debug
+          path: |
+            firmware/flash_debug/**/*.elf
+            firmware/flash_debug/**/*.bin
+            firmware/flash_debug/**/*.hex
+            firmware/flash_debug/**/*.map
+          retention-days: 14

@@ -111,6 +111,6 @@ mcux_remove_armgcc_linker_script(
 mcux_add_armgcc_linker_script(
     BASE_PATH ${SdkRootDirPath}
     TARGETS flash_debug flash_release
-    LINKER ${PrjRootDirPath}/RW61x_flash.ld
+    LINKER ${CMAKE_CURRENT_SOURCE_DIR}/RW61x_flash.ld
 )
 
