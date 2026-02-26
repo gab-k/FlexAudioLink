@@ -161,3 +161,10 @@ static void usb_device_task(void *pvParameters)
         tud_task();
     }
 }
+
+
+void HardFault_Handler(void)
+{
+    __BKPT();
+    while (1);
+}

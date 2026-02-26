@@ -30,15 +30,12 @@ jobs:
           python-version: '3.10'
 
       - name: Install Build Tools (Python, CMake, Ninja)
-        # Added jsonschema.
-        # Moved cmake and ninja here so we get the latest versions (>3.30 and >1.12)
         run: python -m pip install --upgrade pip west kconfiglib jsonschema cmake ninja
 
       - name: Cache NXP Workspace
         id: cache-nxp
         uses: actions/cache@v5
         with:
-          # Use the absolute workspace path so 'act' doesn't get lost
           path: ${{ github.workspace }}/nxp-workspace
           key: ${{ runner.os }}-nxp-sdk-v25.12.00-full
 
@@ -50,7 +47,6 @@ jobs:
           west update
           
       - name: Configure CMake
-        # NXP's toolchain file explicitly looks for this environment variable
         env:
           ARMGCC_DIR: /usr
         run: |

@@ -118,6 +118,7 @@ static void set_wifi_task_priorities(void) {
         PRINTF("Error setting wifi_scan_task Priority!\r\n");
     }
 
+#ifdef wifi_powersave_task_Handle
     status = KOSA_StatusError;
     status = OSA_TaskSetPriority(wm_wifi.wifi_powersave_task_Handle, PRIORITY_RTOS_TO_OSA(wifi_powersave_task_priority));
     if (status == KOSA_StatusSuccess) {
@@ -128,6 +129,7 @@ static void set_wifi_task_priorities(void) {
     }
     // Signal the wifi init done to the UDP task
     xEventGroupSetBits(g_wifi_events, WIFI_INIT_DONE);
+#endif
 }
 
 static void start_ap(void){
