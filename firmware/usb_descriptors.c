@@ -153,7 +153,8 @@ uint8_t const desc_configuration_cdc_only[] =
     // Note: Reuse the SAME EPNUMs as the composite mode. This is safe and easier to manage.
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_ONLY, 6, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
 };
-
+TU_VERIFY_STATIC(sizeof(desc_configuration_cdc_only) == CONFIG_CDC_ONLY_TOTAL_LEN,
+                 "Incorrect CDC-Only config size");
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
@@ -237,9 +238,9 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     uint32_t uid_len = sizeof(uid);
     get_unique_id(uid, &uid_len);
     // Convert the raw UID to a hex string (ASCII)
-    sprintf(uid_str, "0x");
+    snprintf(uid_str, sizeof(uid_str), "0x");
     for (size_t i = 0; i < uid_len; i++) {
-        sprintf(uid_str + strlen(uid_str), "%02X", uid[i]);
+        snprintf(uid_str + strlen(uid_str), sizeof(uid_str) - strlen(uid_str), "%02X", uid[i]);
     }
     // Point to the UID string
     str = uid_str;
