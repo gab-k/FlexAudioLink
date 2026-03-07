@@ -48,7 +48,7 @@ void log_task(void *pvParameters) {
 }
 
 // Called by tasks to queue log messages
-void log_print(const char *format, ...) {
+int log_print(const char *format, ...) {
     static bool init_warn_shown = false;
 
     if (log_q == NULL) {
@@ -57,7 +57,7 @@ void log_print(const char *format, ...) {
             DbgConsole_Printf("ERROR: loq_q == NULL, was log_init_q() called?\r\n");
             init_warn_shown = true;
         }
-        return;
+        return -1;
     }
 
     log_msg_t msg;
@@ -79,7 +79,7 @@ void log_print(const char *format, ...) {
     if (len < 0) {
         // Use the Debug consoles printf for this emergency alert
         DbgConsole_Printf("ERROR: vsnprintf failed with code: %d\r\n", len);
-        return;
+        return -1;
     }
 
     // Send to Queue
@@ -91,4 +91,5 @@ void log_print(const char *format, ...) {
     } else {
         xQueueSend(log_q, &msg, 0);
     }
+    return len;
 }

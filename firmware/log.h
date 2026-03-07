@@ -32,7 +32,7 @@
 
         void log_init_q(void);
         void log_task(void *pvParameters);
-        void log_print(const char *format, ...);
+        int log_print(const char *format, ...);
 
 
     #endif /* !defined(__ASSEMBLER__) */
