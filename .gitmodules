@@ -1,4 +1,4 @@
 [submodule "firmware/tinyusb"]
 	path = firmware/tinyusb
-	url = https://github.com/hathach/tinyusb.git
-	branch = master
+	url = https://github.com/gab-k/tinyusb.git
+	branch = fix-ep_ctrl_mask
