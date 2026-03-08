@@ -918,6 +918,14 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
   TU_LOG2("Set interface %d alt %d\r\n", itf, alt);
   if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt != 0) {
     g_blink_interval_ms = BLINK_STREAMING;
+
+    // Set initial feedback value at the nominal sample rate so the host
+    // can start sending data immediately.  Linux snd-usb-audio waits for
+    // a valid feedback packet before it begins isochronous transfers on
+    // async OUT endpoints — without this the stream never starts.
+    float samples_per_frame = (float)current_sample_rate / 8000.0f; // HS microframes
+    uint32_t fb_nominal = (uint32_t)(samples_per_frame * 65536.0f); // 16.16 fixed-point
+    tud_audio_fb_set(fb_nominal);
   }
 
   // Clear buffer when streaming format is changed
