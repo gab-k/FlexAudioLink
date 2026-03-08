@@ -127,9 +127,9 @@ static void set_wifi_task_priorities(void) {
     else {
         PRINTF("Error setting wifi_powersave_task Priority!\r\n");
     }
-    // Signal the wifi init done to the UDP task
-    xEventGroupSetBits(g_wifi_events, WIFI_INIT_DONE);
 #endif
+    // Signal WIFI_INIT_DONE to the UDP tasks
+    xEventGroupSetBits(g_wifi_events, WIFI_INIT_DONE);
 }
 
 static void start_ap(void){
