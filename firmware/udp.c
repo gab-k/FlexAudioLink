@@ -26,6 +26,7 @@ static volatile uint32_t g_feedback_value = 0;
 
 uint16_t tx_udp_packet_counter = 0;
 uint16_t rx_udp_packet_counter = 0;
+static bool rx_spk_synced = false;
 
 TU_ATTR_ALIGNED(4) static uint8_t udp_spk_buf[UDP_SPK_BUF_SIZE];
 TU_ATTR_ALIGNED(4) static uint8_t udp_mic_buf[UDP_MIC_BUF_SIZE];
@@ -98,6 +99,10 @@ void udp_audio_ff_init(void)
 
     // Glue the Mic FIFO to the Mic Buffer
     tu_fifo_config(&udp_mic_ff, udp_mic_buf, UDP_MIC_BUF_SIZE, true);
+
+    // Reset RX sequence state
+    rx_udp_packet_counter = 0;
+    rx_spk_synced = false;
 }    
 
 tu_fifo_t* udp_get_spk_fifo(void) {
@@ -224,11 +229,10 @@ void udp_tx_task(void *pvParameters)
             if (sent < 0) {
                 PRINTF("WARN: sendto() failed! tx_count=%u | errno=%d | error=\"%s\" \r\n",
                         tx_udp_packet_counter, errno, get_socket_error_string(errno));
-            } 
-            else {
-                // Success! The packet is in LwIP. Increment sequence.
-                tx_udp_packet_counter++;
             }
+            // Always increment sequence so the headset sees a clean gap
+            // rather than rejecting fresh packets as late/duplicate.
+            tx_udp_packet_counter++;
         }
     }
 }
@@ -254,7 +258,16 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         // Only HEADSET should receive Speaker Audio (from Dongle)
         if (mode == MODE_UDP_HEADSET_AUDIO) {
             
-            int32_t diff = (int32_t)(p_hdr->sequence - rx_udp_packet_counter);
+            // Synchronize counter to dongle on first received packet to avoid
+            // false loss detection when the dongle's counter is already ahead.
+            if (!rx_spk_synced) {
+                rx_udp_packet_counter = p_hdr->sequence;
+                rx_spk_synced = true;
+            }
+
+            // Signed 16-bit arithmetic handles wraparound correctly:
+            // late packets produce a negative diff, losses produce positive.
+            int32_t diff = (int32_t)(int16_t)(p_hdr->sequence - rx_udp_packet_counter);
 
             // Drop late/out-of-order packets instantly
             if (diff < 0) {
@@ -269,23 +282,21 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
                 return; // Bail out
             }
 
-            // Handle packet loss
+            // Handle packet loss: fill the gap with silence to maintain timing.
+            // Cap so total fill stays ≤ 50% of FIFO, leaving headroom for the live stream.
             if (diff > 0) {
                 PRINTF("WARN: %u Packet(s) Lost! Expected: %u, Got: %u\r\n",
                         diff,
                         rx_udp_packet_counter,
                         p_hdr->sequence);
-                // TODO: Reception of the very first packet needs to be handled, the counters are not synchronized!
-                // If not it will insert a huge amount of silence on the first packet.
-                // static const uint8_t silence[UDP_PACKET_SIZE] = {0};
-                
-                // // Only insert as much silence as there is room for, minus 1 for the payload
-                // int32_t max_silence_packets = (tu_fifo_remaining(&udp_spk_ff) / payload_len) - 1;
-                // int32_t insert_count = (diff > max_silence_packets) ? max_silence_packets : diff;
-
-                // for (int32_t i = 0; i < insert_count; i++) {
-                //     tu_fifo_write_n(&udp_spk_ff, silence, payload_len);
-                // }
+                static const uint8_t silence[UDP_PACKET_SIZE] = {0};
+                int32_t used = UDP_SPK_BUF_SIZE - tu_fifo_remaining(&udp_spk_ff);
+                int32_t headroom = (UDP_SPK_BUF_SIZE / 2) - used - payload_len;
+                int32_t max_silence_packets = (headroom > 0) ? (headroom / payload_len) : 0;
+                int32_t insert_count = (diff > max_silence_packets) ? max_silence_packets : diff;
+                for (int32_t i = 0; i < insert_count; i++) {
+                    tu_fifo_write_n(&udp_spk_ff, silence, payload_len);
+                }
             }
 
             // --- REGULAR WRITE TO SPEAKER BUFFER ---

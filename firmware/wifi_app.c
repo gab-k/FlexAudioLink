@@ -11,7 +11,7 @@
 #define PASSWORD_AP "12345678"
 #define WLAN_CHANNEL 48 
 #define NETWORK_LABEL "default"
-#define wifi_drv_task_priority (configMAX_PRIORITIES - 2)
+#define wifi_drv_task_priority (configMAX_PRIORITIES - 3)
 #define IMU_TASK_PRIORITY (configMAX_PRIORITIES - 3)
 #define wifi_drv_tx_task_priority (configMAX_PRIORITIES - 4)
 #define wifi_scan_task_priority (configMAX_PRIORITIES - 7)
@@ -176,13 +176,13 @@ static void start_ap(void){
     }
 
     //configure_reliable_rates(BSS_TYPE_UAP);
-      
+
     // Disable Aggregate MAC Protocol Data Unit (AMPDU) in both directions.
     // Disable TX Aggregation: Send frames immediately, don't batch.
     wlan_uap_ampdu_tx_disable();
     // Disable RX Aggregation: Process incoming frames one-by-one.
     wlan_uap_ampdu_rx_disable();
-        
+
     // Confirm our own IP (Should be 192.168.1.1)
     wait_for_ip_address(0); // 0 = AP Mode
         
