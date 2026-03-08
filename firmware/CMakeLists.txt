@@ -4,6 +4,8 @@
 
 cmake_minimum_required(VERSION 3.22.0)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 include(${SdkRootDirPath}/cmake/extension/mcux.cmake)
 
 file(RELATIVE_PATH BOARD_REL_PATH "${SdkRootDirPath}" "${CMAKE_CURRENT_SOURCE_DIR}")

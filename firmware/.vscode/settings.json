@@ -7,7 +7,8 @@
   },
   "C_Cpp.exclusionPolicy": "checkFolders",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-  "cmake.useCMakePresets": "always",
+  "cmake.useCMakePresets": "auto",
+  "cmake.generator": "Ninja",
   "cmake.buildTask": true,
   "cmake.skipConfigureIfCachePresent": true,
   "cmake.sourceDirectory": "${workspaceFolder}/",
@@ -17,5 +18,13 @@
     "stdint.h": "c",
     "fsl_gpio.h": "c"
   },
-  "mcuxpresso.debug.variableUseNaturalFormat": false
+  "mcuxpresso.debug.variableUseNaturalFormat": false,
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/flash_debug",
+    "--query-driver=**/*arm-none-eabi*"
+  ],
+  "[c]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": false
+  },
 }

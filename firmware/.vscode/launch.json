@@ -1,52 +1,28 @@
 {
   "configurations": [
     {
-      "type": "mcuxpresso-debug",
-      "name": "Debug Headset",
-      "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "executable": {
-        "elf": ""
-      },
-      "stopAtSymbol": "main",
-      "probeSerialNumber": "1066062303",
-      "isAttach": false,
-      "skipBuildBeforeDebug": false,
-      "gdbInitCommands": [
-        "set remotetimeout 600",
-        "set debug-file-directory",
-        "set non-stop off"
-      ],
-      "gdbServerConfigs": {
-        "linkserver": {},
-        "segger": {},
-        "pemicro": {}
-      },
-      "showDevDebugOutput": "none"
+            "name": "Debug Headset FRDM-RW612 (J-Link)",
+            "cwd": "${workspaceFolder}",
+            "executable": "${command:cmake.launchTargetPath}",
+            "request": "launch",
+            "type": "cortex-debug",
+            "runToEntryPoint": "main",
+            "servertype": "jlink",
+            "device": "RW612",
+            "interface": "swd",
+            "serialNumber": "1066062303"
     },
     {
-      "type": "mcuxpresso-debug",
-      "name": "Debug Dongle",
-      "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "executable": {
-        "elf": ""
-      },
-      "stopAtSymbol": "main",
-      "probeSerialNumber": "1068276901",
-      "isAttach": false,
-      "skipBuildBeforeDebug": false,
-      "gdbInitCommands": [
-        "set remotetimeout 600",
-        "set debug-file-directory",
-        "set non-stop off"
-      ],
-      "gdbServerConfigs": {
-        "linkserver": {},
-        "segger": {},
-        "pemicro": {}
-      },
-      "showDevDebugOutput": "none"
-    }
+            "name": "Debug Dongle FRDM-RW612 (J-Link)",
+            "cwd": "${workspaceFolder}",
+            "executable": "${command:cmake.launchTargetPath}",
+            "request": "launch",
+            "type": "cortex-debug",
+            "runToEntryPoint": "main",
+            "servertype": "jlink",
+            "device": "RW612",
+            "interface": "swd",
+            "serialNumber": "1068276901"
+    },
   ]
 }
