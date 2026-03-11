@@ -38,19 +38,22 @@ import json
 import os
 
 class AutoSerialConsole(tk.LabelFrame):
-    def __init__(self, parent, config, *args, **kwargs):
+    def __init__(self, parent, config, log_path, *args, **kwargs):
         """
         config: dict containing "name", "usb_serial", "baud"
+        log_path: path to session log file (opened in 'w' mode, overwritten each run)
         """
         self.target_name = config.get("name", "Unknown")
         self.target_serial = config.get("usb_serial", "").strip()
         self.target_baud = config.get("baud", 115200)
-        
+
         super().__init__(parent, text=f" {self.target_name} (Searching...) ", padx=5, pady=5, *args, **kwargs)
-        
+
         self.serial_conn = None
         self.is_connected = False
         self.stop_thread = threading.Event()
+        self._log_lock = threading.Lock()
+        self._log_file = open(log_path, 'w', buffering=1)  # line-buffered, truncates on open
         
         # History
         self.command_history = []
@@ -100,9 +103,15 @@ class AutoSerialConsole(tk.LabelFrame):
         self.after(1000, self.auto_connect_watchdog)
 
     def log(self, message, tag='sys'):
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        with self._log_lock:
+            try:
+                self._log_file.write(f"[{timestamp}] [{tag.upper()}] {message}\n")
+            except Exception:
+                pass
+
         def _append():
             self.console_text.config(state='normal')
-            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             self.console_text.insert(tk.END, f"[{timestamp}] {message}\n", tag)
             self.console_text.see(tk.END)
             self.console_text.config(state='disabled')
@@ -130,6 +139,17 @@ class AutoSerialConsole(tk.LabelFrame):
         for port in ports:
             if port.serial_number and port.serial_number.strip().upper() == target_serial.strip().upper():
                 return port.device
+
+        # Linux fallback: pyserial sometimes doesn't populate serial_number right after
+        # re-enumeration, but /dev/serial/by-id/ symlinks (which encode the serial in the
+        # filename) are usually available sooner.
+        by_id_dir = '/dev/serial/by-id'
+        if os.path.isdir(by_id_dir):
+            target_upper = target_serial.strip().upper()
+            for link_name in os.listdir(by_id_dir):
+                if target_upper in link_name.upper():
+                    return os.path.realpath(os.path.join(by_id_dir, link_name))
+
         return None
 
     def connect(self, port_name):
@@ -183,7 +203,7 @@ class AutoSerialConsole(tk.LabelFrame):
                         rx_buffer = ""
                     time.sleep(0.01)
 
-            except serial.SerialException:
+            except (serial.SerialException, OSError):
                 self.stop_thread.set()
                 self.after(0, self.disconnect)
                 break
@@ -201,6 +221,9 @@ class AutoSerialConsole(tk.LabelFrame):
                     self.history_index = len(self.command_history)
                     
                     self.entry_input.delete(0, tk.END)
+                except (serial.SerialException, OSError) as e:
+                    self.log(f"Send Error: {e}", 'err')
+                    self.after(0, self.disconnect)
                 except Exception as e:
                     self.log(f"Send Error: {e}", 'err')
 
@@ -241,21 +264,31 @@ class QuadSerialApp(tk.Tk):
         self.main_container.rowconfigure(0, weight=1)
         self.main_container.rowconfigure(1, weight=1)
 
+        # Prepare session log directory (../temp relative to this script)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.log_dir = os.path.join(script_dir, '..', 'temp')
+        os.makedirs(self.log_dir, exist_ok=True)
+
         # Load Config
         configs = self.load_config()
         self.consoles = [] # Keep track of console instances
 
         positions = [(0,0), (0,1), (1,0), (1,1)]
-        
+
         for i, pos in enumerate(positions):
             if i < len(configs):
                 cfg = configs[i]
             else:
                 cfg = {"name": f"Unused Slot {i+1}", "usb_serial": "", "baud": 115200}
-            
-            frame = AutoSerialConsole(self.main_container, config=cfg)
+
+            safe_name = cfg.get("name", f"terminal_{i}").replace(' ', '_').replace('/', '_')
+            log_path = os.path.join(self.log_dir, f"session_{safe_name}.log")
+
+            frame = AutoSerialConsole(self.main_container, config=cfg, log_path=log_path)
             frame.grid(row=pos[0], column=pos[1], sticky="nsew", padx=5, pady=5)
             self.consoles.append(frame)
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # --- Global Controls ---
         # Clear All Button
@@ -278,6 +311,14 @@ class QuadSerialApp(tk.Tk):
         """Iterates through all console instances and calls their clear method."""
         for console in self.consoles:
             console.clear_console()
+
+    def _on_close(self):
+        for console in self.consoles:
+            try:
+                console._log_file.close()
+            except Exception:
+                pass
+        self.destroy()
 
 if __name__ == "__main__":
     app = QuadSerialApp()
