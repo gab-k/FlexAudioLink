@@ -39,10 +39,7 @@
 
 #define CONFIG_NETWORK_HIGH_PERF 1
 
-#define MAX_SOCKETS_TCP           8
-#define MAX_LISTENING_SOCKETS_TCP 4
 #define MAX_SOCKETS_UDP           6
-#define TCP_SND_BUF_COUNT         2
 #define TCPIP_STACK_TX_HEAP_SIZE  0
 #define LWIP_COMPAT_SOCKETS       2
 
@@ -67,10 +64,10 @@ void sys_mark_tcpip_thread(void);
 /**
  * Loopback demo related options.
  */
-#define LWIP_NETIF_LOOPBACK                1
-#define LWIP_HAVE_LOOPIF                   1
-#define LWIP_NETIF_LOOPBACK_MULTITHREADING 1
-#define LWIP_LOOPBACK_MAX_PBUFS            8
+#define LWIP_NETIF_LOOPBACK                0
+#define LWIP_HAVE_LOOPIF                   0
+#define LWIP_NETIF_LOOPBACK_MULTITHREADING 0
+#define LWIP_LOOPBACK_MAX_PBUFS            0
 
 #define TCPIP_THREAD_NAME      "tcp/ip"
 #define TCPIP_THREAD_STACKSIZE 768
@@ -162,41 +159,14 @@ void sys_mark_tcpip_thread(void);
 
 #define MEM_ALIGNMENT 4
 
-/* Value of TCP_SND_BUF_COUNT denotes the number of buffers and is set by
- * CONFIG option available in the SDK
- */
-#ifdef CONFIG_NETWORK_HIGH_PERF
-#define TCP_SND_BUF (12 * TCP_MSS)
-#else
-#define TCP_SND_BUF (TCP_SND_BUF_COUNT * TCP_MSS)
-#endif
-
-/* Buffer size needed for TCP: Max. number of TCP sockets * Size of pbuf *
- * Max. number of TCP sender buffers per socket
- *
- * Listening sockets for TCP servers do not require the same amount buffer
- * space. Hence do not consider these sockets for memory computation
- */
-#define TCP_MEM_SIZE (MAX_SOCKETS_TCP * PBUF_POOL_BUFSIZE * (TCP_SND_BUF / TCP_MSS))
-
 /* Buffer size needed for UDP: Max. number of UDP sockets * Size of pbuf
  */
 #define UDP_MEM_SIZE (MAX_SOCKETS_UDP * PBUF_POOL_BUFSIZE)
 
 /**
- * MEM_SIZE: the size of the heap memory. If the application will send
- * a lot of data that needs to be copied, this should be set high.
+ * MEM_SIZE: heap memory for LwIP (UDP only).
  */
-#if (TCPIP_STACK_TX_HEAP_SIZE == 0)
-#define MEM_SIZE (TCP_MEM_SIZE + UDP_MEM_SIZE)
-#else
-#define MEM_SIZE (TCPIP_STACK_TX_HEAP_SIZE * 1024)
-#endif
-
-#ifdef CONFIG_NETWORK_HIGH_PERF
-#undef MEM_SIZE
-#define MEM_SIZE (20 * 1024)
-#endif
+#define MEM_SIZE (UDP_MEM_SIZE)
 
 /*
    ------------------------------------------------
@@ -214,24 +184,6 @@ void sys_mark_tcpip_thread(void);
 #define MEMP_NUM_PBUF 20
 #else
 #define MEMP_NUM_PBUF 10
-#endif
-
-/**
- * MEMP_NUM_TCP_PCB: the number of simulatenously active TCP connections.
- * (requires the LWIP_TCP option)
- */
-#define MEMP_NUM_TCP_PCB MAX_SOCKETS_TCP
-
-#define MEMP_NUM_TCP_PCB_LISTEN MAX_LISTENING_SOCKETS_TCP
-
-/**
- * MEMP_NUM_TCP_SEG: the number of simultaneously queued TCP segments.
- * (requires the LWIP_TCP option)
- */
-#ifdef CONFIG_NETWORK_HIGH_PERF
-#define MEMP_NUM_TCP_SEG 48
-#else
-#define MEMP_NUM_TCP_SEG 12
 #endif
 
 /**
@@ -258,7 +210,7 @@ void sys_mark_tcpip_thread(void);
  * MEMP_NUM_SYS_TIMEOUT: the number of simulateously active timeouts.
  * (requires NO_SYS==0)
  */
-#define MEMP_NUM_SYS_TIMEOUT 12
+#define MEMP_NUM_SYS_TIMEOUT 6
 
 /**
  * MEMP_NUM_NETBUF: the number of struct netbufs.
@@ -278,12 +230,12 @@ void sys_mark_tcpip_thread(void);
  * given point in time. This number must be sum of max. TCP sockets, max. TCP
  * sockets used for listening, and max. number of UDP sockets
  */
-#define MEMP_NUM_NETCONN (MAX_SOCKETS_TCP + MAX_LISTENING_SOCKETS_TCP + MAX_SOCKETS_UDP)
+#define MEMP_NUM_NETCONN (MAX_SOCKETS_UDP)
 
 /**
  * PBUF_POOL_SIZE: the number of buffers in the pbuf pool.
  */
-#define PBUF_POOL_SIZE 40
+#define PBUF_POOL_SIZE 100
 
 /*
    ----------------------------------
@@ -347,7 +299,7 @@ void sys_mark_tcpip_thread(void);
 /**
  * LWIP_RAW==1: Enable application layer to hook into the IP layer itself.
  */
-#define LWIP_RAW 1
+#define LWIP_RAW 0
 
 /*
    ---------------------------------------
@@ -357,7 +309,7 @@ void sys_mark_tcpip_thread(void);
 /**
  * LWIP_IPV6==1: Enable IPv6
  */
-#define LWIP_IPV6 1
+#define LWIP_IPV6 0
 
 #define LWIP_DNS_SECURE 0
 
@@ -369,6 +321,9 @@ void sys_mark_tcpip_thread(void);
 /**
  * LWIP_SOCKET==1: Enable Socket API (require to use sockets.c)
  */
+#define LWIP_TCP 0
+#define LWIP_TCP_KEEPALIVE 0
+
 #define LWIP_SOCKET    1
 #define LWIP_NETIF_API 1
 
@@ -382,20 +337,7 @@ void sys_mark_tcpip_thread(void);
 #define SO_REUSE         1
 #define SO_REUSE_RXTOALL 1
 
-/**
- * TCP_WND: The size of a TCP window.  This must be at least
- * (2 * TCP_MSS) for things to work well
- **/
-#ifdef CONFIG_NETWORK_HIGH_PERF
-#define TCP_WND (15 * TCP_MSS)
-#else
-#define TCP_WND (10 * TCP_MSS)
-#endif
 
-/**
- * Enable TCP_KEEPALIVE
- */
-#define LWIP_TCP_KEEPALIVE 1
 
 /*
    ----------------------------------------
@@ -405,12 +347,12 @@ void sys_mark_tcpip_thread(void);
 /**
  * LWIP_STATS==1: Enable statistics collection in lwip_stats.
  */
-#define LWIP_STATS 1
+#define LWIP_STATS 0
 
 /**
  * LWIP_STATS_DISPLAY==1: Compile in the statistics output functions.
  */
-#define LWIP_STATS_DISPLAY 1
+#define LWIP_STATS_DISPLAY 0
 
 /*
    ----------------------------------
@@ -427,15 +369,11 @@ void sys_mark_tcpip_thread(void);
  * DNS related options, revisit later to fine tune.
  */
 #define LWIP_DNS            1
-#define DNS_TABLE_SIZE      2  // number of table entries, default 4
-#define DNS_MAX_NAME_LENGTH 64 // max. name length, default 256
-#define DNS_MAX_SERVERS     2  // number of DNS servers, default 2
-#define DNS_DOES_NAME_CHECK 1  // compare received name with given,def 0
+#define DNS_TABLE_SIZE      2
+#define DNS_MAX_NAME_LENGTH 64
+#define DNS_MAX_SERVERS     2
+#define DNS_DOES_NAME_CHECK 1
 #define DNS_MSG_SIZE        512
-#define MDNS_MSG_SIZE       512
-
-#define MDNS_TABLE_SIZE  1 // number of mDNS table entries
-#define MDNS_MAX_SERVERS 1 // number of mDNS multicast addresses
 /* TODO: Number of active UDP PCBs is equal to number of active UDP sockets plus
  * two. Need to find the users of these 2 PCBs
  */
@@ -451,7 +389,7 @@ void sys_mark_tcpip_thread(void);
 /**
  * LWIP_IGMP==1: Turn on IGMP module.
  */
-#define LWIP_IGMP 1
+#define LWIP_IGMP 0
 
 /**
  * LWIP_SO_SNDTIMEO==1: Enable send timeout for sockets/netconns and
@@ -487,11 +425,6 @@ void sys_mark_tcpip_thread(void);
  */
 #define LWIP_NETIF_HOSTNAME 1
 
-/**
- * TCP_RESOURCE_FAIL_RETRY_LIMIT: limit for retrying sending of tcp segment
- * on resource failure error returned by driver.
- */
-#define TCP_RESOURCE_FAIL_RETRY_LIMIT 50
 
 #define LWIP_COMPAT_MUTEX_ALLOWED 1
 
