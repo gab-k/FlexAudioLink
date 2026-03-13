@@ -418,7 +418,7 @@ static bool cli_cmd_help(char *args)
   cli_printf("  reset                 - Software reset microcontroller\r\n");
   cli_printf("  echo [on|off]         - Enable/disable/toggle console echo\r\n");
   cli_printf("  scan                  - Scan for Wi-Fi networks\r\n");
-  cli_printf("  mode [usb|udp-dongle|udp-headset|ble]    - Set application mode\r\n");
+  cli_printf("  mode [usb|udp-dongle|udp-tone|udp-headset|ble]  - Set application mode\r\n");
   // Add help text for any other implemented commands here following the same format
 
   return true; // Help command execution is considered successful if called correctly
@@ -717,15 +717,27 @@ static bool cli_cmd_mode(char *args)
     else if (strcasecmp(args, "udp-dongle") == 0) {
       target_mode = MODE_UDP_DONGLE_AUDIO;
     }
+    else if (strcasecmp(args, "udp-tone") == 0) {
+      target_mode = MODE_UDP_DONGLE_TONE;
+    }
     else if (strcasecmp(args, "udp-headset") == 0) {
       target_mode = MODE_UDP_HEADSET_AUDIO;
+    }
+    else if (strcasecmp(args, "raw-dongle") == 0) {
+      target_mode = MODE_RAW_DONGLE_AUDIO;
+    }
+    else if (strcasecmp(args, "raw-tone") == 0) {
+      target_mode = MODE_RAW_DONGLE_TONE;
+    }
+    else if (strcasecmp(args, "raw-headset") == 0) {
+      target_mode = MODE_RAW_HEADSET_AUDIO;
     }
     else if (strcasecmp(args, "ble") == 0) {
       target_mode = MODE_BLE_AUDIO;
     }
     else {
-      cli_printf("Usage: mode [usb|udp-dongle|udp-headset|ble]\r\n");
-      return false; // Indicate command failure due to invalid argument
+      cli_printf("Usage: mode [usb|udp-dongle|udp-tone|udp-headset|raw-dongle|raw-tone|raw-headset|ble]\r\n");
+      return false;
     }
   }
 

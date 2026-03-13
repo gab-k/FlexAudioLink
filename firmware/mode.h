@@ -7,6 +7,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "udp.h"
+#include "raw_audio.h"
 #include "wifi_app.h"
 #include "audio.h"
 
@@ -14,7 +15,11 @@ typedef enum app_mode_t {
     MODE_IDLE,
     MODE_USB_AUDIO,
     MODE_UDP_DONGLE_AUDIO,
+    MODE_UDP_DONGLE_TONE,
     MODE_UDP_HEADSET_AUDIO,
+    MODE_RAW_DONGLE_AUDIO,
+    MODE_RAW_DONGLE_TONE,
+    MODE_RAW_HEADSET_AUDIO,
     MODE_BLE_AUDIO
 } app_mode_t;
 

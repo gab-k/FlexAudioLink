@@ -28,6 +28,7 @@
 #include "cli.h"
 #include "wifi_app.h"
 #include "udp.h"
+#include "raw_audio.h"
 #include "util.h"
 #include "log.h"
 
@@ -40,13 +41,15 @@
  ******************************************************************************/
 /* Task priorities. */
 #define audio_task_PRIORITY (configMAX_PRIORITIES - 2)
-#define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 5)
+#define audio_feedback_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define usb_device_task_PRIORITY (configMAX_PRIORITIES - 2)
 #define led_task_PRIORITY (tskIDLE_PRIORITY)
 #define log_task_PRIORITY (tskIDLE_PRIORITY)
 #define wifi_init_task_PRIORITY (tskIDLE_PRIORITY)
 #define udp_rx_task_PRIORITY (configMAX_PRIORITIES - 3)
 #define udp_tx_task_PRIORITY (configMAX_PRIORITIES - 4)
+#define raw_rx_task_PRIORITY (configMAX_PRIORITIES - 3)
+#define raw_tx_task_PRIORITY (configMAX_PRIORITIES - 4)
 #define cli_task_PRIORITY (tskIDLE_PRIORITY)
 
 /*******************************************************************************
@@ -57,6 +60,7 @@ static void usb_device_task(void *pvParameters);
 /*******************************************************************************
  * Variables
  ******************************************************************************/
+TaskHandle_t g_usb_device_task_handle = NULL;
 
 /*******************************************************************************
  * Code
@@ -74,11 +78,12 @@ int main(void)
 
     PRINTF("Booting...\r\n");
     
-    // Initialize UDP audio FIFOs in any case, even when UDP audio is not used.
+    // Initialize UDP and raw audio FIFOs in any case, even when not used.
     udp_audio_ff_init();
+    raw_audio_ff_init();
 
     // Create USB device task.
-    if (xTaskCreate(usb_device_task, "usb_device", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, NULL) != pdPASS)
+    if (xTaskCreate(usb_device_task, "usb_device", 4096 / sizeof(StackType_t), NULL, usb_device_task_PRIORITY, &g_usb_device_task_handle) != pdPASS)
     {
         PRINTF("usbd task creation failed!.\r\n");
         configASSERT(false);
@@ -108,6 +113,22 @@ int main(void)
         configASSERT(false);
     }
     vTaskSuspend(g_udp_tx_task_handle);
+
+    // Create raw audio RX task.
+    if(xTaskCreate(raw_rx_task, "raw_rx", 4096 / sizeof(StackType_t), NULL, raw_rx_task_PRIORITY, &g_raw_rx_task_handle) != pdPASS)
+    {
+        PRINTF("raw_rx task creation failed!.\r\n");
+        configASSERT(false);
+    }
+    vTaskSuspend(g_raw_rx_task_handle);
+
+    // Create raw audio TX task.
+    if(xTaskCreate(raw_tx_task, "raw_tx", 4096 / sizeof(StackType_t), NULL, raw_tx_task_PRIORITY, &g_raw_tx_task_handle) != pdPASS)
+    {
+        PRINTF("raw_tx task creation failed!.\r\n");
+        configASSERT(false);
+    }
+    vTaskSuspend(g_raw_tx_task_handle);
 
     // Create audio task.
     if (xTaskCreate(audio_task, "audio", 4096 / sizeof(StackType_t), NULL, audio_task_PRIORITY, &g_audio_task_handle) != pdPASS)

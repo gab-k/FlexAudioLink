@@ -14,7 +14,11 @@ const char* get_app_mode_name(app_mode_t mode) {
         case MODE_IDLE: return "IDLE";
         case MODE_USB_AUDIO: return "USB AUDIO";
         case MODE_UDP_DONGLE_AUDIO: return "UDP DONGLE AUDIO";
+        case MODE_UDP_DONGLE_TONE:  return "UDP DONGLE TONE";
         case MODE_UDP_HEADSET_AUDIO: return "UDP HEADSET AUDIO";
+        case MODE_RAW_DONGLE_AUDIO:  return "RAW DONGLE AUDIO";
+        case MODE_RAW_DONGLE_TONE:   return "RAW DONGLE TONE";
+        case MODE_RAW_HEADSET_AUDIO: return "RAW HEADSET AUDIO";
         case MODE_BLE_AUDIO: return "BLE AUDIO";
         default:             return "UNKNOWN MODE!";
     }
@@ -35,6 +39,8 @@ bool set_current_app_mode(app_mode_t target_mode)
     if (g_wifi_init_task_handle == NULL) return false;
     if (g_udp_rx_task_handle == NULL) return false;
     if (g_udp_tx_task_handle == NULL) return false;
+    if (g_raw_rx_task_handle == NULL) return false;
+    if (g_raw_tx_task_handle == NULL) return false;
     if (g_audio_task_handle == NULL) return false;
     if (g_audio_fb_task_handle == NULL) return false;
 
@@ -42,12 +48,18 @@ bool set_current_app_mode(app_mode_t target_mode)
     usb_desc_profile_t current_profile = get_usb_profile_for_mode(app_mode);
     usb_desc_profile_t target_profile  = get_usb_profile_for_mode(target_mode);
 
-    // Suspend tasks
+    // Suspend all network and audio tasks
     vTaskSuspend(g_wifi_init_task_handle);
     vTaskSuspend(g_udp_rx_task_handle);
     vTaskSuspend(g_udp_tx_task_handle);
+    vTaskSuspend(g_raw_rx_task_handle);
+    vTaskSuspend(g_raw_tx_task_handle);
     vTaskSuspend(g_audio_task_handle);
     vTaskSuspend(g_audio_fb_task_handle);
+    // If leaving tone mode, restore USB task
+    if (app_mode == MODE_UDP_DONGLE_TONE || app_mode == MODE_RAW_DONGLE_TONE) {
+        vTaskResume(g_usb_device_task_handle);
+    }
 
     // Reset audio state and abort I2S DMA.
     audio_reset_state();
@@ -66,7 +78,14 @@ bool set_current_app_mode(app_mode_t target_mode)
             vTaskResume(g_wifi_init_task_handle);
             vTaskResume(g_udp_rx_task_handle);
             vTaskResume(g_udp_tx_task_handle);
-            // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
+            xTaskNotifyGive(g_wifi_init_task_handle);
+            break;
+
+        case MODE_UDP_DONGLE_TONE:
+            vTaskSuspend(g_usb_device_task_handle);  // Eliminate USB as interference source
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_udp_rx_task_handle);
+            vTaskResume(g_udp_tx_task_handle);
             xTaskNotifyGive(g_wifi_init_task_handle);
             break;
         
@@ -77,6 +96,31 @@ bool set_current_app_mode(app_mode_t target_mode)
             vTaskResume(g_audio_task_handle);
             vTaskResume(g_audio_fb_task_handle);
             // Notify Wi-Fi task to re-evaluate configuration (AP/STA)
+            xTaskNotifyGive(g_wifi_init_task_handle);
+            break;
+
+        case MODE_RAW_DONGLE_AUDIO:
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_raw_rx_task_handle);
+            vTaskResume(g_raw_tx_task_handle);
+            xTaskNotifyGive(g_wifi_init_task_handle);
+            break;
+
+        case MODE_RAW_DONGLE_TONE:
+            vTaskSuspend(g_usb_device_task_handle);
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_raw_rx_task_handle);
+            vTaskResume(g_raw_tx_task_handle);
+            xTaskNotifyGive(g_wifi_init_task_handle);
+            break;
+
+        case MODE_RAW_HEADSET_AUDIO:
+            raw_audio_ff_init(); // resets rx_spk_synced and FIFOs
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_raw_rx_task_handle);
+            vTaskResume(g_raw_tx_task_handle);
+            vTaskResume(g_audio_task_handle);
+            vTaskResume(g_audio_fb_task_handle);
             xTaskNotifyGive(g_wifi_init_task_handle);
             break;
 
@@ -113,10 +157,16 @@ usb_desc_profile_t get_usb_profile_for_mode(app_mode_t mode)
     switch (mode) {
         case MODE_IDLE:
         case MODE_UDP_HEADSET_AUDIO:
+        case MODE_RAW_HEADSET_AUDIO:
             return USB_DESC_PROFILE_CDC_ONLY;
             
+        case MODE_UDP_DONGLE_TONE:
+        case MODE_RAW_DONGLE_TONE:
+            return USB_DESC_PROFILE_CDC_ONLY;
+
         case MODE_USB_AUDIO:
         case MODE_UDP_DONGLE_AUDIO:
+        case MODE_RAW_DONGLE_AUDIO:
         case MODE_BLE_AUDIO:
         default:
             return USB_DESC_PROFILE_COMPOSITE;
@@ -136,9 +186,13 @@ void get_active_fifos(tu_fifo_t **spk_ff_ptr, tu_fifo_t **mic_ff_ptr)
             break;
 
         case MODE_UDP_HEADSET_AUDIO:
-            // Headset receives audio from UDP -> Plays to I2S
             *spk_ff_ptr = udp_get_spk_fifo();
             *mic_ff_ptr = udp_get_mic_fifo();
+            break;
+
+        case MODE_RAW_HEADSET_AUDIO:
+            *spk_ff_ptr = raw_get_spk_fifo();
+            *mic_ff_ptr = raw_get_mic_fifo();
             break;
 
         case MODE_BLE_AUDIO:
@@ -148,11 +202,13 @@ void get_active_fifos(tu_fifo_t **spk_ff_ptr, tu_fifo_t **mic_ff_ptr)
             break;
 
         case MODE_UDP_DONGLE_AUDIO:
+        case MODE_UDP_DONGLE_TONE:
+        case MODE_RAW_DONGLE_AUDIO:
+        case MODE_RAW_DONGLE_TONE:
         case MODE_IDLE:
         default:
-            // This function is expected to be called from audio task.
-            // In these modes the audio task should not be active.
-            configASSERT(false); // Not supported
+            // Audio task is not active in these modes.
+            configASSERT(false);
             return;
     }
 }

@@ -4,6 +4,7 @@
 #include "peripherals.h"
 #include "mode.h"
 #include "log.h"
+#include "wlan.h"
 
 // TODO: Seperate I2S related playback/record code and USB related audio callbacks into different files.
 
@@ -61,8 +62,8 @@ uint8_t current_resolution;
 #define SIZE_Q_DEPTH I2S_NUM_BUFFERS
 
 // Min/Max Block sizes in Bytes 
-#define MAX_DMA_BLOCK_SIZE 448  // Avoid one huge transfer, always have multiple scheduled
-#define MIN_DMA_BLOCK_SIZE 192  // Avoid the overhead of many tiny DMA interrupts
+#define MAX_DMA_BLOCK_SIZE (192*8) // 448  // Avoid one huge transfer, always have multiple scheduled
+#define MIN_DMA_BLOCK_SIZE 192     // Avoid the overhead of many tiny DMA interrupts
 
 volatile uint32_t dma_size_queue[SIZE_Q_DEPTH] = {0, 0, 0, 0};
 volatile uint8_t  queue_wr_idx = 0;
@@ -191,7 +192,7 @@ void audio_task(void *pvParameters)
   uint16_t fifo_depth;
   uint16_t start_threshold;
 
-  const float ALPHA = 0.025f;
+  const float ALPHA = 0.05f;
   
 
   for (;;)
@@ -207,6 +208,19 @@ void audio_task(void *pvParameters)
       // In BUFFERING state, no network packets are arriving...
       if (g_audio_state == AUDIO_STATE_PLAYING) {
           PRINTF("WARN: audio_task woken by %u ms timeout!\n", timeout_val_ms);
+      }
+    }
+
+    // Detect and kill WiFi PS re-enabling
+    {
+      static bool ps_was_enabled = false;
+      bool ps_enabled = wlan_is_power_save_enabled();
+      if (ps_enabled && !ps_was_enabled)
+        PRINTF("[AUD] WARN: WiFi PS re-enabled! Disabling...\r\n");
+      ps_was_enabled = ps_enabled;
+      if (ps_enabled) {
+        wlan_ieeeps_off();
+        wlan_deepsleepps_off();
       }
     }
 
@@ -357,21 +371,31 @@ void audio_task(void *pvParameters)
 
 void audio_fb_task(void *pvParameters)
 {
-  const TickType_t xFrequency = pdMS_TO_TICKS(100);
+  const TickType_t xFrequency = pdMS_TO_TICKS(25);
   TickType_t xLastWakeTime = xTaskGetTickCount();
 
-  const float KP = 0.15f;     
-  const float MAX_RATE_ADJUSTMENT = 50.0f; 
+  const float KP = 0.05f;
+  const float MAX_RATE_ADJUSTMENT = 100.0f;
 
   float current_sample_rate_f = (float)current_sample_rate;
   float proportional, adjusted_rate, samples_per_frame;
   uint32_t feedback_value;
 
+  uint32_t dwt_last = DWT->CYCCNT;
+
   for (;;)
   {
     // Wait for specified delay
-    // 
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
+
+    // Verify actual elapsed time using DWT — breakpoint if >27ms
+    uint32_t dwt_now     = DWT->CYCCNT;
+    uint32_t dwt_elapsed = dwt_now - dwt_last;
+    dwt_last = dwt_now;
+    // 30ms threshold at SystemCoreClock Hz
+    if (dwt_elapsed > (SystemCoreClock / 1000u) * 30u) {
+      PRINTF("WARN: audio_fb_task woken late by %lu ms!\n", (unsigned long)(dwt_elapsed / (SystemCoreClock / 1000u)));
+    }
 
     // Guard against running the feedback loop when not playing.
     if (g_audio_state != AUDIO_STATE_PLAYING) {
@@ -400,6 +424,19 @@ void audio_fb_task(void *pvParameters)
 
     audio_feedback_forward_metric(feedback_value);
 
+    // Periodic feedback loop status (every ~1s = 40 iterations at 25ms)
+    {
+      static uint32_t fb_log_cnt = 0;
+      if (++fb_log_cnt % 40 == 0) {
+        int rate_int = (int)adjusted_rate;
+        int rate_frac = abs((int)((adjusted_rate - rate_int) * 10));
+        PRINTF("[FB] rate=%d.%d err=%d lvl=%u fb=0x%08lX\r\n",
+               rate_int, rate_frac, (int)error,
+               (unsigned)g_audio_buf_lvl_filt_uint,
+               (unsigned long)feedback_value);
+      }
+    }
+
     #if AUDIO_DEBUG_LVL > 0
     static uint32_t count = 0;
     if (count % 1 == 0) {
@@ -416,7 +453,7 @@ void audio_fb_task(void *pvParameters)
       PRINTF("fs: %d.%d lvl: %u g_lvl_filt: %d E: %d, P: %s%d.%d\n", 
             adjusted_rate_int,
             adjusted_rate_frac,
-            buf_level,
+            tu_fifo_count(spk_ff),
             (int)g_audio_buf_lvl_filt_uint,
             error,
             p_sign,             // Insert the minus sign if we are between 0 and -1
@@ -451,18 +488,19 @@ static void audio_feedback_forward_metric(uint32_t value_16_16)
             break;
 
         case MODE_UDP_HEADSET_AUDIO:
-            // Forward feedback metric via UDP to the dongle which then sets its USB endpoint
             udp_queue_feedback(value_16_16);
-            // Wake the UDP TX task!
-            if (g_udp_tx_task_handle != NULL) {
+            if (g_udp_tx_task_handle != NULL)
                 xTaskNotifyGive(g_udp_tx_task_handle);
-            }
+            break;
+
+        case MODE_RAW_HEADSET_AUDIO:
+            raw_queue_feedback(value_16_16);
+            if (g_raw_tx_task_handle != NULL)
+                xTaskNotifyGive(g_raw_tx_task_handle);
             break;
 
         case MODE_UDP_DONGLE_AUDIO:
-            // The dongle doesn't forward the feedback, it sets the USB endpoint but does not
-            // forward the metric itself. The feedback metric is received via UDP from the headset.
-            configASSERT(false); // Should not be reached in normal operation
+            configASSERT(false);
             break;
 
         default:
@@ -482,7 +520,11 @@ void audio_reset_state(void)
     // 2. Clear Queue
     size_q_clear();
 
-    // 3. Nullify pointers
+    // 3. Reset audio state
+    g_audio_state = AUDIO_STATE_BUFFERING;
+    g_audio_buf_lvl_filt_f = -1.0f;
+
+    // 4. Nullify pointers
     spk_ff = NULL;
     mic_ff = NULL;
 }
@@ -956,15 +998,19 @@ bool tud_audio_rx_done_isr(uint8_t rhport, uint16_t n_bytes_received, uint8_t fu
         break;
 
       case MODE_UDP_DONGLE_AUDIO:
-        if (available >= UDP_PACKET_SIZE) 
-        {
-            // Wake the UDP TX task!
-            if (g_udp_tx_task_handle != NULL) {
+        if (available >= UDP_PACKET_SIZE) {
+            if (g_udp_tx_task_handle != NULL)
                 vTaskNotifyGiveFromISR(g_udp_tx_task_handle, &xHigherPriorityTaskWoken);
-            }
         }
         break;
-        
+
+      case MODE_RAW_DONGLE_AUDIO:
+        if (available >= RAW_AUDIO_PACKET_SIZE) {
+            if (g_raw_tx_task_handle != NULL)
+                vTaskNotifyGiveFromISR(g_raw_tx_task_handle, &xHigherPriorityTaskWoken);
+        }
+        break;
+
       default:
         break;
     }

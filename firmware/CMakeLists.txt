@@ -37,6 +37,8 @@ mcux_add_source(
             wifi_app.h
             udp.c
             udp.h
+            raw_audio.c
+            raw_audio.h
             mode.c
             mode.h
             util.c

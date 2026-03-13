@@ -1,19 +1,23 @@
 #include "wifi_app.h"
 #include "udp.h"
+#include "raw_audio.h"
 #include "wpl.h"
 #include "wlan.h"
 #include "pin_mux.h"
 #include "mode.h"
 #include "log.h"
 #include "wifi-internal.h"
+#include "wifi.h"
+#include "fsl_os_abstraction.h"
+#include "port/net/wm_net.h"
 
 #define SSID_AP "AP"
 #define PASSWORD_AP "12345678"
-#define WLAN_CHANNEL 48 
+#define WLAN_CHANNEL 36 
 #define NETWORK_LABEL "default"
 #define wifi_drv_task_priority (configMAX_PRIORITIES - 3)
 #define IMU_TASK_PRIORITY (configMAX_PRIORITIES - 3)
-#define wifi_drv_tx_task_priority (configMAX_PRIORITIES - 4)
+#define wifi_drv_tx_task_priority (configMAX_PRIORITIES - 3)
 #define wifi_scan_task_priority (configMAX_PRIORITIES - 7)
 #define wifi_powersave_task_priority (configMAX_PRIORITIES - 7)
 
@@ -54,12 +58,17 @@ void wifi_init_task(void *pvParameters)
         while (1);
     }
     
-    // int ret = wlan_set_country_code("EUI");
-    // if (ret != WM_SUCCESS)
-    // {
-    //     PRINTF("wlan_set_country_code() Failed, error: %d\r\n", ret);
-    //     while (1);
-    // }
+    int ret = wlan_set_country_code("DE");
+    if (ret != WM_SUCCESS)
+    {
+        PRINTF("wlan_set_country_code() Failed, error: %d\r\n", ret);
+        while (1);
+    }
+
+    // Disable 11k Measurements
+    if (wlan_host_11k_cfg(0) != WPLRET_SUCCESS){
+       PRINTF("Failed to Disable 11k Measurements\r\n");
+    }
 
     while(1) {
         // Block here until set_current_app_mode() sends a notification.
@@ -67,19 +76,23 @@ void wifi_init_task(void *pvParameters)
 
         // Clear the connected flag immediately so UDP task stop processing
         xEventGroupClearBits(g_wifi_events, WIFI_INIT_DONE);
-        
+
+        // Invalidate stale peer MAC from previous connection
+        raw_audio_reset_peer_mac();
+
         // Teardown previous AP or STA connection
         WPL_Stop_AP();
         WPL_Leave();
 
         // Determine app mode
         app_mode_t current_mode = get_app_mode();
-        if (current_mode == MODE_UDP_DONGLE_AUDIO) 
+        if (current_mode == MODE_UDP_DONGLE_AUDIO || current_mode == MODE_UDP_DONGLE_TONE ||
+            current_mode == MODE_RAW_DONGLE_AUDIO  || current_mode == MODE_RAW_DONGLE_TONE)
         {
             PRINTF("Starting AP Mode...\r\n");
             start_ap();
         }
-        else if (current_mode == MODE_UDP_HEADSET_AUDIO) 
+        else if (current_mode == MODE_UDP_HEADSET_AUDIO || current_mode == MODE_RAW_HEADSET_AUDIO)
         {
             PRINTF("Starting STA Mode...\r\n");
             start_sta();
@@ -186,7 +199,15 @@ static void start_ap(void){
     // Confirm our own IP (Should be 192.168.1.1)
     wait_for_ip_address(0); // 0 = AP Mode
         
+#if CONFIG_ROAMING
     wlan_set_roaming(0, 0);
+#endif
+
+#if CONFIG_BG_SCAN
+    if (wifi_stop_bgscan() != MLAN_STATUS_SUCCESS) {
+        PRINTF("Failed to stop BG scan\r\n");
+    }
+#endif
 
     // Set RTS threshold > 2346 (max packet size).
     // Effectively disables RTS/CTS handshake overhead for all packets.
@@ -203,6 +224,20 @@ static void start_ap(void){
     }
     vTaskDelay(pdMS_TO_TICKS(2000));
     wifi_print_uap_diagnostics();
+
+    // Install raw audio RX hook on the uAP netif.
+    raw_audio_install_hook(net_get_uap_interface());
+
+    // Discover the connected headset's MAC address for raw audio TX.
+    wifi_sta_list_t *sl = NULL;
+    if (wifi_uap_bss_sta_list(&sl) == WM_SUCCESS && sl != NULL && sl->count > 0) {
+        wifi_sta_info_t *si = (wifi_sta_info_t *)(void *)(&sl->count + 1);
+        raw_audio_set_peer_mac(si[0].mac);
+        OSA_MemoryFree(sl);
+    } else {
+        if (sl) OSA_MemoryFree(sl);
+        PRINTF("[RAW] No STA connected yet — peer MAC will be learned from first RX frame.\r\n");
+    }
 }
 
 static void start_sta(void){
@@ -235,11 +270,6 @@ static void start_sta(void){
         PRINTF("Failed to disable 802.11d\r\n");
     }
 
-    // Disable 11k Measurements
-    //if (wlan_host_11k_cfg(0) != WPLRET_SUCCESS){
-    //    PRINTF("Failed to Disable 11k Measurements\r\n");
-    //}
-
     wlan_ed_mac_ctrl_t ed_ctrl;
     memset(&ed_ctrl, 0, sizeof(ed_ctrl));
     // Disable Energy Detect Adaptivity for 5GHz
@@ -266,15 +296,30 @@ static void start_sta(void){
             PRINTF("Failed to disable Deep Sleep\r\n");
         }
 
+        // Listen on every beacon (interval=1) so that even if PS briefly re-enables,
+        // the STA wakes within one beacon period (~100ms) to drain any AP-buffered frames.
+        wlan_configure_listen_interval(1);
+
+        // Send a null frame (PM=0) every 1s to actively flush any AP-side PS buffer.
+        wlan_configure_null_pkt_interval(1);
+
         // Disable Aggregate MAC Protocol Data Unit (AMPDU) for both RX and TX.
         // Disable TX Aggregation: Send frames immediately, don't batch.
         wlan_sta_ampdu_tx_disable();
         // Disable RX Aggregation: Process incoming frames one-by-one.
         wlan_sta_ampdu_rx_disable();
 
+        #if CONFIG_ROAMING
         if (wlan_set_roaming(0, 0) != WPLRET_SUCCESS) {
             PRINTF("Failed to disable roaming\r\n");
         }
+        #endif
+
+#if CONFIG_BG_SCAN
+        if (wifi_stop_bgscan() != MLAN_STATUS_SUCCESS) {
+            PRINTF("Failed to stop BG scan\r\n");
+        }
+#endif
 
         wait_for_ip_address(1); // 1 = STA mode
 
@@ -282,6 +327,17 @@ static void start_sta(void){
         // Effectively disables RTS/CTS handshake overhead for all packets.
         if(wlan_set_rts(2347) != WPLRET_SUCCESS) {
             PRINTF("Failed to set RTS threshold\r\n");
+        }
+
+        // Install raw audio RX hook on the STA netif.
+        raw_audio_install_hook(net_get_sta_interface());
+
+        // Set AP (dongle) BSSID as the raw audio TX destination MAC.
+        char bssid[6];
+        if (wlan_get_current_network_bssid(bssid) == WM_SUCCESS) {
+            raw_audio_set_peer_mac((const uint8_t *)bssid);
+        } else {
+            PRINTF("[RAW] Failed to get BSSID — peer MAC unknown\r\n");
         }
     }
     else if (err != WPLRET_SUCCESS)
