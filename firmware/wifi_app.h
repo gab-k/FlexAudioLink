@@ -9,6 +9,7 @@
 #define WIFI_INIT_DONE  (1 << 0) // IP Acquired (AP or STA)
 
 extern TaskHandle_t g_wifi_init_task_handle;
+extern TaskHandle_t g_usb_device_task_handle;
 extern EventGroupHandle_t g_wifi_events;
 
 void wifi_init_task(void *pvParameters);

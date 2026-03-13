@@ -10,7 +10,7 @@
 // 480 bytes = 2.5 ms
 // 240 bytes = 1.25 ms
 // 192 bytes = 1 ms
-#define UDP_PACKET_SIZE  192
+#define UDP_PACKET_SIZE  (192*2)
 
 extern TaskHandle_t g_udp_rx_task_handle;
 extern TaskHandle_t g_udp_tx_task_handle;

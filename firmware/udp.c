@@ -6,23 +6,59 @@
 #include "wifi_app.h"
 #include "log.h"
 #include "mode.h"
+#include <math.h>
+
+// Debug verbosity: 0 = errors/one-time only, 1 = warnings + packet loss, 2 = verbose
+#define UDP_DEBUG_LVL 1
 
 #define UDP_AUDIO_PORT 5000
 #define SOCKET_RETRY_DELAY_MS 1000
-#define IP_AP "192.168.1.1"     // Dongle IP (Correct)
-#define IP_STA "192.168.1.2"  // Broadcast Address for 192.168.1.x subnet
+#define IP_AP "192.168.1.1"
+#define IP_STA "192.168.1.2"
 
 
 // TODO: Revise all the buffer sizes in this file and #define them
 // TODO: Consider making buffer sizes configurable via cli.
-#define UDP_SPK_BUF_SIZE   (2880)
-#define UDP_MIC_BUF_SIZE   (2880)
+#define UDP_SPK_BUF_SIZE   (192*30)
+#define UDP_MIC_BUF_SIZE   (192*30)
 
 TaskHandle_t g_udp_rx_task_handle = NULL;
 TaskHandle_t g_udp_tx_task_handle = NULL;
 
 static volatile bool g_feedback_pending = false;
 static volatile uint32_t g_feedback_value = 0;
+
+// --- Tone Generator ---
+#define TONE_FREQ_HZ    1000
+#define TONE_AMPLITUDE  8192  // ~25% of full scale (32767)
+#define TONE_PHASE_INC  ((uint32_t)(((double)TONE_FREQ_HZ / 48000.0) * 4294967296.0))
+
+static int16_t  s_sine_table[256];
+static bool     s_sine_table_init = false;
+static uint32_t s_tone_phase = 0;
+static volatile uint32_t g_tone_rx_feedback = 0;
+
+static void udp_tone_init(void)
+{
+    if (!s_sine_table_init) {
+        for (int i = 0; i < 256; i++)
+            s_sine_table[i] = (int16_t)(TONE_AMPLITUDE * sinf(2.0f * 3.14159265f * i / 256.0f));
+        s_sine_table_init = true;
+    }
+    s_tone_phase = 0;
+}
+
+static void udp_tone_generate(uint8_t *buf, uint16_t len)
+{
+    int16_t *samples = (int16_t *)buf;
+    uint16_t n_samples = len / sizeof(int16_t);
+    for (uint16_t i = 0; i < n_samples; i += 2) {
+        int16_t s = s_sine_table[s_tone_phase >> 24];
+        samples[i]   = s;  // Left
+        samples[i+1] = s;  // Right
+        s_tone_phase += TONE_PHASE_INC;
+    }
+}
 
 uint16_t tx_udp_packet_counter = 0;
 uint16_t rx_udp_packet_counter = 0;
@@ -188,8 +224,12 @@ void udp_tx_task(void *pvParameters)
     static uint8_t tx_buffer[500];
 
     // State tracking
-    app_mode_t cached_mode = MODE_IDLE; 
-    
+    app_mode_t cached_mode = MODE_IDLE;
+
+    // Tone mode timing state
+    TickType_t tone_last_wake = 0;
+    bool tone_timing_init = false;
+
     // Initialize Destination Struct
     memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
@@ -197,20 +237,33 @@ void udp_tx_task(void *pvParameters)
 
     for (;;)
     {
-        // Wait until EITHER USB OR I2S gives the signal.
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        app_mode_t current_mode = get_app_mode();
 
+        if (current_mode == MODE_UDP_DONGLE_TONE) {
+            // Tone mode: pace ourselves with vTaskDelayUntil (no USB ISR to notify us)
+            if (!tone_timing_init) {
+                udp_tone_init();
+                tone_last_wake = xTaskGetTickCount();
+                tone_timing_init = true;
+            }
+            vTaskDelayUntil(&tone_last_wake, pdMS_TO_TICKS(2));
+        } else {
+            // Normal mode: wait for USB ISR or I2S notification
+            tone_timing_init = false;
+            ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+            current_mode = get_app_mode();
+        }
 
         // If socket isn't ready (RX task hasn't created it yet), skip.
         int sock = g_udp_sock; // Local copy to ensure atomicity
         if (sock < 0) {
-            continue; 
+            continue;
         }
 
-        // 3. Update Destination Address (if mode changed)
-        app_mode_t current_mode = get_app_mode();
+        // Update Destination Address (if mode changed)
         if (current_mode != cached_mode) {
-            if (current_mode == MODE_UDP_DONGLE_AUDIO) {
+            if (current_mode == MODE_UDP_DONGLE_AUDIO ||
+                current_mode == MODE_UDP_DONGLE_TONE) {
                 dest_addr.sin_addr.s_addr = IP_STA_INT;
             } else {
                 dest_addr.sin_addr.s_addr = IP_AP_INT;
@@ -218,14 +271,17 @@ void udp_tx_task(void *pvParameters)
             cached_mode = current_mode;
         }
 
-        // 4. TX Processing
-        // Check if we have enough audio data to send a chunk
+        // TX Processing
         int tx_len = udp_process_tx(tx_buffer, current_mode);
-        
+
         if (tx_len > 0) {
-            int sent = -1;
-            sent = sendto(sock, tx_buffer, tx_len, 0, 
-                            (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            uint32_t t0 = DWT->CYCCNT;
+            int sent = sendto(sock, tx_buffer, tx_len, 0,
+                              (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            uint32_t elapsed_us = (DWT->CYCCNT - t0) / (SystemCoreClock / 1000000u);
+            if (elapsed_us > 1000) {
+                PRINTF("TX STALL: sendto %ums seq=%u\n", elapsed_us / 1000, tx_udp_packet_counter);
+            }
             if (sent < 0) {
                 PRINTF("WARN: sendto() failed! tx_count=%u | errno=%d | error=\"%s\" \r\n",
                         tx_udp_packet_counter, errno, get_socket_error_string(errno));
@@ -271,29 +327,34 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
 
             // Drop late/out-of-order packets instantly
             if (diff < 0) {
-                PRINTF("WARN: Dropped late packet Seq: %u\r\n", p_hdr->sequence);
-                return; // Bail out
+#if UDP_DEBUG_LVL >= 1
+                PRINTF("[UDP] WARN: Late packet dropped. Seq=%u Exp=%u\r\n", p_hdr->sequence, rx_udp_packet_counter);
+#endif
+                return;
             }
 
             // Drop packet if buffer is full
             if (tu_fifo_remaining(&udp_spk_ff) < payload_len) {
-                PRINTF("WARN: udp_spk_ff FULL! Dropped Seq: %u\r\n", p_hdr->sequence);
-                rx_udp_packet_counter = p_hdr->sequence + 1; // Keep counter moving
-                return; // Bail out
+#if UDP_DEBUG_LVL >= 1
+                PRINTF("[UDP] RX FULL remaining=%u\r\n", tu_fifo_remaining(&udp_spk_ff));
+#endif
+                rx_udp_packet_counter = p_hdr->sequence + 1;
+                return;
             }
 
             // Handle packet loss: fill the gap with silence to maintain timing.
-            // Cap so total fill stays ≤ 50% of FIFO, leaving headroom for the live stream.
+            // Insert silence as long as there is physical space for it + the real packet.
             if (diff > 0) {
-                PRINTF("WARN: %u Packet(s) Lost! Expected: %u, Got: %u\r\n",
+#if UDP_DEBUG_LVL >= 1
+                PRINTF("[UDP] WARN: %u lost. Exp=%u Got=%u\r\n",
                         diff,
                         rx_udp_packet_counter,
                         p_hdr->sequence);
+#endif
                 static const uint8_t silence[UDP_PACKET_SIZE] = {0};
-                int32_t used = UDP_SPK_BUF_SIZE - tu_fifo_remaining(&udp_spk_ff);
-                int32_t headroom = (UDP_SPK_BUF_SIZE / 2) - used - payload_len;
-                int32_t max_silence_packets = (headroom > 0) ? (headroom / payload_len) : 0;
-                int32_t insert_count = (diff > max_silence_packets) ? max_silence_packets : diff;
+                int32_t space = (int32_t)tu_fifo_remaining(&udp_spk_ff);
+                int32_t insert_count = (space - (int32_t)payload_len) / (int32_t)payload_len;
+                if (insert_count > diff) insert_count = diff;
                 for (int32_t i = 0; i < insert_count; i++) {
                     tu_fifo_write_n(&udp_spk_ff, silence, payload_len);
                 }
@@ -319,7 +380,7 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
 
     case UDP_DATATYPE_MIC_AUDIO:
         // Only DONGLE should receive Mic Audio (from Headset)
-        if (mode == MODE_UDP_DONGLE_AUDIO) {
+        if (mode == MODE_UDP_DONGLE_AUDIO || mode == MODE_UDP_DONGLE_TONE) {
             tu_fifo_write_n(&udp_mic_ff, p_payload, payload_len);
         } else {
             PRINTF("ERROR: Received mic audio when not in dongle mode!\r\n");
@@ -328,14 +389,17 @@ static void udp_process_rx(uint8_t *buffer, int len, app_mode_t mode)
         break;
 
     case UDP_DATATYPE_FEEDBACK:
-        // Only DONGLE should receive Feedback (to sync with USB Host)
         if (mode == MODE_UDP_DONGLE_AUDIO) {
             uint32_t feedback_val;
             memcpy(&feedback_val, p_payload, sizeof(uint32_t));
             tud_audio_fb_set(feedback_val);
+        } else if (mode == MODE_UDP_DONGLE_TONE) {
+            uint32_t feedback_val;
+            memcpy(&feedback_val, p_payload, sizeof(uint32_t));
+            g_tone_rx_feedback = feedback_val;
         } else {
             // A Headset receiving feedback implies a logic error on the sender
-            PRINTF("ERROR: Received Feedback packet when not in dongle mode!\r\n");
+            PRINTF("ERROR: Received Feedback packet when not in dongle/tone mode!\r\n");
             configASSERT(false);
         }
         break;
@@ -366,13 +430,22 @@ static int udp_process_tx(uint8_t *buffer, app_mode_t mode)
     {
         // Check if there is USB Audio available for sending to headset.
         uint16_t available = tud_audio_available();
-        if (available >= UDP_PACKET_SIZE) 
+        if (available >= UDP_PACKET_SIZE)
         {
             p_hdr->type = UDP_DATATYPE_SPEAKER_AUDIO;
             p_hdr->sequence = tx_udp_packet_counter;
             uint16_t read = tud_audio_read(p_payload, UDP_PACKET_SIZE);
             tx_len = sizeof(udp_header_t) + read;
         }
+    }
+    else if (mode == MODE_UDP_DONGLE_TONE)
+    {
+        // Generate one packet of 1kHz sine, ignoring USB entirely
+        p_hdr->type = UDP_DATATYPE_SPEAKER_AUDIO;
+        p_hdr->sequence = tx_udp_packet_counter;
+        p_hdr->flags = 0;
+        udp_tone_generate(p_payload, UDP_PACKET_SIZE);
+        tx_len = sizeof(udp_header_t) + UDP_PACKET_SIZE;
     }
     else if (mode == MODE_UDP_HEADSET_AUDIO)
     {

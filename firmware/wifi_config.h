@@ -15,6 +15,9 @@
 #define CONFIG_IPV6 0
 #define CONFIG_MAX_IPV6_ADDRESSES 0
 
+/* TX/RX zero-copy: avoid memcpy on TX path and double WMM buffer pool (16 -> 32) */
+#define CONFIG_TX_RX_ZERO_COPY 1
+
 /* WLCMGR debug */
 #define CONFIG_WLCMGR_DEBUG 0
 
