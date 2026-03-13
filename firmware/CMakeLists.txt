@@ -91,6 +91,18 @@ target_compile_options(FlexAudioLink PRIVATE
     #"-DCONFIG_11AC=0"
 )
 
+# Suppress warnings for third-party Opus codec sources (MIN/MAX redefinition
+# conflicts with fsl_common.h due to global -include log.h)
+file(GLOB_RECURSE OPUS_SOURCES "${SdkRootDirPath}/middleware/audio_voice/components/opus/*.c")
+set_source_files_properties(${OPUS_SOURCES} PROPERTIES COMPILE_FLAGS "-w")
+
+# Exclude NXP Maestro CCI wrappers — we use Opus directly, not through Maestro
+set_source_files_properties(
+    ${SdkRootDirPath}/middleware/audio_voice/components/opus/src/opus_cci.c
+    ${SdkRootDirPath}/middleware/audio_voice/components/opus/src/opus_cci_raw.c
+    PROPERTIES HEADER_FILE_ONLY TRUE
+)
+
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)
 
 
