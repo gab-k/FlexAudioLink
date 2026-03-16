@@ -87,12 +87,14 @@ void wifi_init_task(void *pvParameters)
         // Determine app mode
         app_mode_t current_mode = get_app_mode();
         if (current_mode == MODE_UDP_DONGLE_AUDIO || current_mode == MODE_UDP_DONGLE_TONE ||
-            current_mode == MODE_RAW_DONGLE_AUDIO  || current_mode == MODE_RAW_DONGLE_TONE)
+            current_mode == MODE_RAW_DONGLE_AUDIO  || current_mode == MODE_RAW_DONGLE_TONE ||
+            current_mode == MODE_RAW_DONGLE_LINKTEST)
         {
             PRINTF("Starting AP Mode...\r\n");
             start_ap();
         }
-        else if (current_mode == MODE_UDP_HEADSET_AUDIO || current_mode == MODE_RAW_HEADSET_AUDIO)
+        else if (current_mode == MODE_UDP_HEADSET_AUDIO || current_mode == MODE_RAW_HEADSET_AUDIO ||
+                 current_mode == MODE_RAW_HEADSET_LINKTEST)
         {
             PRINTF("Starting STA Mode...\r\n");
             start_sta();

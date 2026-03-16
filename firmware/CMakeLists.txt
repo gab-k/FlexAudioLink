@@ -39,6 +39,8 @@ mcux_add_source(
             udp.h
             raw_audio.c
             raw_audio.h
+            link_test.c
+            link_test.h
             mode.c
             mode.h
             util.c

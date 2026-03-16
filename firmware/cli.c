@@ -20,8 +20,10 @@
 #include "task.h"
 #include "queue.h"
 #include "mode.h"
+#include "link_test.h"
 #include <string.h>   // For strtok, strcmp, strcasecmp, strncpy
 #include <stdio.h>    // For vsnprintf
+#include <stdlib.h>   // For strtoul, atoi
 #include <stdarg.h>   // For va_list
 
 
@@ -73,6 +75,7 @@ static bool cli_cmd_reset(char *args);
 static bool cli_cmd_echo(char *args);
 static bool cli_cmd_scan(char *args);
 static bool cli_cmd_mode(char *args);
+static bool cli_cmd_linktest(char *args);
 
 //=====================================================================================================================
 // Public Function Definitions
@@ -381,6 +384,10 @@ static void cli_parse_and_execute(char *command_line)
   {
     handled = true;
     success = cli_cmd_mode(args);
+  } else if (strcasecmp(cmd_verb, "linktest") == 0)
+  {
+    handled = true;
+    success = cli_cmd_linktest(args);
   }
 
   // --- Handle Command Execution Results ---
@@ -418,8 +425,15 @@ static bool cli_cmd_help(char *args)
   cli_printf("  reset                 - Software reset microcontroller\r\n");
   cli_printf("  echo [on|off]         - Enable/disable/toggle console echo\r\n");
   cli_printf("  scan                  - Scan for Wi-Fi networks\r\n");
-  cli_printf("  mode [usb|udp-dongle|udp-tone|udp-headset|ble]  - Set application mode\r\n");
-  // Add help text for any other implemented commands here following the same format
+  cli_printf("  mode [usb|udp-*|raw-*|linktest-*|ble]  - Set application mode\r\n");
+  cli_printf("  linktest                              - Print link test stats\r\n");
+  cli_printf("  linktest stop                         - Stop test, print summary\r\n");
+  cli_printf("  linktest dn <size> <interval_ms>      - Configure DN stream\r\n");
+  cli_printf("  linktest up <size> <interval_ms>      - Configure UP stream\r\n");
+  cli_printf("  linktest count <N>                    - Set packet count (0=inf)\r\n");
+  cli_printf("  linktest spike [<us>]                 - Get/set spike threshold\r\n");
+  cli_printf("  linktest quiet                        - Toggle quiet mode\r\n");
+  cli_printf("  linktest time [<seconds>]             - Get/set timed auto-stop\r\n");
 
   return true; // Help command execution is considered successful if called correctly
 }
@@ -732,11 +746,17 @@ static bool cli_cmd_mode(char *args)
     else if (strcasecmp(args, "raw-headset") == 0) {
       target_mode = MODE_RAW_HEADSET_AUDIO;
     }
+    else if (strcasecmp(args, "linktest-dongle") == 0) {
+      target_mode = MODE_RAW_DONGLE_LINKTEST;
+    }
+    else if (strcasecmp(args, "linktest-headset") == 0) {
+      target_mode = MODE_RAW_HEADSET_LINKTEST;
+    }
     else if (strcasecmp(args, "ble") == 0) {
       target_mode = MODE_BLE_AUDIO;
     }
     else {
-      cli_printf("Usage: mode [usb|udp-dongle|udp-tone|udp-headset|raw-dongle|raw-tone|raw-headset|ble]\r\n");
+      cli_printf("Usage: mode [usb|udp-dongle|udp-tone|udp-headset|raw-dongle|raw-tone|raw-headset|linktest-dongle|linktest-headset|ble]\r\n");
       return false;
     }
   }
@@ -767,5 +787,117 @@ static bool cli_cmd_mode(char *args)
   
 
   // Indicate command processed successfully
-  return true; 
+  return true;
+}
+
+/**
+ * @brief Command handler for link test diagnostics.
+ * @param args Subcommand: NULL=print stats, "stop", "dn <size> <ms>", "up <size> <ms>", "count <N>"
+ * @return true on success, false on failure.
+ */
+static bool cli_cmd_linktest(char *args)
+{
+  link_test_config_t *cfg = link_test_get_config();
+
+  if (args == NULL || *args == '\0') {
+    // No args: print current stats
+    link_test_print_stats();
+    return true;
+  }
+
+  // Tokenize the subcommand
+  char *sub = strtok(args, " \t");
+  if (sub == NULL) {
+    link_test_print_stats();
+    return true;
+  }
+
+  if (strcasecmp(sub, "stop") == 0) {
+    link_test_print_final();
+    set_current_app_mode(MODE_IDLE);
+    cli_printf("Link test stopped.\r\n");
+    return true;
+  }
+
+  if (strcasecmp(sub, "dn") == 0) {
+    char *s_size = strtok(NULL, " \t");
+    char *s_ms   = strtok(NULL, " \t");
+    if (s_size == NULL || s_ms == NULL) {
+      cli_printf("Usage: linktest dn <size> <interval_ms>\r\n");
+      return false;
+    }
+    uint16_t size = (uint16_t)strtoul(s_size, NULL, 10);
+    uint16_t ms   = (uint16_t)strtoul(s_ms, NULL, 10);
+    if (size < sizeof(lt_dn_header_t) || size > RAW_LINKTEST_MAX_PAYLOAD || ms == 0) {
+      cli_printf("Invalid: size %u..%u, interval >= 1\r\n",
+                 (unsigned)sizeof(lt_dn_header_t), RAW_LINKTEST_MAX_PAYLOAD);
+      return false;
+    }
+    cfg->dn_packet_size = size;
+    cfg->dn_interval_ms = ms;
+    cli_printf("DN: %uB every %ums\r\n", size, ms);
+    return true;
+  }
+
+  if (strcasecmp(sub, "up") == 0) {
+    char *s_size = strtok(NULL, " \t");
+    char *s_ms   = strtok(NULL, " \t");
+    if (s_size == NULL || s_ms == NULL) {
+      cli_printf("Usage: linktest up <size> <interval_ms>\r\n");
+      return false;
+    }
+    uint16_t size = (uint16_t)strtoul(s_size, NULL, 10);
+    uint16_t ms   = (uint16_t)strtoul(s_ms, NULL, 10);
+    if (size < sizeof(lt_up_header_t) || size > RAW_LINKTEST_MAX_PAYLOAD || ms == 0) {
+      cli_printf("Invalid: size %u..%u, interval >= 1\r\n",
+                 (unsigned)sizeof(lt_up_header_t), RAW_LINKTEST_MAX_PAYLOAD);
+      return false;
+    }
+    cfg->up_packet_size = size;
+    cfg->up_interval_ms = ms;
+    cli_printf("UP: %uB every %ums\r\n", size, ms);
+    return true;
+  }
+
+  if (strcasecmp(sub, "count") == 0) {
+    char *s_n = strtok(NULL, " \t");
+    if (s_n == NULL) {
+      cli_printf("Usage: linktest count <N>\r\n");
+      return false;
+    }
+    cfg->count = strtoul(s_n, NULL, 10);
+    cli_printf("Count: %lu (0=infinite)\r\n", (unsigned long)cfg->count);
+    return true;
+  }
+
+  if (strcasecmp(sub, "spike") == 0) {
+    char *s_us = strtok(NULL, " \t");
+    if (s_us == NULL) {
+      cli_printf("Spike threshold: %luus\r\n", (unsigned long)cfg->spike_threshold_us);
+      return true;
+    }
+    cfg->spike_threshold_us = strtoul(s_us, NULL, 10);
+    cli_printf("Spike threshold: %luus\r\n", (unsigned long)cfg->spike_threshold_us);
+    return true;
+  }
+
+  if (strcasecmp(sub, "quiet") == 0) {
+    cfg->quiet = !cfg->quiet;
+    cli_printf("Quiet mode: %s\r\n", cfg->quiet ? "ON" : "OFF");
+    return true;
+  }
+
+  if (strcasecmp(sub, "time") == 0) {
+    char *s_sec = strtok(NULL, " \t");
+    if (s_sec == NULL) {
+      cli_printf("Duration: %lus (0=manual)\r\n", (unsigned long)cfg->duration_s);
+      return true;
+    }
+    cfg->duration_s = strtoul(s_sec, NULL, 10);
+    cli_printf("Duration: %lus (0=manual)\r\n", (unsigned long)cfg->duration_s);
+    return true;
+  }
+
+  cli_printf("Usage: linktest [stop|dn|up|count|spike|quiet|time]\r\n");
+  return false;
 }

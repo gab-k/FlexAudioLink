@@ -1,4 +1,5 @@
 #include "mode.h"
+#include "link_test.h"
 
 static volatile app_mode_t app_mode = MODE_IDLE;
 
@@ -19,6 +20,8 @@ const char* get_app_mode_name(app_mode_t mode) {
         case MODE_RAW_DONGLE_AUDIO:  return "RAW DONGLE AUDIO";
         case MODE_RAW_DONGLE_TONE:   return "RAW DONGLE TONE";
         case MODE_RAW_HEADSET_AUDIO: return "RAW HEADSET AUDIO";
+        case MODE_RAW_DONGLE_LINKTEST:  return "RAW DONGLE LINKTEST";
+        case MODE_RAW_HEADSET_LINKTEST: return "RAW HEADSET LINKTEST";
         case MODE_BLE_AUDIO: return "BLE AUDIO";
         default:             return "UNKNOWN MODE!";
     }
@@ -56,8 +59,10 @@ bool set_current_app_mode(app_mode_t target_mode)
     vTaskSuspend(g_raw_tx_task_handle);
     vTaskSuspend(g_audio_task_handle);
     vTaskSuspend(g_audio_fb_task_handle);
-    // If leaving tone mode, restore USB task
-    if (app_mode == MODE_UDP_DONGLE_TONE || app_mode == MODE_RAW_DONGLE_TONE) {
+    // If leaving a mode that suspended USB, restore it
+    if (app_mode == MODE_UDP_DONGLE_TONE || app_mode == MODE_RAW_DONGLE_TONE ||
+        ((app_mode == MODE_RAW_DONGLE_LINKTEST || app_mode == MODE_RAW_HEADSET_LINKTEST) &&
+         link_test_get_config()->duration_s > 0)) {
         vTaskResume(g_usb_device_task_handle);
     }
 
@@ -124,6 +129,26 @@ bool set_current_app_mode(app_mode_t target_mode)
             xTaskNotifyGive(g_wifi_init_task_handle);
             break;
 
+        case MODE_RAW_DONGLE_LINKTEST:
+            link_test_reset();
+            if (link_test_get_config()->duration_s > 0)
+                vTaskSuspend(g_usb_device_task_handle);
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_raw_rx_task_handle);
+            vTaskResume(g_raw_tx_task_handle);
+            xTaskNotifyGive(g_wifi_init_task_handle);
+            break;
+
+        case MODE_RAW_HEADSET_LINKTEST:
+            link_test_reset();
+            if (link_test_get_config()->duration_s > 0)
+                vTaskSuspend(g_usb_device_task_handle);
+            vTaskResume(g_wifi_init_task_handle);
+            vTaskResume(g_raw_rx_task_handle);
+            vTaskResume(g_raw_tx_task_handle);
+            xTaskNotifyGive(g_wifi_init_task_handle);
+            break;
+
         case MODE_BLE_AUDIO:
             // Placeholder, return false as its not implemented
             return false;
@@ -162,6 +187,8 @@ usb_desc_profile_t get_usb_profile_for_mode(app_mode_t mode)
             
         case MODE_UDP_DONGLE_TONE:
         case MODE_RAW_DONGLE_TONE:
+        case MODE_RAW_DONGLE_LINKTEST:
+        case MODE_RAW_HEADSET_LINKTEST:
             return USB_DESC_PROFILE_CDC_ONLY;
 
         case MODE_USB_AUDIO:
@@ -205,6 +232,8 @@ void get_active_fifos(tu_fifo_t **spk_ff_ptr, tu_fifo_t **mic_ff_ptr)
         case MODE_UDP_DONGLE_TONE:
         case MODE_RAW_DONGLE_AUDIO:
         case MODE_RAW_DONGLE_TONE:
+        case MODE_RAW_DONGLE_LINKTEST:
+        case MODE_RAW_HEADSET_LINKTEST:
         case MODE_IDLE:
         default:
             // Audio task is not active in these modes.

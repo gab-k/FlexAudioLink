@@ -2,6 +2,7 @@
 #include "wifi_app.h"
 #include "mode.h"
 #include "audio.h"
+#include "link_test.h"
 #include "log.h"
 #include "wlan.h"
 
@@ -47,6 +48,8 @@ typedef enum {
     RAW_DATATYPE_MIC_AUDIO     = 1,
     RAW_DATATYPE_FEEDBACK      = 2,
     RAW_DATATYPE_COMMAND       = 3,
+    RAW_DATATYPE_TEST_DN       = 4,
+    RAW_DATATYPE_TEST_UP       = 5,
 } raw_datatype_t;
 
 // ---------------------------------------------------------------
@@ -233,6 +236,22 @@ static void raw_process_rx(const uint8_t *payload, int payload_len,
         }
         break;
 
+    case RAW_DATATYPE_TEST_DN:
+        if (mode == MODE_RAW_HEADSET_LINKTEST) {
+            if (!g_peer_mac_valid)
+                raw_audio_set_peer_mac(src_mac);
+            link_test_rx_dn(data, data_len, hdr->sequence);
+        }
+        break;
+
+    case RAW_DATATYPE_TEST_UP:
+        if (mode == MODE_RAW_DONGLE_LINKTEST) {
+            if (!g_peer_mac_valid)
+                raw_audio_set_peer_mac(src_mac);
+            link_test_rx_up(data, data_len, hdr->sequence);
+        }
+        break;
+
     default:
         break;
     }
@@ -285,7 +304,11 @@ void raw_audio_install_hook(struct netif *netif)
 #define RAW_FRAME_HDR_SIZE (SIZEOF_ETH_HDR + RAW_IP_HDR_LEN + sizeof(raw_header_t))
 #define RAW_FRAME_MAX_SIZE (RAW_FRAME_HDR_SIZE + RAW_AUDIO_PACKET_SIZE)
 
-static uint8_t s_tx_frame[RAW_FRAME_MAX_SIZE];
+// Linktest needs up to 1400B payload; audio needs 384B. Size to the larger.
+#define RAW_FRAME_MAX_SIZE_LT (RAW_FRAME_HDR_SIZE + RAW_LINKTEST_MAX_PAYLOAD)
+#define RAW_TX_BUF_SIZE (RAW_FRAME_MAX_SIZE_LT > RAW_FRAME_MAX_SIZE ? RAW_FRAME_MAX_SIZE_LT : RAW_FRAME_MAX_SIZE)
+
+static uint8_t s_tx_frame[RAW_TX_BUF_SIZE];
 
 static err_t raw_send_frame(struct netif *netif, uint16_t payload_len)
 {
@@ -368,6 +391,22 @@ static int raw_process_tx(app_mode_t mode)
             memcpy(payload, &val, sizeof(val));
             plen = sizeof(val);
         }
+    } else if (mode == MODE_RAW_DONGLE_LINKTEST) {
+        uint16_t seq;
+        plen = link_test_build_dn(payload, &seq);
+        if (plen > 0) {
+            hdr->type     = RAW_DATATYPE_TEST_DN;
+            hdr->flags    = 0;
+            hdr->sequence = seq;
+        }
+    } else if (mode == MODE_RAW_HEADSET_LINKTEST) {
+        uint16_t seq;
+        plen = link_test_build_up(payload, &seq);
+        if (plen > 0) {
+            hdr->type     = RAW_DATATYPE_TEST_UP;
+            hdr->flags    = 0;
+            hdr->sequence = seq;
+        }
     }
 
     return plen;
@@ -390,11 +429,11 @@ void raw_tx_task(void *pvParameters)
 {
     (void)pvParameters;
 
-    TickType_t  tone_last_wake  = 0;
-    bool        tone_init       = false;
-    app_mode_t  cached_mode     = MODE_IDLE;
-    struct netif *tx_netif      = NULL;
-    bool        eth_hdr_built   = false;
+    TickType_t  periodic_last_wake = 0;
+    bool        periodic_init     = false;
+    app_mode_t  cached_mode       = MODE_IDLE;
+    struct netif *tx_netif        = NULL;
+    bool        eth_hdr_built     = false;
 
     for (;;) {
         // Wait for WiFi to be ready before resolving the netif
@@ -404,14 +443,38 @@ void raw_tx_task(void *pvParameters)
         app_mode_t mode = get_app_mode();
 
         if (mode == MODE_RAW_DONGLE_TONE) {
-            if (!tone_init) {
+            if (!periodic_init) {
                 raw_tone_init();
-                tone_last_wake = xTaskGetTickCount();
-                tone_init      = true;
+                periodic_last_wake = xTaskGetTickCount();
+                periodic_init      = true;
             }
-            vTaskDelayUntil(&tone_last_wake, pdMS_TO_TICKS(2));
+            vTaskDelayUntil(&periodic_last_wake, pdMS_TO_TICKS(2));
+        } else if (mode == MODE_RAW_DONGLE_LINKTEST) {
+            if (!periodic_init) {
+                periodic_last_wake = xTaskGetTickCount();
+                periodic_init      = true;
+            }
+            vTaskDelayUntil(&periodic_last_wake, pdMS_TO_TICKS(link_test_get_config()->dn_interval_ms));
+            link_test_periodic_print();
+            if (link_test_time_expired()) {
+                link_test_auto_stop();
+                periodic_init = false;
+                continue;
+            }
+        } else if (mode == MODE_RAW_HEADSET_LINKTEST) {
+            if (!periodic_init) {
+                periodic_last_wake = xTaskGetTickCount();
+                periodic_init      = true;
+            }
+            vTaskDelayUntil(&periodic_last_wake, pdMS_TO_TICKS(link_test_get_config()->up_interval_ms));
+            link_test_periodic_print();
+            if (link_test_time_expired()) {
+                link_test_auto_stop();
+                periodic_init = false;
+                continue;
+            }
         } else {
-            tone_init = false;
+            periodic_init = false;
             ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
             mode = get_app_mode();
         }
@@ -422,10 +485,11 @@ void raw_tx_task(void *pvParameters)
             tx_netif      = NULL;
             eth_hdr_built = false;
 
-            if (mode == MODE_RAW_DONGLE_AUDIO || mode == MODE_RAW_DONGLE_TONE) {
+            if (mode == MODE_RAW_DONGLE_AUDIO || mode == MODE_RAW_DONGLE_TONE ||
+                mode == MODE_RAW_DONGLE_LINKTEST) {
                 wlan_get_mac_address_uap(g_own_mac);
                 tx_netif = net_get_uap_interface();
-            } else if (mode == MODE_RAW_HEADSET_AUDIO) {
+            } else if (mode == MODE_RAW_HEADSET_AUDIO || mode == MODE_RAW_HEADSET_LINKTEST) {
                 wlan_get_mac_address(g_own_mac);
                 tx_netif = net_get_sta_interface();
             }
