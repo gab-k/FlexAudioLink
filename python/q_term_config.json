@@ -1,12 +1,12 @@
 [
     {
-        "name": "JLink Headset",
-        "usb_serial": "001066062303",
+        "name": "JLink RX",
+        "usb_serial": "1051811555",
         "baud": 115200
     },
     {
-        "name": "JLink Dongle",
-        "usb_serial": "001068276901",
+        "name": "JLink TX",
+        "usb_serial": "1051890941",
         "baud": 115200
     },
     {

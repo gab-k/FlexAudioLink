@@ -36,6 +36,9 @@ import datetime
 import time
 import json
 import os
+import re
+
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
 
 class AutoSerialConsole(tk.LabelFrame):
     def __init__(self, parent, config, log_path, *args, **kwargs):
@@ -55,6 +58,9 @@ class AutoSerialConsole(tk.LabelFrame):
         self._log_lock = threading.Lock()
         self._log_file = open(log_path, 'w', buffering=1)  # line-buffered, truncates on open
         
+        # Timestamp toggle (on by default)
+        self.show_timestamp = True
+
         # History
         self.command_history = []
         self.history_index = 0
@@ -99,10 +105,19 @@ class AutoSerialConsole(tk.LabelFrame):
         self.btn_clear = tk.Button(input_frame, text="Clear", command=self.clear_console, width=5)
         self.btn_clear.pack(side=tk.RIGHT, padx=5)
 
+        # Timestamp Toggle Button
+        self.btn_ts = tk.Button(input_frame, text="TS", command=self.toggle_timestamp, width=3, relief=tk.SUNKEN)
+        self.btn_ts.pack(side=tk.RIGHT)
+
         # Start the Auto-Connect Watchdog
         self.after(1000, self.auto_connect_watchdog)
 
+    def toggle_timestamp(self):
+        self.show_timestamp = not self.show_timestamp
+        self.btn_ts.config(relief=tk.SUNKEN if self.show_timestamp else tk.RAISED)
+
     def log(self, message, tag='sys'):
+        message = ANSI_ESCAPE_RE.sub('', message)
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         with self._log_lock:
             try:
@@ -111,8 +126,9 @@ class AutoSerialConsole(tk.LabelFrame):
                 pass
 
         def _append():
+            prefix = f"[{timestamp}] " if self.show_timestamp else ""
             self.console_text.config(state='normal')
-            self.console_text.insert(tk.END, f"[{timestamp}] {message}\n", tag)
+            self.console_text.insert(tk.END, f"{prefix}{message}\n", tag)
             self.console_text.see(tk.END)
             self.console_text.config(state='disabled')
         self.after(0, _append)
@@ -136,9 +152,16 @@ class AutoSerialConsole(tk.LabelFrame):
 
     def find_port_by_serial(self, target_serial):
         ports = serial.tools.list_ports.comports()
+        matches = []
         for port in ports:
             if port.serial_number and port.serial_number.strip().upper() == target_serial.strip().upper():
-                return port.device
+                matches.append(port.device)
+
+        if matches:
+            # Pick the highest-numbered port — nRF54 exposes two UARTs per Segger,
+            # and the application UART is the higher one.
+            matches.sort(key=lambda p: int(''.join(filter(str.isdigit, p)) or '0'))
+            return matches[-1]
 
         # Linux fallback: pyserial sometimes doesn't populate serial_number right after
         # re-enumeration, but /dev/serial/by-id/ symlinks (which encode the serial in the
@@ -146,9 +169,13 @@ class AutoSerialConsole(tk.LabelFrame):
         by_id_dir = '/dev/serial/by-id'
         if os.path.isdir(by_id_dir):
             target_upper = target_serial.strip().upper()
+            fallback_matches = []
             for link_name in os.listdir(by_id_dir):
                 if target_upper in link_name.upper():
-                    return os.path.realpath(os.path.join(by_id_dir, link_name))
+                    fallback_matches.append(os.path.realpath(os.path.join(by_id_dir, link_name)))
+            if fallback_matches:
+                fallback_matches.sort(key=lambda p: int(''.join(filter(str.isdigit, p)) or '0'))
+                return fallback_matches[-1]
 
         return None
 

@@ -1,2 +1,51 @@
-**/__pycache__
+# General temp folder
 temp
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Temporary files
+temp/
+
+# Workspace-local editor settings
+/.vscode/
+
+# Local build outputs
+/build/
+
+# NXP / MCUXpresso build outputs (CMake preset dirs)
+firmware/flash_debug/
+firmware/flash_release/
+
+# Zephyr / NCS build outputs
+nrf_firmware/**/build/
+
+# Machine-local CMake preset overrides
+CMakeUserPresets.json
+
+# Zephyr generated files that shouldn't be committed
+nrf_firmware/**/.west/
+/webui/__pycache__/
+
+# nRF firmware local tooling files
+/nrf_firmware/.clangd
+/nrf_firmware/.claude/
+/nrf_firmware/.vscode/
+/nrf_firmware/Kconfig.bak
+
+# Compiled objects and binaries
+**/*.o
+**/*.a
+**/*.elf
+**/*.bin
+**/*.hex
+**/*.map
+**/*.lst
+
+# CMake
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+**/compile_commands.json
