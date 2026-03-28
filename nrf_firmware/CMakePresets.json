@@ -1,0 +1,30 @@
+{
+    "version": 2,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20
+    },
+    "configurePresets": [
+        {
+            "name": "nrf54lm20dk_debug",
+            "displayName": "nRF54LM20-DK (debug)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "environment": {
+                "ZEPHYR_BASE": "$penv{ZEPHYR_BASE}",
+                "VIRTUAL_ENV": "$penv{VIRTUAL_ENV}",
+                "PATH": "$penv{VIRTUAL_ENV}/bin:$penv{PATH}"
+            },
+            "cacheVariables": {
+                "BOARD": "nrf54lm20dk/nrf54lm20a/cpuapp"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "nrf54lm20dk_debug",
+            "displayName": "nRF54LM20-DK (debug)",
+            "configurePreset": "nrf54lm20dk_debug"
+        }
+    ]
+}
