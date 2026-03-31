@@ -14,28 +14,6 @@ static const char s_cli_no_newline_message[] =
 static char s_cli_line[CLI_MAX_CMD_LEN];
 static size_t s_cli_line_len;
 
-static void usb_cdc_write(const char *data, size_t len)
-{
-	uint32_t written = 0;
-
-	if (!tud_cdc_connected() || data == NULL || len == 0U) {
-		return;
-	}
-
-	while (written < len) {
-		uint32_t pushed = tud_cdc_write(data + written, len - written);
-
-		if (pushed == 0U) {
-			break;
-		}
-
-		written += pushed;
-	}
-
-	tud_cdc_write_flush();
-}
-
-
 void usb_cdc_init(void)
 {
 	s_cli_line_len = 0U;
@@ -64,8 +42,7 @@ void tud_cdc_rx_cb(uint8_t itf)
 	 */
 	tud_cdc_read_flush();
 	s_cli_line_len = 0U;
-	usb_cdc_write(s_cli_no_newline_message,
-		      sizeof(s_cli_no_newline_message) - 1U);
+	cli_enqueue_print_msg(s_cli_no_newline_message);
 }
 
 void tud_cdc_rx_wanted_cb(uint8_t itf, char wanted_char)

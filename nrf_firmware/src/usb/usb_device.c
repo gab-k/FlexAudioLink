@@ -78,29 +78,12 @@ static void usb_device_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-void tud_mount_cb(void)
-{
-}
-
 void tud_umount_cb(void)
 {
 	usb_cdc_on_unmount();
 }
 
-void tud_suspend_cb(bool remote_wakeup_en)
-{
-	(void)remote_wakeup_en;
-}
-
-void tud_resume_cb(void)
-{
-}
-
 void board_init_after_tusb(void)
-{
-}
-
-void board_reset_to_bootloader(void)
 {
 }
 
