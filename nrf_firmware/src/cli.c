@@ -33,6 +33,7 @@ K_MSGQ_DEFINE(g_cli_output_msgq, CLI_MAX_OUTPUT_LEN, CLI_QUEUE_DEPTH, 4);
 
 static void cli_process_line(char *line);
 static void cli_thread(void *arg1, void *arg2, void *arg3);
+static void cli_init(void);
 
 static void cli_write_raw(const char *data, size_t len)
 {
@@ -385,7 +386,7 @@ static void cli_process_line(char *line)
 	cli_print("ERR %s unknown_command\n", cmd);
 }
 
-void cli_init(void)
+static void cli_init(void)
 {
 	g_cli_echo_enabled = true;
 	g_status_push_enabled = false;
