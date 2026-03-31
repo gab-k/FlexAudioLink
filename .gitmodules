@@ -1,7 +1,3 @@
-[submodule "firmware/tinyusb"]
-	path = firmware/tinyusb
-	url = https://github.com/gab-k/tinyusb.git
-	branch = fix-ep_ctrl_mask
 [submodule "nrf_firmware/tinyusb"]
 	path = nrf_firmware/tinyusb
 	url = https://github.com/gab-k/tinyusb.git
