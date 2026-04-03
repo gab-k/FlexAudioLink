@@ -31,7 +31,6 @@ target_sources(app PRIVATE
     ${TINYUSB_DIR}/src/class/audio/audio_device.c
     ${TINYUSB_DIR}/src/portable/synopsys/dwc2/dcd_dwc2.c
     ${TINYUSB_DIR}/src/portable/synopsys/dwc2/dwc2_common.c
-    ${TINYUSB_DIR}/hw/bsp/nrf/family.c
 )
 
 target_include_directories(app PRIVATE

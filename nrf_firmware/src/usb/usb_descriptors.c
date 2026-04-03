@@ -1,7 +1,8 @@
-#include "bsp/board_api.h"
-
 #include <string.h>
 
+#include <zephyr/drivers/hwinfo.h>
+
+#include "tusb.h"
 #include "usb/usb_device.h"
 
 //--------------------------------------------------------------------+
@@ -397,6 +398,42 @@ static char const *string_desc_arr[] =
 
 static uint16_t desc_str[32 + 1];
 
+static size_t usb_get_serial_string(uint16_t *utf16_out, size_t max_chars)
+{
+	uint8_t device_id[16];
+	ssize_t id_len;
+	size_t chr_count;
+	static const char hex[] = "0123456789ABCDEF";
+
+	id_len = hwinfo_get_device_id(device_id, sizeof(device_id));
+	if (id_len <= 0) {
+		const char *fallback = "ERROR: Can't Retrieve!";
+
+		chr_count = strlen(fallback);
+		if (chr_count > max_chars) {
+			chr_count = max_chars;
+		}
+
+		for (size_t i = 0; i < chr_count; i++) {
+			utf16_out[i] = fallback[i];
+		}
+
+		return chr_count;
+	}
+
+	chr_count = (size_t)id_len * 2U;
+	if (chr_count > max_chars) {
+		chr_count = max_chars;
+	}
+
+	for (size_t i = 0; i < chr_count / 2U; i++) {
+		utf16_out[i * 2U + 0U] = hex[(device_id[i] >> 4) & 0x0F];
+		utf16_out[i * 2U + 1U] = hex[device_id[i] & 0x0F];
+	}
+
+	return chr_count;
+}
+
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 {
     const char *str;
@@ -413,7 +450,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
     if (index == STRID_PRODUCT) {
         str = (usb_device_get_current_profile() == USB_DEVICE_PROFILE_UAC_CDC) ? "TinyUSB Headset" : "TinyUSB CDC";
     } else if (index == STRID_SERIAL) {
-        chr_count = board_usb_get_serial(desc_str + 1, 32);
+        chr_count = usb_get_serial_string(desc_str + 1, 32);
         desc_str[0] = (uint16_t) ((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
         return desc_str;
     } else {
