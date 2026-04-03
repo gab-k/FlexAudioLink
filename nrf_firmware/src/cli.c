@@ -1,5 +1,6 @@
 #include "cli.h"
 
+#include "audio_io/i2s.h"
 #include "mode.h"
 #include "proprietary/link.h"
 
@@ -164,6 +165,7 @@ static void cli_print_help(void)
 	cli_print("  get <group|param>\n");
 	cli_print("  set role <dongle|headset>\n");
 	cli_print("  set mode <proprietary|ble|usb>\n");
+	cli_print("  i2s tone on|off|status\n");
 	cli_print("  status\n");
 	cli_print("  status on [ms]\n");
 	cli_print("  status off\n");
@@ -282,6 +284,56 @@ static void cli_cmd_set(char *args)
 	cli_print("ERR %s unsupported\n", param);
 }
 
+static void cli_cmd_i2s(char *args)
+{
+	char *subcmd;
+	char *value;
+
+	if (args == NULL) {
+		cli_print("ERR i2s invalid_args\n");
+		return;
+	}
+
+	subcmd = strtok(args, " \t");
+	value = strtok(NULL, " \t");
+
+	if (subcmd == NULL) {
+		cli_print("ERR i2s invalid_args\n");
+		return;
+	}
+
+	if (strcasecmp(subcmd, "tone") != 0) {
+		cli_print("ERR i2s unsupported\n");
+		return;
+	}
+
+	if (value == NULL || strcasecmp(value, "status") == 0) {
+		cli_print("i2s ready=%s tone=%s\n",
+			  audio_i2s_is_ready() ? "yes" : "no",
+			  audio_i2s_is_tone_enabled() ? "on" : "off");
+		return;
+	}
+
+	if (strcasecmp(value, "on") == 0) {
+		if (!audio_i2s_is_ready()) {
+			cli_print("ERR i2s not_ready\n");
+			return;
+		}
+
+		audio_i2s_set_tone_enabled(true);
+		cli_print("OK i2s tone=on\n");
+		return;
+	}
+
+	if (strcasecmp(value, "off") == 0) {
+		audio_i2s_set_tone_enabled(false);
+		cli_print("OK i2s tone=off\n");
+		return;
+	}
+
+	cli_print("ERR i2s invalid_value\n");
+}
+
 static void cli_process_line(char *line)
 {
 	char *cmd;
@@ -369,6 +421,11 @@ static void cli_process_line(char *line)
 
 	if (strcasecmp(cmd, "set") == 0) {
 		cli_cmd_set(args);
+		return;
+	}
+
+	if (strcasecmp(cmd, "i2s") == 0) {
+		cli_cmd_i2s(args);
 		return;
 	}
 

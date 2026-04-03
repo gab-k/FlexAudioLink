@@ -15,6 +15,8 @@ target_sources(app PRIVATE
     src/cli.c
     src/mode.c
     src/audio_io/audio_io.c
+    src/audio_io/i2s.c
+    src/audio_io/nau88l21.c
     src/proprietary/radio_hw.c
     src/proprietary/link.c
     src/proprietary/test_mode.c
