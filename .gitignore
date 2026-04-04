@@ -9,8 +9,6 @@ temp
 # Temporary files
 temp/
 
-# Workspace-local editor settings
-/.vscode/
 
 # Local build outputs
 /build/

@@ -1,0 +1,75 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "west: build",
+      "type": "shell",
+      "command": "nrfutil",
+      "args": [
+        "sdk-manager",
+        "toolchain",
+        "launch",
+        "--ncs-version",
+        "v3.2.4",
+        "--chdir",
+        "${workspaceFolder}/nrf_firmware",
+        "--",
+        "west",
+        "build",
+        "-b",
+        "nrf54lm20dk/nrf54lm20a/cpuapp",
+        "${workspaceFolder}/nrf_firmware",
+        "--build-dir",
+        "${workspaceFolder}/nrf_firmware/build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/nrf_firmware",
+        "env": {
+          "ZEPHYR_BASE": "${env:HOME}/ncs/v3.2.4/zephyr"
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "detail": "Standard west build for nrf_firmware using the SDK under ~/ncs."
+    },
+    {
+      "label": "west: pristine build",
+      "type": "shell",
+      "command": "nrfutil",
+      "args": [
+        "sdk-manager",
+        "toolchain",
+        "launch",
+        "--ncs-version",
+        "v3.2.4",
+        "--chdir",
+        "${workspaceFolder}/nrf_firmware",
+        "--",
+        "west",
+        "build",
+        "-p",
+        "always",
+        "-b",
+        "nrf54lm20dk/nrf54lm20a/cpuapp",
+        "${workspaceFolder}/nrf_firmware",
+        "--build-dir",
+        "${workspaceFolder}/nrf_firmware/build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/nrf_firmware",
+        "env": {
+          "ZEPHYR_BASE": "${env:HOME}/ncs/v3.2.4/zephyr"
+        }
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "detail": "Pristine west build for nrf_firmware using the SDK under ~/ncs."
+    }
+  ]
+}
