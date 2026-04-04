@@ -36,6 +36,21 @@ static void cli_process_line(char *line);
 static void cli_thread(void *arg1, void *arg2, void *arg3);
 static void cli_init(void);
 
+static size_t cli_strnlen(const char *s, size_t max_len)
+{
+	size_t len = 0U;
+
+	if (s == NULL) {
+		return 0U;
+	}
+
+	while (len < max_len && s[len] != '\0') {
+		len++;
+	}
+
+	return len;
+}
+
 static void cli_write_raw(const char *data, size_t len)
 {
 	uint32_t written = 0U;
@@ -475,7 +490,7 @@ void cli_enqueue_command_line(char *line)
 		return;
 	}
 
-	len = strnlen(line, CLI_MAX_CMD_LEN - 1U);
+	len = cli_strnlen(line, CLI_MAX_CMD_LEN - 1U);
 	memcpy(queued_line, line, len);
 	queued_line[len] = '\0';
 	/* Drop on overflow rather than blocking the USB path. */
@@ -491,7 +506,7 @@ void cli_enqueue_print_msg(const char *message)
 		return;
 	}
 
-	len = strnlen(message, CLI_MAX_OUTPUT_LEN - 1U);
+	len = cli_strnlen(message, CLI_MAX_OUTPUT_LEN - 1U);
 	memcpy(queued_message, message, len);
 	queued_message[len] = '\0';
 	(void)k_msgq_put(&g_cli_output_msgq, queued_message, K_NO_WAIT);

@@ -6,9 +6,7 @@
 #include "proprietary/test_mode.h"
 #include "usb/usb_device.h"
 
-#include <stdio.h>
 #include <string.h>
-#include <strings.h>
 
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/kernel.h>
