@@ -1,8 +1,9 @@
 #include "cli.h"
 
+#include "app_control.h"
 #include "audio_io/i2s.h"
-#include "mode.h"
-#include "proprietary/link.h"
+#include "prop_gfsk/link.h"
+#include "prop_gfsk/test_mode.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -35,6 +36,29 @@ K_MSGQ_DEFINE(g_cli_output_msgq, CLI_MAX_OUTPUT_LEN, CLI_QUEUE_DEPTH, 4);
 static void cli_process_line(char *line);
 static void cli_thread(void *arg1, void *arg2, void *arg3);
 static void cli_init(void);
+
+static const char *cli_get_link_state_name(enum prop_gfsk_link_state state)
+{
+	switch (state) {
+	case PROP_GFSK_LINK_STATE_DISABLED:
+		return "disabled";
+	case PROP_GFSK_LINK_STATE_SEARCHING:
+		return "searching";
+	case PROP_GFSK_LINK_STATE_RUNNING:
+		return "running";
+	default:
+		return "unknown";
+	}
+}
+
+static const char *cli_get_link_lock_name(enum device_role role, enum prop_gfsk_link_state state)
+{
+	if (role == DEVICE_ROLE_DONGLE) {
+		return "n/a";
+	}
+
+	return (state == PROP_GFSK_LINK_STATE_RUNNING) ? "locked" : "searching";
+}
 
 static size_t cli_strnlen(const char *s, size_t max_len)
 {
@@ -95,32 +119,40 @@ static void cli_print(const char *fmt, ...)
 
 static void cli_emit_status(void)
 {
-	struct radio_stats stats;
+	struct prop_gfsk_link_report stats;
 	uint32_t loss_permille = 0U;
+	enum device_role role = app_control_get_current_role();
 
-	proprietary_link_get_stats(&stats);
+	prop_gfsk_link_get_report(&stats);
 
-	if ((stats.packets_rx + stats.packets_lost) > 0U) {
-		loss_permille = (stats.packets_lost * 1000U) /
-			(stats.packets_rx + stats.packets_lost);
+	if ((stats.packets_rx + stats.packets_lost_while_locked) > 0U) {
+		loss_permille = (stats.packets_lost_while_locked * 1000U) /
+			(stats.packets_rx + stats.packets_lost_while_locked);
 	}
 
-	cli_print("#S rssi=%d bat=100 loss=%u.%u conn=%s tx=%u rx=%u lost=%u urun=0 orun=0 cerr=0 fw=%s\n",
+	cli_print("#S rssi=%d bat=100 lock=%s loss=%u.%u tx=%u rx=%u lost=%u "
+		  "lost_total=%u state=%s locks=%u lloss=%u tlock_us=%llu urun=0 "
+		  "orun=0 cerr=0 fw=%s\n",
 		  stats.last_rssi_dbm,
+		  cli_get_link_lock_name(role, stats.state),
 		  loss_permille / 10U,
 		  loss_permille % 10U,
-		  stats.peer_connected ? "yes" : "no",
 		  stats.packets_tx,
 		  stats.packets_rx,
-		  stats.packets_lost,
+		  stats.packets_lost_while_locked,
+		  stats.packets_lost_total,
+		  cli_get_link_state_name(stats.state),
+		  stats.lock_acquire_count,
+		  stats.lock_loss_count,
+		  stats.time_locked_us,
 		  APP_FW_VERSION);
 }
 
 static void cli_print_mode_group(void)
 {
 	cli_print("[mode]\n");
-	cli_print("role=%s\n", mode_get_role_name(mode_get_current_role()));
-	cli_print("mode=%s\n", mode_get_operating_mode_name(mode_get_current_operating_mode()));
+	cli_print("role=%s\n", app_control_get_role_name(app_control_get_current_role()));
+	cli_print("mode=%s\n", app_control_get_operating_mode_name(app_control_get_current_operating_mode()));
 }
 
 static void cli_print_radio_group(void)
@@ -138,7 +170,7 @@ static void cli_print_radio_group(void)
 static void cli_print_device_group(void)
 {
 	cli_print("[device]\n");
-	cli_print("audio_io=%s\n", mode_get_current_role() == DEVICE_ROLE_DONGLE ? "usb" : "codec");
+	cli_print("audio_io=%s\n", app_control_get_current_role() == DEVICE_ROLE_DONGLE ? "usb" : "codec");
 	cli_print("device_addr=0xD0D0D0D0\n");
 	cli_print("peer_addr=0xA1A1A1A1\n");
 	cli_print("auto_sleep=0\n");
@@ -181,12 +213,12 @@ static void cli_print_help(void)
 	cli_print("  set role <dongle|headset>\n");
 	cli_print("  set mode <proprietary|ble|usb>\n");
 	cli_print("  i2s tone on|off|status\n");
+	cli_print("  linktest on|off|status\n");
 	cli_print("  status\n");
 	cli_print("  status on [ms]\n");
 	cli_print("  status off\n");
 	cli_print("  reset\n");
 	cli_print("  scan\n");
-	cli_print("  linktest\n");
 }
 
 static void cli_cmd_get(const char *arg)
@@ -226,12 +258,12 @@ static void cli_cmd_get(const char *arg)
 	}
 
 	if (strcasecmp(arg, "role") == 0) {
-		cli_print("role=%s\n", mode_get_role_name(mode_get_current_role()));
+		cli_print("role=%s\n", app_control_get_role_name(app_control_get_current_role()));
 		return;
 	}
 
-	if (strcasecmp(arg, "mode_param") == 0 || strcasecmp(arg, "operating_mode") == 0) {
-		cli_print("mode=%s\n", mode_get_operating_mode_name(mode_get_current_operating_mode()));
+	if (strcasecmp(arg, "operating_mode") == 0) {
+		cli_print("mode=%s\n", app_control_get_operating_mode_name(app_control_get_current_operating_mode()));
 		return;
 	}
 
@@ -254,45 +286,53 @@ static void cli_cmd_set(char *args)
 
 	if (strcasecmp(param, "role") == 0) {
 		bool ok;
+		enum device_role role;
+		enum operating_mode mode = app_control_get_current_operating_mode();
 
 		if (strcasecmp(value, "dongle") == 0) {
-			ok = mode_request_role(DEVICE_ROLE_DONGLE);
+			role = DEVICE_ROLE_DONGLE;
 		} else if (strcasecmp(value, "headset") == 0) {
-			ok = mode_request_role(DEVICE_ROLE_HEADSET);
+			role = DEVICE_ROLE_HEADSET;
 		} else {
 			cli_print("ERR role invalid_value\n");
 			return;
 		}
+
+		ok = app_control_set(role, mode);
 
 		if (!ok) {
 			cli_print("ERR role rejected\n");
 			return;
 		}
 
-		cli_print("OK requested role=%s\n", value);
+		cli_print("OK applied role=%s\n", value);
 		return;
 	}
 
 	if (strcasecmp(param, "mode") == 0) {
 		bool ok;
+		enum device_role role = app_control_get_current_role();
+		enum operating_mode mode;
 
 		if (strcasecmp(value, "proprietary") == 0) {
-			ok = mode_request_operating_mode(OPERATING_MODE_PROPRIETARY);
+			mode = OPERATING_MODE_PROPRIETARY;
 		} else if (strcasecmp(value, "ble") == 0) {
-			ok = mode_request_operating_mode(OPERATING_MODE_BLE);
+			mode = OPERATING_MODE_BLE;
 		} else if (strcasecmp(value, "usb") == 0) {
-			ok = mode_request_operating_mode(OPERATING_MODE_USB);
+			mode = OPERATING_MODE_USB;
 		} else {
 			cli_print("ERR mode invalid_value\n");
 			return;
 		}
+
+		ok = app_control_set(role, mode);
 
 		if (!ok) {
 			cli_print("ERR mode rejected\n");
 			return;
 		}
 
-		cli_print("OK requested mode=%s\n", value);
+		cli_print("OK applied mode=%s\n", value);
 		return;
 	}
 
@@ -347,6 +387,38 @@ static void cli_cmd_i2s(char *args)
 	}
 
 	cli_print("ERR i2s invalid_value\n");
+}
+
+static void cli_cmd_linktest(char *args)
+{
+	enum device_role role = app_control_get_current_role();
+
+	if (args == NULL || *args == '\0' || strcasecmp(args, "status") == 0) {
+		cli_print("linktest=%s\n", prop_gfsk_test_mode_is_running() ? "on" : "off");
+		return;
+	}
+
+	if (strcasecmp(args, "on") == 0) {
+		if (!prop_gfsk_test_mode_start(role)) {
+			cli_print("ERR linktest start_failed\n");
+			return;
+		}
+
+		cli_print("OK linktest=on\n");
+		return;
+	}
+
+	if (strcasecmp(args, "off") == 0) {
+		if (!prop_gfsk_test_mode_stop()) {
+			cli_print("ERR linktest stop_failed\n");
+			return;
+		}
+
+		cli_print("OK linktest=off\n");
+		return;
+	}
+
+	cli_print("ERR linktest invalid_value\n");
 }
 
 static void cli_process_line(char *line)
@@ -444,7 +516,12 @@ static void cli_process_line(char *line)
 		return;
 	}
 
-	if (strcasecmp(cmd, "scan") == 0 || strcasecmp(cmd, "linktest") == 0) {
+	if (strcasecmp(cmd, "linktest") == 0) {
+		cli_cmd_linktest(args);
+		return;
+	}
+
+	if (strcasecmp(cmd, "scan") == 0) {
 		cli_print("ERR %s unsupported\n", cmd);
 		return;
 	}
@@ -545,5 +622,4 @@ static void cli_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-K_THREAD_DEFINE(cli_thread_id, CLI_THREAD_STACK_SIZE, cli_thread,
-		NULL, NULL, NULL, CLI_THREAD_PRIORITY, 0, 0);
+K_THREAD_DEFINE(cli_thread_id, CLI_THREAD_STACK_SIZE, cli_thread, NULL, NULL, NULL, CLI_THREAD_PRIORITY, 0, 0);
