@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1051811555",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/nrf_firmware",
+      "executable": "${workspaceFolder}/nrf_firmware/build/nrf_firmware/zephyr/zephyr.elf",
+      "servertype": "jlink",
+      "device": "NRF54LM20A_M33",
+      "interface": "swd",
+      "serialNumber": "1051811555",
+      "runToEntryPoint": "main",
+      "preLaunchTask": "west: build",
+      "gdbPath": "/home/gab/ncs/toolchains/2ac5840438/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb",
+      "svdFile": "${env:HOME}/ncs/v3.2.4/modules/hal/nordic/nrfx/mdk/nrf54lm20_application.svd",
+      "rttConfig": {
+        "enabled": true
+      }
+    },
+    {
+      "name": "1051890941",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/nrf_firmware",
+      "executable": "${workspaceFolder}/nrf_firmware/build/nrf_firmware/zephyr/zephyr.elf",
+      "servertype": "jlink",
+      "device": "NRF54LM20A_M33",
+      "interface": "swd",
+      "serialNumber": "1051890941",
+      "runToEntryPoint": "main",
+      "preLaunchTask": "west: build",
+      "gdbPath": "/home/gab/ncs/toolchains/2ac5840438/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb",
+      "svdFile": "${env:HOME}/ncs/v3.2.4/modules/hal/nordic/nrfx/mdk/nrf54lm20_application.svd",
+      "rttConfig": {
+        "enabled": true
+      }
+    }
+  ]
+}
