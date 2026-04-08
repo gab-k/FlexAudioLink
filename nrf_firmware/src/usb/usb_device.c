@@ -6,6 +6,7 @@
 
 #include <nrfx.h>
 #include <nrfx_glue.h>
+#include <zephyr/sys/sys_io.h>
 
 #include "cli.h"
 #include "tusb.h"
@@ -21,7 +22,7 @@ K_MSGQ_DEFINE(g_usb_profile_msgq, sizeof(enum usb_device_profile), USB_PROFILE_M
 
 static void usb_device_thread(void *arg1, void *arg2, void *arg3);
 static void usb_device_apply_profile(enum usb_device_profile profile);
-static void usb_device_low_level_init(void);
+static bool usb_device_low_level_init(void);
 static void usbhs_isr(const void *arg);
 
 enum usb_device_profile usb_device_get_current_profile(void)
@@ -42,20 +43,38 @@ static void usbhs_isr(const void *arg)
 	tusb_int_handler(BOARD_TUD_RHPORT, true);
 }
 
-static void usb_device_low_level_init(void)
+/* VBUS present status: undocumented VREGUSB status register bit, sourced from
+ * Zephyr's udc_dwc2_vendor_quirks.h. */
+#define VREGUSB_STATUS_VBUS_PRESENT_BIT BIT(2)
+#define VREGUSB_STATUS_REG_OFFSET       0x400
+
+static bool usb_device_vbus_present(void)
 {
+	return sys_read32((mem_addr_t)NRF_VREGUSB + VREGUSB_STATUS_REG_OFFSET) & VREGUSB_STATUS_VBUS_PRESENT_BIT;
+}
+
+static bool usb_device_low_level_init(void)
+{
+	static bool irq_registered;
 	static bool initialized;
 
 	if (initialized) {
-		return;
+		return true;
 	}
 
-	IRQ_CONNECT(DT_IRQN(DT_NODELABEL(usbhs)),
-		    DT_IRQ(DT_NODELABEL(usbhs), priority),
-		    usbhs_isr, NULL, 0);
-	irq_enable(DT_IRQN(DT_NODELABEL(usbhs)));
+	if (!irq_registered) {
+		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(usbhs)),
+			    DT_IRQ(DT_NODELABEL(usbhs), priority),
+			    usbhs_isr, NULL, 0);
+		NRF_VREGUSB->TASKS_START = VREGUSB_TASKS_START_TASKS_START_Trigger;
+		irq_registered = true;
+	}
 
-	NRF_VREGUSB->TASKS_START = VREGUSB_TASKS_START_TASKS_START_Trigger;
+	if (!usb_device_vbus_present()) {
+		return false;
+	}
+
+	irq_enable(DT_IRQN(DT_NODELABEL(usbhs)));
 
 	NRF_CLOCK->TASKS_XO24MSTART = CLOCK_TASKS_XO24MSTART_TASKS_XO24MSTART_Trigger;
 	while (!NRF_CLOCK->EVENTS_XO24MSTARTED) {
@@ -78,6 +97,7 @@ static void usb_device_low_level_init(void)
 	NVIC_SetPriority(USBHS_IRQn, 2);
 
 	initialized = true;
+	return true;
 }
 
 static void usb_device_apply_profile(enum usb_device_profile profile)
@@ -107,11 +127,15 @@ static void usb_device_thread(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	usb_device_low_level_init();
 	usb_cdc_init();
 
 	while (1) {
 		enum usb_device_profile requested_profile;
+
+		if (!usb_device_low_level_init()) {
+			k_sleep(K_MSEC(100));
+			continue;
+		}
 
 		if (!tusb_inited()) {
 			usb_device_apply_profile(usb_device_current_profile);
