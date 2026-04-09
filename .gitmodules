@@ -4,5 +4,5 @@
 	branch = nrf54lm20a
 [submodule "rw612_firmware/tinyusb"]
 	path = rw612_firmware/tinyusb
-	url = https://github.com/gab-k/tinyusb.git
-	branch = support-nxp-rw612
+	url = https://github.com/hathach/tinyusb.git
+	branch = master
