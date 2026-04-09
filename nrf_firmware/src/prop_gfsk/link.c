@@ -1,6 +1,5 @@
 #include "prop_gfsk/link.h"
 
-#include <errno.h>
 #include <string.h>
 
 #include <zephyr/kernel.h>
