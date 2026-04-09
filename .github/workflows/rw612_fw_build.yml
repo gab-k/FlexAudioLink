@@ -45,32 +45,32 @@ jobs:
           west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git --mr v25.12.00 nxp-workspace
           cd nxp-workspace
           west update
-          
+
       - name: Configure CMake
         env:
           ARMGCC_DIR: /usr
         run: |
-          cmake -B firmware/flash_debug -G Ninja \
+          cmake -B rw612_firmware/flash_debug -G Ninja \
             -DCMAKE_BUILD_TYPE=flash_debug \
             -DCONFIG_TOOLCHAIN=armgcc \
             -DWEST=TRUE \
             -Dboard=frdmrw612 \
             -DSdkRootDirPath=${{ github.workspace }}/nxp-workspace/mcuxsdk \
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/nxp-workspace/mcuxsdk/cmake/toolchain/armgcc.cmake \
-            -S firmware
+            -S rw612_firmware
 
       - name: Build Firmware
         env:
           ARMGCC_DIR: /usr
-        run: cmake --build firmware/flash_debug
+        run: cmake --build rw612_firmware/flash_debug
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rw612-firmware-flash_debug
           path: |
-            firmware/flash_debug/**/*.elf
-            firmware/flash_debug/**/*.bin
-            firmware/flash_debug/**/*.hex
-            firmware/flash_debug/**/*.map
+            rw612_firmware/flash_debug/**/*.elf
+            rw612_firmware/flash_debug/**/*.bin
+            rw612_firmware/flash_debug/**/*.hex
+            rw612_firmware/flash_debug/**/*.map
           retention-days: 14
