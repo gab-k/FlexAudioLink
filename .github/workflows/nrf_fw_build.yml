@@ -15,7 +15,6 @@ jobs:
     env:
       NCS_VERSION: v3.2.4
       NCS_PARENT_DIR: ${{ github.workspace }}/ncs
-      NCS_DIR: ${{ github.workspace }}/ncs/v3.2.4
 
     steps:
       - name: Checkout Code
@@ -50,7 +49,7 @@ jobs:
           install -m 0755 nrfutil-x86_64-unknown-linux-gnu-8.1.1/data/bin/nrfutil /usr/local/bin/nrfutil
           export PATH="/usr/local/bin:${PATH}"
           hash -r
-          nrfutil --help
+          nrfutil --version
 
       - name: Cache NCS Workspace
         id: cache-ncs
@@ -62,6 +61,7 @@ jobs:
       - name: Fetch nRF Connect SDK
         if: steps.cache-ncs.outputs.cache-hit != 'true'
         run: |
+          NCS_DIR="${NCS_PARENT_DIR}/${NCS_VERSION}"
           mkdir -p "${NCS_PARENT_DIR}"
           cd "${NCS_PARENT_DIR}"
           west init -m https://github.com/nrfconnect/sdk-nrf --mr "${NCS_VERSION}" "${NCS_VERSION}"
@@ -73,12 +73,11 @@ jobs:
           export PATH="/usr/local/bin:${PATH}"
           hash -r
           nrfutil install sdk-manager
-          nrfutil sdk-manager install "${NCS_VERSION}"
+          nrfutil sdk-manager toolchain install --ncs-version "${NCS_VERSION}"
 
       - name: Build Firmware
-        env:
-          ZEPHYR_BASE: ${{ env.NCS_DIR }}/zephyr
         run: |
+          export ZEPHYR_BASE="${NCS_PARENT_DIR}/${NCS_VERSION}/zephyr"
           export PATH="/usr/local/bin:${PATH}"
           hash -r
           nrfutil sdk-manager toolchain launch \
@@ -98,9 +97,12 @@ jobs:
         with:
           name: nrf-firmware-nrf54lm20dk_debug
           path: |
-            nrf_firmware/build/zephyr/zephyr.elf
-            nrf_firmware/build/zephyr/zephyr.hex
-            nrf_firmware/build/zephyr/zephyr.bin
-            nrf_firmware/build/zephyr/zephyr.map
-            nrf_firmware/build/compile_commands.json
+            nrf_firmware/build/merged.hex
+            nrf_firmware/build/*.yml
+            nrf_firmware/build/*.yaml
+            nrf_firmware/build/nrf_firmware/zephyr/.config
+            nrf_firmware/build/nrf_firmware/zephyr/zephyr.*
+            nrf_firmware/build/nrf_firmware/zephyr/include/generated/zephyr/autoconf.h
+            nrf_firmware/build/nrf_firmware/zephyr/include/generated/zephyr/devicetree_generated.h
+            nrf_firmware/build/nrf_firmware/compile_commands.json
           retention-days: 14
