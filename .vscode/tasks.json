@@ -20,7 +20,9 @@
         "nrf54lm20dk/nrf54lm20a/cpuapp",
         "${workspaceFolder}/nrf_firmware",
         "--build-dir",
-        "${workspaceFolder}/nrf_firmware/build"
+        "${workspaceFolder}/nrf_firmware/build",
+        "--",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
       ],
       "options": {
         "cwd": "${workspaceFolder}/nrf_firmware",
@@ -58,7 +60,9 @@
         "nrf54lm20dk/nrf54lm20a/cpuapp",
         "${workspaceFolder}/nrf_firmware",
         "--build-dir",
-        "${workspaceFolder}/nrf_firmware/build"
+        "${workspaceFolder}/nrf_firmware/build",
+        "--",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
       ],
       "options": {
         "cwd": "${workspaceFolder}/nrf_firmware",
