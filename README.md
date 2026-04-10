@@ -1,160 +1,180 @@
 # FlexAudioLink
 
-FlexAudioLink is a standalone, low-latency wireless audio bridge that supports one-to-one or one-to-many streaming.
+Low-latency wireless audio bridge.
 
-The project uses custom hardware based on the NXP RW612 (Dual-band Wi-Fi 6 & BLE 5.4 MCU) running FreeRTOS firmware. The same hardware can be configured for different operational modes at runtime.
+## 1. Scope
 
+FlexAudioLink is intended to bridge audio and audio transport endpoints in the following combinations:
 
-## Status Legend:
-✅ Implemented
-🚧 Work in Progress
-🔮 Planned
+- USB Audio to analog audio
+- USB Audio to USB Audio
+- analog audio to analog audio
+- BLE central device to analog audio
+- BLE central device to USB Audio
 
-## Key Features
+The bridge may be configured for:
 
-- USB Audio Class 2.0 compliant, works as a standard audio device ✅
-- Runtime mode switching via CLI (Virtual Com Port) ✅
-- Low-latency wireless audio streaming over Wi-Fi 🚧
-- Adaptive buffer sizing based on network conditions 🔮
-- Low-power wireless audio streaming over BLE 🔮
-- Streaming via IP network 🔮
-- Point-to-multipoint support, one dongle, multiple speakers/headsets 🔮
+- duplex operation
+- simplex operation
 
-## Operational Modes (Runtime Configurable):
+In this context:
 
-### 1. USB-to-I2S Bridge (USB Headset Mode) ✅
-Acts as a standard USB Audio Class 2.0 device. Isochronous USB data is routed directly to/from the I2S interface via DMA.
+- analog audio refers to the codec / analog I/O side of the system
+- USB Audio refers to USB Audio Class device operation
+- BLE central device refers to a host such as a phone or laptop acting as the central
 
-**Use case**: Wired fallback for wireless headsets when battery is depleted.
+All FlexAudioLink nodes use the same hardware and firmware base and are configured at runtime for the required role and mode.
+
+## 2. Repository Layout
+
+- [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware): active Zephyr-based firmware for `nrf54lm20dk/nrf54lm20a/cpuapp`
+- [`rw612_firmware/`](/home/gab/FlexAudioLink/rw612_firmware): older MCUXpresso + FreeRTOS firmware retained as reference
+- [`webui/`](/home/gab/FlexAudioLink/webui): Svelte configuration UI plus Python WebSocket-to-serial bridge
+- [`hardware/`](/home/gab/FlexAudioLink/hardware): KiCad project and hardware notes for the nRF54LM20A + NAU88L21 + nPM1300 design
+- [`python/`](/home/gab/FlexAudioLink/python): standalone utilities for signal generation and latency/error experiments
+- [`devel_notes/`](/home/gab/FlexAudioLink/devel_notes): bring-up and development references
+
+## 3. Current Firmware State
+
+The active implementation is in [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware).
+
+The current firmware direction is based on the nRF54LM20A and a proprietary 2.4 GHz link. The older RW612 Wi-Fi firmware remains in the repository as reference material.
+
+Implemented in the current nRF tree:
+
+- USB device bring-up
+- runtime USB profile switching between `CDC` and `UAC+CDC`
+- runtime role selection: `dongle` or `headset`
+- runtime mode selection: `proprietary`, `ble`, or `usb`
+- default role selection from device UID
+- USB CDC CLI
+- proprietary radio link test, including TX/RX traffic and status counters
+- initial audio I2S / codec integration scaffolding
+
+Not complete in the current nRF tree:
+
+- end-to-end wireless audio streaming
+- BLE audio transport
+- full realization of the configuration surface described by the web UI specification
+
+Important implementation notes:
+
+- [`nrf_firmware/src/main.c`](/home/gab/FlexAudioLink/nrf_firmware/src/main.c): `main()` is intentionally idle; subsystems self-start via `K_THREAD_DEFINE(...)`
+- [`nrf_firmware/src/app_control.c`](/home/gab/FlexAudioLink/nrf_firmware/src/app_control.c): owns runtime role/mode state
+- `dongle + usb` is rejected
+- proprietary mode currently enables the present radio/link-test path; it is not yet the final audio transport
+
+## 4. nRF Runtime Model
+
+Runtime state is represented by:
+
+- role: `dongle` or `headset`
+- mode: `proprietary`, `ble`, or `usb`
+
+Current mode application affects at least:
+
+- USB profile selection in [`nrf_firmware/src/usb/usb_device.c`](/home/gab/FlexAudioLink/nrf_firmware/src/usb/usb_device.c)
+- proprietary test-mode enable/disable in [`nrf_firmware/src/prop_gfsk/test_mode.c`](/home/gab/FlexAudioLink/nrf_firmware/src/prop_gfsk/test_mode.c)
+
+The current proprietary radio test configuration is defined in [`nrf_firmware/src/prop_gfsk/radio_hw.h`](/home/gab/FlexAudioLink/nrf_firmware/src/prop_gfsk/radio_hw.h). At present this includes:
+
+- fixed center frequency: `2480 MHz`
+- fixed radio mode: Nordic `4 Mbit`
+- fixed packet sizing for the present test path
+
+## 5. CLI Interface
+
+The nRF firmware exposes a USB CDC CLI in [`nrf_firmware/src/cli.c`](/home/gab/FlexAudioLink/nrf_firmware/src/cli.c).
+
+Current commands include:
+
+- `help`
+- `get`
+- `set role <dongle|headset>`
+- `set mode <proprietary|ble|usb>`
+- `status`
+- `status on [ms]`
+- `status off`
+- `scan`
+- `linktest on|off|status`
+- `i2s tone on|off|status`
+- `reset`
+
+The web UI uses this text interface.
+
+## 6. Hardware
+
+[`hardware/`](/home/gab/FlexAudioLink/hardware) currently contains early hardware notes and KiCad work-in-progress.
+
+The current notes investigate a design based on:
+
+- nRF54LM20A
+- NAU88L21 audio codec
+- nPM1300 PMIC
+
+This part of the repository is exploratory and subject to change.
+
+See [`hardware/hw_spec.md`](/home/gab/FlexAudioLink/hardware/hw_spec.md).
+
+## 7. Build Notes
+
+For toolchain setup and build steps, see [`nrf_firmware/README.md`](/home/gab/FlexAudioLink/nrf_firmware/README.md).
+
+## 8. Web UI
+
+[`webui/`](/home/gab/FlexAudioLink/webui) contains:
+
+- a Svelte application in `webui/app/`
+- a Python WebSocket-to-serial bridge in [`webui/websocket_serial_bridge.py`](/home/gab/FlexAudioLink/webui/websocket_serial_bridge.py)
+
+The UI communicates with the device over USB CDC ACM using:
+
+- WebSerial in Chromium-based browsers
+- a local WebSocket bridge for browsers without WebSerial support
+
+`webui/spec.md` is broader than the currently implemented firmware surface and should be read as intent rather than as a statement of completed firmware behavior.
+
+## 9. Notes
+
+- The root README is intended as a current repository summary. It is not a complete design document.
+- [`nrf_firmware/tinyusb/`](/home/gab/FlexAudioLink/nrf_firmware/tinyusb) is a git submodule.
+- Build outputs are checked into parts of the repository. Do not assume the working tree is clean.
+- Repository contents and implementation details are subject to change.
+
+## Diagram Draft 1
 
 ```mermaid
-graph LR
-    Host[Host PC]
-    TUSB[TinyUSB Stack]
-    I2S[I2S DMA]
-    CODEC[Audio Codec]
+flowchart LR
+    Source[Audio Source / Sink<br/>USB Host]
+    Dongle[FlexAudioLink Node<br/>USB Device]
+    Headset[FlexAudioLink Node]
+    Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
 
-    Host <-->|"USB ISO"| TUSB
-    TUSB <-->|"DMA Ring Buffer"| I2S
-    I2S <-->|"Speaker + Mic"| CODEC
+    Source <-->|USB Audio / CDC| Dongle
+    Dongle <-->|Proprietary 2.4 GHz GFSK| Headset
+    Headset <-->|Audio| Endpoint
 ```
-    
-### 2. USB-to-WiFi Bridge (Raw L2 Dongle Mode) 🚧
 
-Full-duplex USB audio interface that wirelessly bridges to headset hardware using raw 802.11 L2 frames, bypassing the IP/UDP stack entirely for minimum transport latency.
-
-- Playback path: Receives playback (speaker) audio from the USB host, packs samples directly into raw L2 frames, and injects them into the WiFi driver without any IP/UDP processing overhead.
-
-- Microphone path: Receives microphone audio from the headset via raw L2 frames and forwards it to the USB audio IN endpoint.
-
-- Feedback path: Receives speaker buffer fill level feedback from the headset via raw frames and applies it to the USB isochronous feedback endpoint to compensate for clock drift.
+## Diagram Draft 2
 
 ```mermaid
-graph LR
-    Host[Host PC]
-    TUSB[TinyUSB Stack]
-    DRV[WiFi Driver]
-    WLAN((WiFi Radio))
+flowchart LR
+    Source[Audio Source / Sink<br/>USB Host]
+    Node[FlexAudioLink Node<br/>USB Device]
+    Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
 
-    Host -->|"ISO OUT · Speaker"| TUSB
-    TUSB -->|"ISO IN · Mic"| Host
-    TUSB -->|"Feedback"| Host
-    TUSB -->|"Speaker"| DRV
-    DRV -->|"Mic"| TUSB
-    DRV -->|"Feedback"| TUSB
-    DRV <-->|"Raw L2 Frames"| WLAN
+    Source <-->|USB Audio / CDC| Node
+    Node <-->|Audio| Endpoint
 ```
 
-### 3. WiFi-to-I2S Bridge (Raw L2 Headset Mode) 🚧
-
-Wireless audio endpoint that receives raw 802.11 L2 frames directly from the WiFi driver via a netif hook, bypassing the IP/UDP stack for minimum transport latency.
-
-- Playback path: Intercepts incoming raw frames before the LwIP network stack, buffers them in the speaker buffer, and outputs audio via I2S to a CODEC.
-
-- Microphone path: Captures microphone audio via I2S CODEC, packs samples into raw Ethernet frames, and transmits them back to the dongle over WiFi without buffering.
-
-- Feedback path: Transmits speaker buffer fill level back to the dongle via raw frames to compensate for clock drift.
+## Diagram Draft 3
 
 ```mermaid
-graph LR
-    WLAN((WiFi Radio))
-    DRV[WiFi Driver]
-    BUF[Buffer]
-    I2S[I2S DMA]
-    CODEC[Audio Codec]
+flowchart LR
+    Source[Audio Source / Sink<br/>BLE Central]
+    Node[FlexAudioLink Node]
+    Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
 
-    WLAN <-->|"Raw L2 Frames"| DRV
-    DRV -->|"Speaker"| BUF
-    BUF --> I2S
-    BUF -->|"Feedback"| DRV
-    I2S <-->|"Speaker + Mic"| CODEC
-    I2S -->|"Mic"| DRV
+    Source <-->|BLE Audio / Control| Node
+    Node <-->|Audio| Endpoint
 ```
-
-### 4. USB-to-WiFi Bridge (UDP Dongle Mode) 🚧
-
-Full-duplex USB audio interface that wirelessly bridges to headset hardware over UDP/IP via the LwIP stack.
-
-- Playback path: Receives playback (speaker) audio from the USB host, packetizes samples into UDP frames, and transmits them over WiFi.
-
-- Microphone path: Receives microphone audio from the headset via UDP and forwards it to the USB audio IN endpoint.
-
-- Feedback path: Receives speaker buffer fill level feedback from the headset and applies it to the USB isochronous feedback endpoint to compensate for clock drift.
-
-```mermaid
-graph LR
-    Host[Host PC]
-    TUSB[TinyUSB Stack]
-    Net[LwIP Stack]
-    WLAN((WiFi Radio))
-
-    Host -->|"ISO OUT · Speaker"| TUSB
-    TUSB -->|"ISO IN · Mic"| Host
-    TUSB -->|"Feedback"| Host
-    TUSB -->|"Speaker"| Net
-    Net -->|"Mic"| TUSB
-    Net -->|"Feedback"| TUSB
-    Net <-->|"UDP Packets"| WLAN
-```
-
-### 5. WiFi-to-I2S Bridge (UDP Headset Mode) 🚧
-
-Wireless audio endpoint with direct audio hardware interfacing.
-
-- Playback path: Receives UDP audio data from the dongle, buffers it in the speaker buffer, and outputs audio via I2S to a CODEC.
-
-- Microphone path: Captures microphone audio via I2S CODEC, packetizes samples into UDP frames, and transmits them back to the dongle over WiFi without buffering.
-
-- Feedback path: Transmits speaker buffer fill level back to the dongle to compensate for clock drift.
-
-```mermaid
-graph LR
-    WLAN((WiFi Radio))
-    Net[LwIP Stack]
-    BUF[Buffer]
-    I2S[I2S DMA]
-    CODEC[Audio Codec]
-
-    WLAN <-->|"UDP Packets"| Net
-    Net -->|"Speaker"| BUF
-    BUF --> I2S
-    BUF -->|"Feedback"| Net
-    I2S <-->|"Speaker + Mic"| CODEC
-    I2S -->|"Mic"| Net
-```
-
-### 6. BLE Headset Mode 🔮
-
-Operates as a Bluetooth Low Energy audio headset, removing the need for WiFi in portable or low-power scenarios.
-Targets lower power consumption and broader device compatibility, with higher latency than WiFi modes.
-
-
-### 7. Network Audio Endpoint Mode 🔮
-
-Connects to a local network as a standalone audio endpoint, enabling:
-
-- Direct audio streaming from any device on the same network
-
-- Optional internet streaming 
-
-- Operation without a dedicated dongle

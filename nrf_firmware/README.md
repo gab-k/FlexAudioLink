@@ -2,6 +2,22 @@
 
 Zephyr firmware for `nrf54lm20dk/nrf54lm20a/cpuapp`.
 
+## Current State
+
+Implemented in the current tree:
+
+- USB device bring-up
+- USB CDC CLI
+- runtime role and mode control
+- USB profile switching between `CDC` and `UAC+CDC`
+- proprietary radio link test
+- initial codec / I2S integration scaffolding
+
+Not complete:
+
+- end-to-end wireless audio streaming
+- BLE audio transport
+
 ## New Machine Setup
 
 1. Install host packages on Arch / EndeavourOS:
