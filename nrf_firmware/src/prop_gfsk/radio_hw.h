@@ -74,6 +74,7 @@ struct prop_gfsk_hw_stats {
 	uint32_t packets_tx;
 	uint32_t packets_rx;
 	uint32_t packets_lost;
+	uint32_t crc_errors;
 	int16_t  last_rssi_dbm;
 };
 

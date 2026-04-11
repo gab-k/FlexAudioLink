@@ -8,8 +8,8 @@
 
 enum prop_gfsk_link_state {
 	PROP_GFSK_LINK_STATE_DISABLED = 0,
-	PROP_GFSK_LINK_STATE_SEARCHING,
-	PROP_GFSK_LINK_STATE_RUNNING,
+	PROP_GFSK_LINK_STATE_NO_SERVICE,
+	PROP_GFSK_LINK_STATE_IN_SERVICE,
 };
 
 struct prop_gfsk_link_config {
@@ -29,12 +29,13 @@ struct prop_gfsk_frame {
 struct prop_gfsk_link_report {
 	uint32_t packets_tx;
 	uint32_t packets_rx;
-	uint32_t packets_lost_total;
-	uint32_t packets_lost_while_locked;
-	uint32_t lock_acquire_count;
-	uint32_t lock_loss_count;
-	uint64_t time_locked_us;
+	uint32_t packets_lost_in_service;
+	uint32_t crc_error_count;
+	uint32_t outage_count;
+	uint64_t time_in_service_us;
 	int16_t last_rssi_dbm;
+	int32_t min_timing_error_us;
+	int32_t max_timing_error_us;
 	enum prop_gfsk_link_state state;
 };
 

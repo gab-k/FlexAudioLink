@@ -10,6 +10,8 @@
 static const char s_cli_no_newline_message[] =
 	"Command doesn't end with a newline (\\n) character.\r\n";
 
+#define CLI_CDC_ITF 0U
+
 /* Accumulates a single pending command line from the CDC byte stream. */
 static char s_cli_line[CLI_MAX_CMD_LEN];
 static size_t s_cli_line_len;
@@ -17,7 +19,7 @@ static size_t s_cli_line_len;
 void usb_cdc_init(void)
 {
 	s_cli_line_len = 0U;
-	tud_cdc_set_wanted_char('\n');
+	tud_cdc_n_set_wanted_char(CLI_CDC_ITF, '\n');
 }
 
 void usb_cdc_on_unmount(void)
@@ -35,45 +37,61 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 
 void tud_cdc_rx_cb(uint8_t itf)
 {
+	uint32_t available_bytes;
+
 	(void)itf;
 
-	/* Match the old firmware behavior: if data arrives without the wanted
-	 * newline terminator, discard it and warn immediately.
+	/* USB CDC input can arrive split across multiple packets/callbacks, so do
+	 * not discard partial data just because '\n' has not arrived yet. TinyUSB
+	 * will invoke tud_cdc_rx_wanted_cb() once the configured delimiter is seen.
+	 *
+	 * Only treat the stream as malformed if it grows to a full command-length
+	 * chunk without a newline, since that leaves no room for a terminator.
 	 */
-	tud_cdc_read_flush();
+	available_bytes = tud_cdc_n_available(itf);
+	if (available_bytes < (CLI_MAX_CMD_LEN - 1U)) {
+		return;
+	}
+
+	tud_cdc_n_read_flush(itf);
 	s_cli_line_len = 0U;
 	cli_enqueue_print_msg(s_cli_no_newline_message);
 }
 
 void tud_cdc_rx_wanted_cb(uint8_t itf, char wanted_char)
 {
-	uint32_t available_bytes;
-	uint32_t read_len;
-	uint32_t count = 0U;
-
-	(void)itf;
+	bool overflowed = false;
 	(void)wanted_char;
 
-	available_bytes = tud_cdc_available();
-	read_len = (available_bytes < (CLI_MAX_CMD_LEN - 1U)) ?
-		available_bytes : (CLI_MAX_CMD_LEN - 1U);
+	while (tud_cdc_n_available(itf) > 0U) {
+		int32_t ch = tud_cdc_n_read_char(itf);
 
-	if (read_len > 0U) {
-		count = tud_cdc_read(s_cli_line, read_len);
+		if (ch < 0) {
+			break;
+		}
+
+		if (ch == '\r' || ch == '\n') {
+			if (!overflowed && s_cli_line_len > 0U) {
+				s_cli_line[s_cli_line_len] = '\0';
+				cli_enqueue_command_line(s_cli_line);
+			}
+
+			s_cli_line_len = 0U;
+			overflowed = false;
+			continue;
+		}
+
+		if (overflowed) {
+			continue;
+		}
+
+		if (s_cli_line_len < (CLI_MAX_CMD_LEN - 1U)) {
+			s_cli_line[s_cli_line_len++] = (char)ch;
+			continue;
+		}
+
+		s_cli_line_len = 0U;
+		overflowed = true;
+		cli_enqueue_print_msg(s_cli_no_newline_message);
 	}
-
-	while (count > 0U &&
-	       (s_cli_line[count - 1U] == '\n' || s_cli_line[count - 1U] == '\r')) {
-		count--;
-	}
-
-	s_cli_line_len = count;
-	
-	if (s_cli_line_len == 0U) {
-		return;
-	}
-
-	s_cli_line[s_cli_line_len] = '\0';
-	cli_enqueue_command_line(s_cli_line);
-	s_cli_line_len = 0U;
 }

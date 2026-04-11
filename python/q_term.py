@@ -37,6 +37,8 @@ import time
 import json
 import os
 import re
+import queue
+import signal
 
 ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
 
@@ -55,8 +57,11 @@ class AutoSerialConsole(tk.LabelFrame):
         self.serial_conn = None
         self.is_connected = False
         self.stop_thread = threading.Event()
+        self._disconnecting = False
         self._log_lock = threading.Lock()
         self._log_file = open(log_path, 'w', buffering=1)  # line-buffered, truncates on open
+        self._ui_log_queue = queue.SimpleQueue()
+        self._tx_queue = queue.Queue()
         
         # Timestamp toggle (on by default)
         self.show_timestamp = True
@@ -105,12 +110,16 @@ class AutoSerialConsole(tk.LabelFrame):
         self.btn_clear = tk.Button(input_frame, text="Clear", command=self.clear_console, width=5)
         self.btn_clear.pack(side=tk.RIGHT, padx=5)
 
+        self.btn_clear_log = tk.Button(input_frame, text="Clear Log", command=self.clear_log_file, width=8)
+        self.btn_clear_log.pack(side=tk.RIGHT, padx=5)
+
         # Timestamp Toggle Button
         self.btn_ts = tk.Button(input_frame, text="TS", command=self.toggle_timestamp, width=3, relief=tk.SUNKEN)
         self.btn_ts.pack(side=tk.RIGHT)
 
         # Start the Auto-Connect Watchdog
         self.after(1000, self.auto_connect_watchdog)
+        self.after(50, self.flush_ui_log_queue)
 
     def toggle_timestamp(self):
         self.show_timestamp = not self.show_timestamp
@@ -125,19 +134,41 @@ class AutoSerialConsole(tk.LabelFrame):
             except Exception:
                 pass
 
-        def _append():
-            prefix = f"[{timestamp}] " if self.show_timestamp else ""
+        self._ui_log_queue.put((timestamp, message, tag))
+
+    def flush_ui_log_queue(self):
+        pending = []
+
+        while len(pending) < 200:
+            try:
+                pending.append(self._ui_log_queue.get_nowait())
+            except queue.Empty:
+                break
+
+        if pending:
             self.console_text.config(state='normal')
-            self.console_text.insert(tk.END, f"{prefix}{message}\n", tag)
+            for timestamp, message, tag in pending:
+                prefix = f"[{timestamp}] " if self.show_timestamp else ""
+                self.console_text.insert(tk.END, f"{prefix}{message}\n", tag)
             self.console_text.see(tk.END)
             self.console_text.config(state='disabled')
-        self.after(0, _append)
+
+        self.after(50, self.flush_ui_log_queue)
 
     def clear_console(self):
         """Clears the text area for this specific console."""
         self.console_text.config(state='normal')
         self.console_text.delete(1.0, tk.END)
         self.console_text.config(state='disabled')
+
+    def clear_log_file(self):
+        with self._log_lock:
+            try:
+                self._log_file.seek(0)
+                self._log_file.truncate()
+                self._log_file.flush()
+            except Exception:
+                pass
 
     def auto_connect_watchdog(self):
         if not self.is_connected:
@@ -181,8 +212,14 @@ class AutoSerialConsole(tk.LabelFrame):
 
     def connect(self, port_name):
         try:
-            self.serial_conn = serial.Serial(port_name, baudrate=self.target_baud, timeout=0.05)
+            self.serial_conn = serial.Serial(
+                port_name,
+                baudrate=self.target_baud,
+                timeout=0.05,
+                write_timeout=0.05,
+            )
             self.is_connected = True
+            self._disconnecting = False
             
             self.stop_thread.clear()
             self.btn_send.config(state="normal")
@@ -192,19 +229,52 @@ class AutoSerialConsole(tk.LabelFrame):
             self.log(f"Auto-connected to {port_name}", 'sys')
 
             threading.Thread(target=self.read_loop, daemon=True).start()
+            threading.Thread(target=self.write_loop, daemon=True).start()
             
         except serial.SerialException as e:
             self.log(f"Connection Failed: {e}", 'err')
 
     def disconnect(self):
+        if self._disconnecting:
+            return
+
+        self._disconnecting = True
         self.stop_thread.set()
-        if self.serial_conn and self.serial_conn.is_open:
-            self.serial_conn.close()
+        serial_conn = self.serial_conn
+        self.serial_conn = None
+        while True:
+            try:
+                self._tx_queue.get_nowait()
+            except queue.Empty:
+                break
         
         self.is_connected = False
         self.btn_send.config(state="disabled")
         self.lbl_status.config(text="Disconnected", fg="red")
         self.log("Device Disconnected.", 'err')
+        self.config(text=f" {self.target_name} (Searching...) ", fg="black")
+
+        if serial_conn is not None:
+            threading.Thread(target=self._close_serial, args=(serial_conn,), daemon=True).start()
+        else:
+            self._disconnecting = False
+
+    def _close_serial(self, serial_conn):
+        try:
+            if hasattr(serial_conn, 'cancel_read'):
+                serial_conn.cancel_read()
+            if hasattr(serial_conn, 'cancel_write'):
+                serial_conn.cancel_write()
+        except Exception:
+            pass
+
+        try:
+            if serial_conn.is_open:
+                serial_conn.close()
+        except Exception:
+            pass
+        finally:
+            self._disconnecting = False
 
     def read_loop(self):
         rx_buffer = ""
@@ -235,20 +305,41 @@ class AutoSerialConsole(tk.LabelFrame):
                 self.after(0, self.disconnect)
                 break
 
+    def write_loop(self):
+        while not self.stop_thread.is_set():
+            try:
+                payload = self._tx_queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+
+            if payload is None:
+                continue
+
+            try:
+                if self.serial_conn and self.serial_conn.is_open:
+                    self.serial_conn.write(payload)
+            except (serial.SerialException, serial.SerialTimeoutException, OSError) as e:
+                self.log(f"Send Error: {e}", 'err')
+                self.stop_thread.set()
+                self.after(0, self.disconnect)
+                break
+
     def send_data(self):
         if self.is_connected and self.serial_conn:
             data = self.entry_input.get()
             if data:
                 try:
-                    self.serial_conn.write((data + "\n").encode('utf-8'))
                     self.log(f"TX: {data}", 'tx')
+                    self._tx_queue.put_nowait((data + "\n").encode('utf-8'))
                     
                     if not self.command_history or self.command_history[-1] != data:
                         self.command_history.append(data)
                     self.history_index = len(self.command_history)
                     
                     self.entry_input.delete(0, tk.END)
-                except (serial.SerialException, OSError) as e:
+                except queue.Full:
+                    self.log("Send Error: TX queue full", 'err')
+                except (serial.SerialException, serial.SerialTimeoutException, OSError) as e:
                     self.log(f"Send Error: {e}", 'err')
                     self.after(0, self.disconnect)
                 except Exception as e:
@@ -320,7 +411,19 @@ class QuadSerialApp(tk.Tk):
         # --- Global Controls ---
         # Clear All Button
         self.btn_clear_all = tk.Button(self.bottom_controls, text="CLEAR ALL CONSOLES", command=self.clear_all, bg="#ffcccc", height=2, width=20)
-        self.btn_clear_all.pack()
+        self.btn_clear_all.pack(side=tk.LEFT, padx=5)
+
+        self.btn_clear_logs = tk.Button(
+            self.bottom_controls,
+            text="CLEAR SAVED LOGS",
+            command=self.clear_saved_logs,
+            bg="#ffe4b3",
+            height=2,
+            width=18,
+        )
+        self.btn_clear_logs.pack(side=tk.LEFT, padx=5)
+
+        self._closing = False
 
     def load_config(self):
         config_path = "q_term_config.json"
@@ -339,8 +442,42 @@ class QuadSerialApp(tk.Tk):
         for console in self.consoles:
             console.clear_console()
 
-    def _on_close(self):
+    def clear_saved_logs(self):
+        cleared = 0
+        removed = 0
+
         for console in self.consoles:
+            console.clear_log_file()
+            cleared += 1
+
+        for name in os.listdir(self.log_dir):
+            if not (name.startswith("session_") and name.endswith(".log")):
+                continue
+
+            path = os.path.join(self.log_dir, name)
+            if any(os.path.abspath(path) == os.path.abspath(console._log_file.name)
+                   for console in self.consoles):
+                continue
+
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+
+
+    def _on_close(self):
+        if self._closing:
+            return
+
+        self._closing = True
+        for console in self.consoles:
+            try:
+                console.stop_thread.set()
+                if console.serial_conn and console.serial_conn.is_open:
+                    console.serial_conn.close()
+            except Exception:
+                pass
             try:
                 console._log_file.close()
             except Exception:
@@ -349,4 +486,15 @@ class QuadSerialApp(tk.Tk):
 
 if __name__ == "__main__":
     app = QuadSerialApp()
-    app.mainloop()
+    def handle_sigint(signum, frame):
+        try:
+            app.after(0, app._on_close)
+        except Exception:
+            pass
+
+    signal.signal(signal.SIGINT, handle_sigint)
+
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        app._on_close()

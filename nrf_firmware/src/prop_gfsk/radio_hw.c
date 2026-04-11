@@ -155,6 +155,10 @@ static void radio_isr(const void *arg)
 	/* CRCERROR: bad packet; clear event.  DISABLED handler re-enters RX. */
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR)) {
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
+
+		k_spinlock_key_t key = k_spin_lock(&g_lock);
+		g_stats.crc_errors++;
+		k_spin_unlock(&g_lock, key);
 	}
 
 	/*

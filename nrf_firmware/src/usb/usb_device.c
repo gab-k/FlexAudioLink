@@ -109,16 +109,14 @@ static void usb_device_apply_profile(enum usb_device_profile profile)
 
 	cli_set_connected(false);
 
-	if (!tusb_inited()) {
-		usb_device_current_profile = profile;
-		tusb_init(BOARD_TUD_RHPORT, &dev_init);
-		return;
+	if (tusb_inited()) {
+		tusb_deinit(BOARD_TUD_RHPORT);
+		k_sleep(K_MSEC(20));
 	}
 
-	tusb_deinit(BOARD_TUD_RHPORT);
-	k_sleep(K_MSEC(20));
 	usb_device_current_profile = profile;
 	tusb_init(BOARD_TUD_RHPORT, &dev_init);
+	usb_cdc_init();
 }
 
 static void usb_device_thread(void *arg1, void *arg2, void *arg3)
@@ -126,8 +124,6 @@ static void usb_device_thread(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
-
-	usb_cdc_init();
 
 	while (1) {
 		enum usb_device_profile requested_profile;

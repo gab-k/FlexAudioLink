@@ -36,28 +36,61 @@ K_MSGQ_DEFINE(g_cli_output_msgq, CLI_MAX_OUTPUT_LEN, CLI_QUEUE_DEPTH, 4);
 static void cli_process_line(char *line);
 static void cli_thread(void *arg1, void *arg2, void *arg3);
 static void cli_init(void);
+static void cli_print(const char *fmt, ...);
 
 static const char *cli_get_link_state_name(enum prop_gfsk_link_state state)
 {
 	switch (state) {
 	case PROP_GFSK_LINK_STATE_DISABLED:
 		return "disabled";
-	case PROP_GFSK_LINK_STATE_SEARCHING:
-		return "searching";
-	case PROP_GFSK_LINK_STATE_RUNNING:
-		return "running";
+	case PROP_GFSK_LINK_STATE_NO_SERVICE:
+		return "no_service";
+	case PROP_GFSK_LINK_STATE_IN_SERVICE:
+		return "in_service";
 	default:
 		return "unknown";
 	}
 }
 
-static const char *cli_get_link_lock_name(enum device_role role, enum prop_gfsk_link_state state)
+static uint64_t cli_get_in_service_time_ms(const struct prop_gfsk_link_report *stats)
 {
-	if (role == DEVICE_ROLE_DONGLE) {
-		return "n/a";
+	if (stats == NULL) {
+		return 0U;
 	}
 
-	return (state == PROP_GFSK_LINK_STATE_RUNNING) ? "locked" : "searching";
+	return stats->time_in_service_us / 1000U;
+}
+
+static void cli_print_status_packet_group(const struct prop_gfsk_link_report *stats)
+{
+	if (stats == NULL) {
+		return;
+	}
+
+	cli_print("[packets]\n");
+	cli_print("tx=%u\n", stats->packets_tx);
+	cli_print("rx=%u\n", stats->packets_rx);
+	cli_print("lost=%u\n", stats->packets_lost_in_service);
+	cli_print("crc_err=%u\n", stats->crc_error_count);
+}
+
+static void cli_print_status_link_group(const struct prop_gfsk_link_report *stats,
+					uint32_t loss_permille)
+{
+	if (stats == NULL) {
+		return;
+	}
+
+	cli_print("[link]\n");
+	cli_print("state=%s\n", cli_get_link_state_name(stats->state));
+	cli_print("rssi=%d\n", stats->last_rssi_dbm);
+	cli_print("timing_err_min_us=%d\n", stats->min_timing_error_us);
+	cli_print("timing_err_max_us=%d\n", stats->max_timing_error_us);
+	cli_print("loss_pct=%u.%u\n",
+		  loss_permille / 10U,
+		  loss_permille % 10U);
+	cli_print("outages=%u\n", stats->outage_count);
+	cli_print("in_service_ms=%llu\n", cli_get_in_service_time_ms(stats));
 }
 
 static size_t cli_strnlen(const char *s, size_t max_len)
@@ -98,7 +131,7 @@ static void cli_write_raw(const char *data, size_t len)
 
 static void cli_print(const char *fmt, ...)
 {
-	char buf[192];
+	char buf[256];
 	va_list args;
 	int len;
 
@@ -117,7 +150,7 @@ static void cli_print(const char *fmt, ...)
 	cli_write_raw(buf, (size_t)len);
 }
 
-static void cli_emit_status(void)
+static void cli_emit_status_push(void)
 {
 	struct prop_gfsk_link_report stats;
 	uint32_t loss_permille = 0U;
@@ -125,27 +158,53 @@ static void cli_emit_status(void)
 
 	prop_gfsk_link_get_report(&stats);
 
-	if ((stats.packets_rx + stats.packets_lost_while_locked) > 0U) {
-		loss_permille = (stats.packets_lost_while_locked * 1000U) /
-			(stats.packets_rx + stats.packets_lost_while_locked);
+	if ((stats.packets_rx + stats.packets_lost_in_service) > 0U) {
+		loss_permille = (stats.packets_lost_in_service * 1000U) /
+			(stats.packets_rx + stats.packets_lost_in_service);
 	}
 
-	cli_print("#S rssi=%d bat=100 lock=%s loss=%u.%u tx=%u rx=%u lost=%u "
-		  "lost_total=%u state=%s locks=%u lloss=%u tlock_us=%llu urun=0 "
-		  "orun=0 cerr=0 fw=%s\n",
+	cli_print("#S state=%s rssi=%d terr_min=%d terr_max=%d loss=%u.%u tx=%u rx=%u "
+		  "lost=%u crc_err=%u outages=%u in_service_ms=%llu\n",
+		  cli_get_link_state_name(stats.state),
 		  stats.last_rssi_dbm,
-		  cli_get_link_lock_name(role, stats.state),
+		  stats.min_timing_error_us,
+		  stats.max_timing_error_us,
 		  loss_permille / 10U,
 		  loss_permille % 10U,
 		  stats.packets_tx,
 		  stats.packets_rx,
-		  stats.packets_lost_while_locked,
-		  stats.packets_lost_total,
-		  cli_get_link_state_name(stats.state),
-		  stats.lock_acquire_count,
-		  stats.lock_loss_count,
-		  stats.time_locked_us,
-		  APP_FW_VERSION);
+		  stats.packets_lost_in_service,
+		  stats.crc_error_count,
+		  stats.outage_count,
+		  cli_get_in_service_time_ms(&stats));
+}
+
+static void cli_emit_status(void)
+{
+	struct prop_gfsk_link_report stats;
+	uint32_t loss_permille = 0U;
+	enum operating_mode mode = app_control_get_current_operating_mode();
+	enum device_role role = app_control_get_current_role();
+
+	prop_gfsk_link_get_report(&stats);
+
+	if ((stats.packets_rx + stats.packets_lost_in_service) > 0U) {
+		loss_permille = (stats.packets_lost_in_service * 1000U) /
+			(stats.packets_rx + stats.packets_lost_in_service);
+	}
+
+	cli_print("[status]\n");
+	cli_print("role=%s\n", app_control_get_role_name(role));
+	cli_print("mode=%s\n", app_control_get_operating_mode_name(mode));
+	cli_print("\n");
+	cli_print_status_link_group(&stats, loss_permille);
+	cli_print("\n");
+	cli_print_status_packet_group(&stats);
+	cli_print("\n");
+	cli_print("[audio]\n");
+	cli_print("underruns=0\n");
+	cli_print("overruns=0\n");
+	cli_print("codec_errors=0\n");
 }
 
 static void cli_print_mode_group(void)
@@ -615,7 +674,7 @@ static void cli_thread(void *arg1, void *arg2, void *arg3)
 
 		if (g_status_push_enabled && g_cli_connected &&
 		    k_uptime_get() >= g_next_status_deadline_ms) {
-			cli_emit_status();
+			cli_emit_status_push();
 			g_next_status_deadline_ms = k_uptime_get() +
 				g_status_push_period_ms;
 		}
