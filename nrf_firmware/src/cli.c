@@ -71,7 +71,21 @@ static void cli_print_status_packet_group(const struct prop_gfsk_link_report *st
 	cli_print("tx=%u\n", stats->packets_tx);
 	cli_print("rx=%u\n", stats->packets_rx);
 	cli_print("lost=%u\n", stats->packets_lost_in_service);
+	cli_print("loss_bursts=%u\n", stats->loss_burst_count);
+	cli_print("loss_burst_1=%u\n", stats->loss_burst_1_count);
+	cli_print("loss_burst_2=%u\n", stats->loss_burst_2_count);
+	cli_print("loss_burst_3_4=%u\n", stats->loss_burst_3_4_count);
+	cli_print("loss_burst_5_plus=%u\n", stats->loss_burst_5_plus_count);
+	cli_print("loss_burst_max=%u\n", stats->max_loss_burst_len);
 	cli_print("crc_err=%u\n", stats->crc_error_count);
+	cli_print("tx_intended=%u\n", stats->tx_intended_count);
+	cli_print("tx_missed_deadline=%u\n", stats->tx_missed_deadline_count);
+	cli_print("pretx_disabled=%u\n", stats->pretx_disabled_count);
+	cli_print("pretx_rxidle=%u\n", stats->pretx_rxidle_count);
+	cli_print("pretx_rx=%u\n", stats->pretx_rx_count);
+	cli_print("pretx_rx_noaddr=%u\n", stats->pretx_rx_noaddr_count);
+	cli_print("pretx_rx_addr=%u\n", stats->pretx_rx_addr_count);
+	cli_print("pretx_other=%u\n", stats->pretx_other_count);
 }
 
 static void cli_print_status_link_group(const struct prop_gfsk_link_report *stats,
@@ -84,8 +98,6 @@ static void cli_print_status_link_group(const struct prop_gfsk_link_report *stat
 	cli_print("[link]\n");
 	cli_print("state=%s\n", cli_get_link_state_name(stats->state));
 	cli_print("rssi=%d\n", stats->last_rssi_dbm);
-	cli_print("timing_err_min_us=%d\n", stats->min_timing_error_us);
-	cli_print("timing_err_max_us=%d\n", stats->max_timing_error_us);
 	cli_print("loss_pct=%u.%u\n",
 		  loss_permille / 10U,
 		  loss_permille % 10U);
@@ -154,7 +166,6 @@ static void cli_emit_status_push(void)
 {
 	struct prop_gfsk_link_report stats;
 	uint32_t loss_permille = 0U;
-	enum device_role role = app_control_get_current_role();
 
 	prop_gfsk_link_get_report(&stats);
 
@@ -163,18 +174,32 @@ static void cli_emit_status_push(void)
 			(stats.packets_rx + stats.packets_lost_in_service);
 	}
 
-	cli_print("#S state=%s rssi=%d terr_min=%d terr_max=%d loss=%u.%u tx=%u rx=%u "
-		  "lost=%u crc_err=%u outages=%u in_service_ms=%llu\n",
+	cli_print("#S state=%s rssi=%d loss=%u.%u tx=%u rx=%u "
+		  "lost=%u crc_err=%u txi=%u txm=%u pdis=%u prid=%u prx=%u prx_na=%u prx_ad=%u poth=%u "
+		  "lb=%u lb1=%u lb2=%u lb34=%u lb5p=%u lbmax=%u "
+		  "outages=%u in_service_ms=%llu\n",
 		  cli_get_link_state_name(stats.state),
 		  stats.last_rssi_dbm,
-		  stats.min_timing_error_us,
-		  stats.max_timing_error_us,
 		  loss_permille / 10U,
 		  loss_permille % 10U,
 		  stats.packets_tx,
 		  stats.packets_rx,
 		  stats.packets_lost_in_service,
 		  stats.crc_error_count,
+		  stats.tx_intended_count,
+		  stats.tx_missed_deadline_count,
+		  stats.pretx_disabled_count,
+		  stats.pretx_rxidle_count,
+		  stats.pretx_rx_count,
+		  stats.pretx_rx_noaddr_count,
+		  stats.pretx_rx_addr_count,
+		  stats.pretx_other_count,
+		  stats.loss_burst_count,
+		  stats.loss_burst_1_count,
+		  stats.loss_burst_2_count,
+		  stats.loss_burst_3_4_count,
+		  stats.loss_burst_5_plus_count,
+		  stats.max_loss_burst_len,
 		  stats.outage_count,
 		  cli_get_in_service_time_ms(&stats));
 }

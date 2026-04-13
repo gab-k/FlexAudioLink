@@ -10,25 +10,29 @@
 #define PROP_GFSK_LINK_QUEUE_DEPTH         4
 #define PROP_GFSK_LINK_DEFAULT_DONGLE_TX_SLOT_US  1000U
 #define PROP_GFSK_LINK_DEFAULT_HEADSET_TX_SLOT_US 1000U
-/*
- * Delay the headset TX inside its slot so the dongle has additional time to
- * complete its own TX turnaround and settle in RX before the uplink arrives.
- * This is a diagnostic knob; if it materially improves dongle RX, the problem
- * is more likely around post-TX receive readiness than gross TDMA drift.
- */
-#define PROP_GFSK_LINK_HEADSET_TX_GUARD_US 200U
 /* Service-outage timeout: after this many missed expected peer RX windows,
  * the active stream is considered out of service. */
 #define PROP_GFSK_LINK_SYNC_LOSS_FRAMES    8U
 #define PROP_GFSK_LINK_CONFIG_SET_TIMEOUT  K_MSEC(1000)
 
+enum prop_gfsk_tx_tick_source {
+	PROP_GFSK_TX_TICK_SRC_NONE = 0,
+	PROP_GFSK_TX_TICK_SRC_FALLBACK,
+	PROP_GFSK_TX_TICK_SRC_RX_SYNC,
+};
+
 struct link_stats {
 	uint32_t packets_lost_in_service;
+	uint32_t loss_burst_count;
+	uint32_t loss_burst_1_count;
+	uint32_t loss_burst_2_count;
+	uint32_t loss_burst_3_4_count;
+	uint32_t loss_burst_5_plus_count;
+	uint32_t max_loss_burst_len;
 	uint32_t outage_count;
+	uint32_t tx_intended_count;
+	uint32_t tx_missed_deadline_count;
 	uint64_t time_in_service_us;
-	int32_t min_timing_error_us;
-	int32_t max_timing_error_us;
-	bool timing_error_seen;
 };
 
 struct prop_gfsk_link_runtime {
@@ -41,10 +45,10 @@ struct prop_gfsk_link_runtime {
 		bool have_last_rx_seq;
 		uint64_t in_service_since_cyc;
 		uint32_t next_tx_tick;
-		uint32_t next_expected_peer_rx_tick;
 		uint16_t pending_tx_seq;
 		bool pending_tx_seq_valid;
 		bool tx_armed;
+		enum prop_gfsk_tx_tick_source next_tx_tick_src;
 		uint8_t consecutive_missed_peer_rx_frames;
 	} slot_sync;
 	struct k_spinlock lock;
@@ -85,6 +89,33 @@ static struct prop_gfsk_link_config prop_gfsk_link_get_config(void)
 
 	k_spin_unlock(&g_link.lock, key);
 	return config;
+}
+
+static bool prop_gfsk_link_schedule_tx(uint32_t tx_tick, enum prop_gfsk_tx_tick_source source);
+
+/* A loss burst is a contiguous recovered sequence gap. This intentionally
+ * shares the same source of truth as packets_lost_in_service so the histogram
+ * always matches the visible `lost` counter. */
+static void prop_gfsk_link_record_loss_burst(uint32_t burst_len)
+{
+	if (burst_len == 0U) {
+		return;
+	}
+
+	g_link.stats.loss_burst_count++;
+	if (burst_len == 1U) {
+		g_link.stats.loss_burst_1_count++;
+	} else if (burst_len == 2U) {
+		g_link.stats.loss_burst_2_count++;
+	} else if (burst_len <= 4U) {
+		g_link.stats.loss_burst_3_4_count++;
+	} else {
+		g_link.stats.loss_burst_5_plus_count++;
+	}
+
+	if (burst_len > g_link.stats.max_loss_burst_len) {
+		g_link.stats.max_loss_burst_len = burst_len;
+	}
 }
 
 static void prop_gfsk_link_note_in_service_time(uint64_t now_cyc)
@@ -141,11 +172,11 @@ static bool prop_gfsk_link_seq_gap_from_expected(uint16_t expected, uint16_t seq
 	return false;
 }
 
-static k_timeout_t prop_gfsk_link_get_in_service_poll_timeout(uint32_t frame_interval_us,
-							      uint32_t peer_tx_slot_us)
+static k_timeout_t prop_gfsk_link_get_in_service_poll_timeout(uint32_t frame_interval_us, uint32_t peer_tx_slot_us)
 {
 	uint32_t now_tick;
 	uint32_t deadline_tick;
+	uint32_t local_tx_slot_us;
 	int32_t delta_us;
 
 	if (g_link.state != PROP_GFSK_LINK_STATE_IN_SERVICE) {
@@ -153,7 +184,10 @@ static k_timeout_t prop_gfsk_link_get_in_service_poll_timeout(uint32_t frame_int
 	}
 
 	now_tick = prop_gfsk_radio_hw_get_tick();
-	deadline_tick = g_link.slot_sync.next_expected_peer_rx_tick;
+	local_tx_slot_us = (g_link.config.local_device_role == DEVICE_ROLE_DONGLE) ?
+			       		g_link.config.dongle_tx_slot_us :
+			       		g_link.config.headset_tx_slot_us;
+	deadline_tick = g_link.slot_sync.next_tx_tick + local_tx_slot_us;
 	if (peer_tx_slot_us > PROP_GFSK_PRE_TX_OFFSET_US) {
 		deadline_tick += peer_tx_slot_us - PROP_GFSK_PRE_TX_OFFSET_US;
 	}
@@ -173,21 +207,39 @@ static k_timeout_t prop_gfsk_link_get_in_service_poll_timeout(uint32_t frame_int
 static uint32_t prop_gfsk_link_get_headset_tx_tick(uint32_t dongle_rx_tick,
 						   const struct prop_gfsk_link_config *config)
 {
-	uint32_t headset_tx_guard_us = PROP_GFSK_LINK_HEADSET_TX_GUARD_US;
-
 	if (config == NULL) {
 		return dongle_rx_tick;
 	}
 
-	/*
-	 * Keep the guard comfortably inside the headset slot so the full packet
-	 * still fits even with large payloads.
-	 */
-	if (headset_tx_guard_us >= config->headset_tx_slot_us / 2U) {
-		headset_tx_guard_us = config->headset_tx_slot_us / 2U;
+	return dongle_rx_tick + config->dongle_tx_slot_us;
+}
+
+static bool prop_gfsk_link_propose_next_tx_tick(uint32_t tx_tick, enum prop_gfsk_tx_tick_source source)
+{
+	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
+
+	if (tx_tick == 0U || source == PROP_GFSK_TX_TICK_SRC_NONE) {
+		k_spin_unlock(&g_link.lock, key);
+		return false;
 	}
 
-	return dongle_rx_tick + config->dongle_tx_slot_us + headset_tx_guard_us;
+	if (g_link.slot_sync.tx_armed &&
+	    g_link.slot_sync.next_tx_tick == tx_tick) {
+		if (g_link.slot_sync.next_tx_tick_src == source) {
+			k_spin_unlock(&g_link.lock, key);
+			return true;
+		}
+
+		if (source == PROP_GFSK_TX_TICK_SRC_FALLBACK &&
+		    g_link.slot_sync.next_tx_tick_src ==
+			    PROP_GFSK_TX_TICK_SRC_RX_SYNC) {
+			k_spin_unlock(&g_link.lock, key);
+			return true;
+		}
+	}
+
+	k_spin_unlock(&g_link.lock, key);
+	return prop_gfsk_link_schedule_tx(tx_tick, source);
 }
 
 static void prop_gfsk_link_record_in_service_rx(uint16_t seq)
@@ -196,42 +248,14 @@ static void prop_gfsk_link_record_in_service_rx(uint16_t seq)
 		uint16_t expected = g_link.slot_sync.last_rx_seq + 1U;
 		uint16_t gap;
 
-		if (prop_gfsk_link_seq_gap_from_expected(expected, seq, &gap) &&
-		    gap > 0U) {
+		if (prop_gfsk_link_seq_gap_from_expected(expected, seq, &gap) && gap > 0U) {
 			g_link.stats.packets_lost_in_service += gap;
+			prop_gfsk_link_record_loss_burst(gap);
 		}
 	}
 
 	g_link.slot_sync.last_rx_seq = seq;
 	g_link.slot_sync.have_last_rx_seq = true;
-}
-
-static void prop_gfsk_link_note_timing_error_locked(uint32_t rx_tick)
-{
-	int32_t timing_error_us;
-
-	if (g_link.state != PROP_GFSK_LINK_STATE_IN_SERVICE ||
-	    g_link.slot_sync.next_expected_peer_rx_tick == 0U) {
-		return;
-	}
-
-	timing_error_us =
-		(int32_t)(rx_tick - g_link.slot_sync.next_expected_peer_rx_tick);
-
-	if (!g_link.stats.timing_error_seen) {
-		g_link.stats.min_timing_error_us = timing_error_us;
-		g_link.stats.max_timing_error_us = timing_error_us;
-		g_link.stats.timing_error_seen = true;
-		return;
-	}
-
-	if (timing_error_us < g_link.stats.min_timing_error_us) {
-		g_link.stats.min_timing_error_us = timing_error_us;
-	}
-
-	if (timing_error_us > g_link.stats.max_timing_error_us) {
-		g_link.stats.max_timing_error_us = timing_error_us;
-	}
 }
 
 static void prop_gfsk_link_queue_rx_frame(const struct prop_gfsk_rx_frame *rx)
@@ -275,30 +299,48 @@ static void prop_gfsk_link_prepare_tx_packet(struct prop_gfsk_packet *packet,
 	memcpy(packet->data, frame.payload, frame.len);
 }
 
-static bool prop_gfsk_link_schedule_tx(uint32_t tx_tick)
+static bool prop_gfsk_link_schedule_tx(uint32_t tx_tick, enum prop_gfsk_tx_tick_source source)
 {
 	struct prop_gfsk_packet tx_packet;
+	const struct prop_gfsk_packet *packet = NULL;
 	uint16_t seq;
+	bool have_pending_tx;
 	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
 
 	if (g_link.slot_sync.tx_armed &&
-	    g_link.slot_sync.next_tx_tick == tx_tick) {
+	    g_link.slot_sync.next_tx_tick == tx_tick &&
+	    g_link.slot_sync.next_tx_tick_src == source) {
+		k_spin_unlock(&g_link.lock, key);
+		return true;
+	}
+
+	g_link.stats.tx_intended_count++;
+	have_pending_tx = g_link.slot_sync.pending_tx_seq_valid;
+	seq = have_pending_tx ? g_link.slot_sync.pending_tx_seq : g_link.tx_seq;
+	k_spin_unlock(&g_link.lock, key);
+
+	if (!have_pending_tx) {
+		prop_gfsk_link_prepare_tx_packet(&tx_packet, seq);
+		packet = &tx_packet;
+	}
+
+	if (!prop_gfsk_radio_hw_schedule_tx_if_possible(tx_tick, packet)) {
+		key = k_spin_lock(&g_link.lock);
+		g_link.stats.tx_missed_deadline_count++;
 		k_spin_unlock(&g_link.lock, key);
 		return false;
 	}
 
+	key = k_spin_lock(&g_link.lock);
 	if (!g_link.slot_sync.pending_tx_seq_valid) {
-		g_link.slot_sync.pending_tx_seq = g_link.tx_seq;
+		g_link.slot_sync.pending_tx_seq = seq;
 		g_link.slot_sync.pending_tx_seq_valid = true;
 	}
 
-	seq = g_link.slot_sync.pending_tx_seq;
 	g_link.slot_sync.next_tx_tick = tx_tick;
+	g_link.slot_sync.next_tx_tick_src = source;
 	g_link.slot_sync.tx_armed = true;
 	k_spin_unlock(&g_link.lock, key);
-
-	prop_gfsk_link_prepare_tx_packet(&tx_packet, seq);
-	prop_gfsk_radio_hw_schedule_tx(tx_tick, &tx_packet);
 	return true;
 }
 
@@ -312,6 +354,7 @@ static void prop_gfsk_link_note_tx_done(void)
 	}
 
 	g_link.slot_sync.tx_armed = false;
+	g_link.slot_sync.next_tx_tick_src = PROP_GFSK_TX_TICK_SRC_NONE;
 	k_spin_unlock(&g_link.lock, key);
 }
 
@@ -333,7 +376,8 @@ static void prop_gfsk_link_print_banner(const struct prop_gfsk_link_config *conf
 	printk("Dongle TX slot: %u us\n", config->dongle_tx_slot_us);
 	printk("Headset TX slot: %u us\n", config->headset_tx_slot_us);
 	printk("Payload: %u bytes\n", PROP_GFSK_PAYLOAD_LEN);
-	printk("Sync word: 0x%08lX\n\n", PROP_GFSK_RADIO_SYNC_WORD);
+	printk("Dongle addr: 0x%08lX\n", PROP_GFSK_RADIO_ADDR_DONGLE);
+	printk("Headset addr: 0x%08lX\n\n", PROP_GFSK_RADIO_ADDR_HEADSET);
 }
 
 static bool prop_gfsk_link_apply_config_internal(
@@ -356,10 +400,10 @@ static bool prop_gfsk_link_apply_config_internal(
 	g_link.slot_sync.have_last_rx_seq = false;
 	g_link.slot_sync.in_service_since_cyc = 0U;
 	g_link.slot_sync.next_tx_tick = 0U;
-	g_link.slot_sync.next_expected_peer_rx_tick = 0U;
 	g_link.slot_sync.pending_tx_seq = 0U;
 	g_link.slot_sync.pending_tx_seq_valid = false;
 	g_link.slot_sync.tx_armed = false;
+	g_link.slot_sync.next_tx_tick_src = PROP_GFSK_TX_TICK_SRC_NONE;
 	g_link.slot_sync.consecutive_missed_peer_rx_frames = 0U;
 	memset(&g_link.stats, 0, sizeof(g_link.stats));
 
@@ -489,13 +533,25 @@ void prop_gfsk_link_get_report(struct prop_gfsk_link_report *report)
 	*report = (struct prop_gfsk_link_report){
 		.packets_tx               = hw_stats.packets_tx,
 		.packets_rx               = hw_stats.packets_rx,
+		.loss_burst_count         = stats.loss_burst_count,
+		.loss_burst_1_count       = stats.loss_burst_1_count,
+		.loss_burst_2_count       = stats.loss_burst_2_count,
+		.loss_burst_3_4_count     = stats.loss_burst_3_4_count,
+		.loss_burst_5_plus_count  = stats.loss_burst_5_plus_count,
+		.max_loss_burst_len       = stats.max_loss_burst_len,
 		.crc_error_count          = hw_stats.crc_errors,
+		.tx_intended_count        = stats.tx_intended_count,
+		.tx_missed_deadline_count = stats.tx_missed_deadline_count,
+		.pretx_disabled_count     = hw_stats.pretx_state_disabled_count,
+		.pretx_rxidle_count       = hw_stats.pretx_state_rxidle_count,
+		.pretx_rx_count           = hw_stats.pretx_state_rx_count,
+		.pretx_rx_noaddr_count    = hw_stats.pretx_state_rx_noaddr_count,
+		.pretx_rx_addr_count      = hw_stats.pretx_state_rx_addr_count,
+		.pretx_other_count        = hw_stats.pretx_state_other_count,
 		.last_rssi_dbm            = hw_stats.last_rssi_dbm,
 		.packets_lost_in_service  = stats.packets_lost_in_service,
 		.outage_count             = stats.outage_count,
 		.time_in_service_us       = stats.time_in_service_us,
-		.min_timing_error_us      = stats.min_timing_error_us,
-		.max_timing_error_us      = stats.max_timing_error_us,
 		.state                    = state,
 	};
 }
@@ -550,12 +606,9 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 					 				 prop_gfsk_radio_hw_tx_done_sem()), 
 	};
 
-	uint32_t next_dongle_tx_tick = 0U;
-
 	while (1) {
 		/* Check for pending config changes before anything else. */
 		if (prop_gfsk_link_process_config_request(K_NO_WAIT)) {
-			next_dongle_tx_tick = 0U;
 			continue;
 		}
 
@@ -566,17 +619,25 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 			continue;
 		}
 
+		uint32_t frame_interval_us = config.dongle_tx_slot_us + config.headset_tx_slot_us;
+
 		/*
 		 * Dongle: seed the TX schedule on (re)start.
 		 */
-		if (config.local_device_role == DEVICE_ROLE_DONGLE &&
-		    next_dongle_tx_tick == 0U) {
-			next_dongle_tx_tick = prop_gfsk_radio_hw_get_tick() + config.dongle_tx_slot_us +
-					       config.headset_tx_slot_us;
-			(void)prop_gfsk_link_schedule_tx(next_dongle_tx_tick);
+		if (config.local_device_role == DEVICE_ROLE_DONGLE) {
+			bool need_seed;
+			k_spinlock_key_t key = k_spin_lock(&g_link.lock);
+
+			need_seed = (!g_link.slot_sync.tx_armed &&
+				     g_link.slot_sync.next_tx_tick == 0U);
+			k_spin_unlock(&g_link.lock, key);
+
+			if (need_seed) {
+				uint32_t next_tx_tick = prop_gfsk_radio_hw_get_tick() + frame_interval_us;
+				(void)prop_gfsk_link_propose_next_tx_tick(next_tx_tick, PROP_GFSK_TX_TICK_SRC_FALLBACK);
+			}
 		}
 
-		uint32_t frame_interval_us = config.dongle_tx_slot_us + config.headset_tx_slot_us;
 		k_timeout_t rx_timeout = (config.local_device_role == DEVICE_ROLE_HEADSET) ?
 						 prop_gfsk_link_get_in_service_poll_timeout(
 							 frame_interval_us, config.dongle_tx_slot_us) :
@@ -590,29 +651,32 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 
 		/* --- TX done (primarily for the dongle) --- */
 		if (events[1].state == K_POLL_STATE_SEM_AVAILABLE) {
+			uint32_t fallback_tick = 0U;
+
 			k_sem_take(prop_gfsk_radio_hw_tx_done_sem(), K_NO_WAIT);
 			prop_gfsk_link_note_tx_done();
 
 			if (config.local_device_role == DEVICE_ROLE_DONGLE) {
-				next_dongle_tx_tick += frame_interval_us;
-				(void)prop_gfsk_link_schedule_tx(next_dongle_tx_tick);
-			} else if (config.local_device_role == DEVICE_ROLE_HEADSET) {
-				uint32_t tx_tick = 0U;
-				bool schedule_tx = false;
 				k_spinlock_key_t key = k_spin_lock(&g_link.lock);
 
-				if (g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE) {
-					tx_tick = prop_gfsk_link_get_headset_tx_tick(
-						g_link.slot_sync.next_expected_peer_rx_tick,
-						&config);
-					schedule_tx = true;
+				if (g_link.slot_sync.next_tx_tick != 0U) {
+					fallback_tick = g_link.slot_sync.next_tx_tick +
+							frame_interval_us;
 				}
 
 				k_spin_unlock(&g_link.lock, key);
+			} else if (config.local_device_role == DEVICE_ROLE_HEADSET) {
+				k_spinlock_key_t key = k_spin_lock(&g_link.lock);
 
-				if (schedule_tx) {
-					(void)prop_gfsk_link_schedule_tx(tx_tick);
+				if (g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE && g_link.slot_sync.next_tx_tick != 0U) {
+					fallback_tick = g_link.slot_sync.next_tx_tick + frame_interval_us;
 				}
+
+				k_spin_unlock(&g_link.lock, key);
+			}
+
+			if (fallback_tick != 0U) {
+				(void)prop_gfsk_link_propose_next_tx_tick(fallback_tick, PROP_GFSK_TX_TICK_SRC_FALLBACK);
 			}
 		}
 
@@ -624,7 +688,6 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 				k_spinlock_key_t key = k_spin_lock(&g_link.lock);
 
 				if (g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE) {
-					prop_gfsk_link_note_timing_error_locked(rx_frame.rx_tick);
 					prop_gfsk_link_record_in_service_rx(rx_frame.packet.seq);
 				}
 
@@ -632,25 +695,18 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 				prop_gfsk_link_queue_rx_frame(&rx_frame);
 
 				if (config.local_device_role == DEVICE_ROLE_HEADSET) {
-					uint32_t tx_tick =
-						prop_gfsk_link_get_headset_tx_tick(rx_frame.rx_tick,
-										  &config);
+					uint32_t measured_tx_tick =	prop_gfsk_link_get_headset_tx_tick(rx_frame.rx_tick, &config);
+					uint32_t tx_tick = measured_tx_tick;
 
 					key = k_spin_lock(&g_link.lock);
 					bool was_in_service =
 						(g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE);
-					bool need_resync_schedule =
-						(!g_link.slot_sync.tx_armed ||
-						 g_link.slot_sync.next_tx_tick != tx_tick);
-					g_link.slot_sync.next_expected_peer_rx_tick =
-						rx_frame.rx_tick + frame_interval_us;
 					g_link.slot_sync.consecutive_missed_peer_rx_frames = 0U;
 					prop_gfsk_link_set_in_service_locked();
 					k_spin_unlock(&g_link.lock, key);
 
-					if (need_resync_schedule) {
-						(void)prop_gfsk_link_schedule_tx(tx_tick);
-					}
+					(void)prop_gfsk_link_propose_next_tx_tick(
+						tx_tick, PROP_GFSK_TX_TICK_SRC_RX_SYNC);
 
 					if (!was_in_service) {
 						printk("prop_gfsk: service established\n");
@@ -659,8 +715,6 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 					key = k_spin_lock(&g_link.lock);
 					bool was_in_service =
 						(g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE);
-					g_link.slot_sync.next_expected_peer_rx_tick =
-						rx_frame.rx_tick + frame_interval_us;
 					g_link.slot_sync.consecutive_missed_peer_rx_frames = 0U;
 					prop_gfsk_link_set_in_service_locked();
 					k_spin_unlock(&g_link.lock, key);
@@ -677,17 +731,14 @@ static void prop_gfsk_link_thread(void *arg1, void *arg2, void *arg3)
 			bool lost_service = false;
 			k_spinlock_key_t key = k_spin_lock(&g_link.lock);
 
-			if (g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE) {
-				g_link.slot_sync.consecutive_missed_peer_rx_frames++;
-				if (g_link.slot_sync.consecutive_missed_peer_rx_frames >=
-				    PROP_GFSK_LINK_SYNC_LOSS_FRAMES) {
-					prop_gfsk_link_set_no_service_locked();
-					lost_service = true;
-				} else {
-					g_link.slot_sync.next_expected_peer_rx_tick +=
-						frame_interval_us;
+				if (g_link.state == PROP_GFSK_LINK_STATE_IN_SERVICE) {
+					g_link.slot_sync.consecutive_missed_peer_rx_frames++;
+					if (g_link.slot_sync.consecutive_missed_peer_rx_frames >=
+					    PROP_GFSK_LINK_SYNC_LOSS_FRAMES) {
+						prop_gfsk_link_set_no_service_locked();
+						lost_service = true;
+					}
 				}
-			}
 			k_spin_unlock(&g_link.lock, key);
 
 			if (lost_service) {

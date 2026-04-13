@@ -30,12 +30,24 @@ struct prop_gfsk_link_report {
 	uint32_t packets_tx;
 	uint32_t packets_rx;
 	uint32_t packets_lost_in_service;
+	uint32_t loss_burst_count;
+	uint32_t loss_burst_1_count;
+	uint32_t loss_burst_2_count;
+	uint32_t loss_burst_3_4_count;
+	uint32_t loss_burst_5_plus_count;
+	uint32_t max_loss_burst_len;
 	uint32_t crc_error_count;
+	uint32_t tx_intended_count;
+	uint32_t tx_missed_deadline_count;
+	uint32_t pretx_disabled_count;
+	uint32_t pretx_rxidle_count;
+	uint32_t pretx_rx_count;
+	uint32_t pretx_rx_noaddr_count;
+	uint32_t pretx_rx_addr_count;
+	uint32_t pretx_other_count;
 	uint32_t outage_count;
 	uint64_t time_in_service_us;
 	int16_t last_rssi_dbm;
-	int32_t min_timing_error_us;
-	int32_t max_timing_error_us;
 	enum prop_gfsk_link_state state;
 };
 

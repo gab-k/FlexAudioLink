@@ -11,12 +11,11 @@
 #include "app_control.h"
 
 /* Radio config */
-#define PROP_GFSK_RADIO_SYNC_WORD           0xD391A5D3UL
 #define PROP_GFSK_RADIO_FREQUENCY_MHZ       2480
 #define PROP_GFSK_RADIO_TXPOWER             NRF_RADIO_TXPOWER_POS8DBM
 #define PROP_GFSK_RADIO_MODE_SETTING        NRF_RADIO_MODE_NRF_4MBIT_BT_0_6
-#define PROP_GFSK_RADIO_ADDR_PREFIX_DONGLE  0x55U
-#define PROP_GFSK_RADIO_ADDR_PREFIX_HEADSET 0xAAU
+#define PROP_GFSK_RADIO_ADDR_DONGLE         0x55D391A5UL
+#define PROP_GFSK_RADIO_ADDR_HEADSET        0x55D391A5UL
 
 /* Packet layout */
 #define PROP_GFSK_PAYLOAD_LEN               242
@@ -36,26 +35,36 @@
  * DPPI channel assignments (within DPPIC10):
  *   Ch 0  TIMER CC[0] event  → RADIO TXEN task   (hardware TX launch)
  *   Ch 1  RADIO ADDRESS event → TIMER CAPTURE[2] task  (RX timestamp)
+ *   Ch 2  RADIO PHYEND event  → TIMER CAPTURE[4] task
+ *         (hardware captures every PHYEND; software currently reads it only
+ *          for TX-done diagnostics)
  */
 #define PROP_GFSK_DPPI_CH_TX_LAUNCH         0U
 #define PROP_GFSK_DPPI_CH_RX_TIMESTAMP      1U
+#define PROP_GFSK_DPPI_CH_PHYEND_TIMESTAMP  2U
 
 /*
  * Timer CC channel assignments:
  *   CC[0]  TX deadline    – published on Ch 0 → RADIO TXEN
  *   CC[1]  Pre-TX window  – fires interrupt PRE_TX_OFFSET_US before CC[0]
  *   CC[2]  RX timestamp   – captured on RADIO ADDRESS via DPPI
+ *   CC[4]  PHYEND timestamp – captured on RADIO PHYEND via DPPI, currently
+ *          consumed only for TX-done diagnostics
+ *   CC[5]  Now timestamp  – ad-hoc software capture for "current tick"
  */
 #define PROP_GFSK_TIMER_CC_TX               NRF_TIMER_CC_CHANNEL0
 #define PROP_GFSK_TIMER_CC_PRE_TX           NRF_TIMER_CC_CHANNEL1
 #define PROP_GFSK_TIMER_CC_RX_TS            NRF_TIMER_CC_CHANNEL2
+#define PROP_GFSK_TIMER_CC_PHYEND_TS        NRF_TIMER_CC_CHANNEL4
+#define PROP_GFSK_TIMER_CC_NOW              NRF_TIMER_CC_CHANNEL5
 
 /*
  * How far ahead of the TX deadline to abort ongoing RX and set up the TX
- * packet pointer.  Must be longer than the radio disable + rampup time (~80 µs
- * at 4 Mbps) with comfortable margin.
+ * packet pointer.  This only needs to cover the deliberate DISABLE path plus
+ * TX ramp-up; keeping it too large can truncate the peer's packet late in the
+ * frame.
  */
-#define PROP_GFSK_PRE_TX_OFFSET_US          300U
+#define PROP_GFSK_PRE_TX_OFFSET_US          150U
 
 struct prop_gfsk_packet {
 	uint8_t  length;
@@ -75,6 +84,12 @@ struct prop_gfsk_hw_stats {
 	uint32_t packets_rx;
 	uint32_t packets_lost;
 	uint32_t crc_errors;
+	uint32_t pretx_state_disabled_count;
+	uint32_t pretx_state_rxidle_count;
+	uint32_t pretx_state_rx_count;
+	uint32_t pretx_state_rx_noaddr_count;
+	uint32_t pretx_state_rx_addr_count;
+	uint32_t pretx_state_other_count;
 	int16_t  last_rssi_dbm;
 };
 
@@ -89,11 +104,14 @@ void prop_gfsk_radio_hw_reset_stats(void);
 uint32_t prop_gfsk_radio_hw_get_tick(void);
 
 /*
- * Schedule the next TX.  The radio will fire TXEN at tx_tick and transmit
- * *packet.  Must be called at least PRE_TX_OFFSET_US before tx_tick.
- * The packet is copied internally; the caller may free it after return.
+ * Try to arm or update the next TX.  Returns false if the radio is already in
+ * pre-TX/Tx handling or if tx_tick is too close to safely change.
+ * If packet is non-NULL, it replaces the buffered TX packet for the pending
+ * slot. If packet is NULL, the existing buffered packet is kept and only the
+ * TX timing is updated.
  */
-void prop_gfsk_radio_hw_schedule_tx(uint32_t tx_tick, const struct prop_gfsk_packet *packet);
+bool prop_gfsk_radio_hw_schedule_tx_if_possible(uint32_t tx_tick,
+						const struct prop_gfsk_packet *packet);
 
 /* Dequeue the next received frame.  Returns false on timeout. */
 bool prop_gfsk_radio_hw_rx_dequeue(struct prop_gfsk_rx_frame *frame, k_timeout_t timeout);
@@ -110,3 +128,6 @@ bool prop_gfsk_radio_hw_tx_done_wait(k_timeout_t timeout);
  * The semaphore is given once each time a TX completes.
  */
 struct k_sem *prop_gfsk_radio_hw_tx_done_sem(void);
+
+/* Returns the last hardware-captured TX PHYEND tick. */
+uint32_t prop_gfsk_radio_hw_get_last_tx_done_tick(void);
