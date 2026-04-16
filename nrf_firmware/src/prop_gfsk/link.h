@@ -8,25 +8,25 @@
 #include "app_control.h"
 #include "prop_gfsk/radio_hw.h"
 
-enum prop_gfsk_link_state {
-	PROP_GFSK_LINK_STATE_DISABLED = 0,
-	PROP_GFSK_LINK_STATE_NO_SERVICE,
-	PROP_GFSK_LINK_STATE_IN_SERVICE,
+enum pgfsk_link_state {
+	PGFSK_LINK_STATE_DISABLED = 0,
+	PGFSK_LINK_STATE_NO_SERVICE,
+	PGFSK_LINK_STATE_IN_SERVICE,
 };
 
-struct prop_gfsk_link_config {
+struct pgfsk_link_config {
 	bool enabled;
 	enum device_role local_device_role;
 };
 
-struct prop_gfsk_frame {
+struct pgfsk_frame {
 	uint16_t seq;
-	uint8_t payload[PROP_GFSK_PAYLOAD_LEN];
+	uint8_t payload[PGFSK_PAYLOAD_LEN];
 	size_t len;
 	int16_t rssi_dbm;
 };
 
-struct prop_gfsk_link_report {
+struct pgfsk_link_report {
 	uint32_t packets_tx;
 	uint32_t packets_rx;
 	uint32_t packets_lost_in_service;
@@ -45,13 +45,13 @@ struct prop_gfsk_link_report {
 	uint32_t last_turnaround_us;
 	uint32_t max_turnaround_us;
 	int16_t last_rssi_dbm;
-	enum prop_gfsk_link_state state;
+	enum pgfsk_link_state state;
 };
 
-bool prop_gfsk_link_set_config(const struct prop_gfsk_link_config *config);
-bool prop_gfsk_link_stop(void);
-bool prop_gfsk_link_is_enabled(void);
-enum prop_gfsk_link_state prop_gfsk_link_get_state(void);
-void prop_gfsk_link_get_report(struct prop_gfsk_link_report *report);
-bool prop_gfsk_link_tx_enqueue(const struct prop_gfsk_frame *frame, k_timeout_t timeout);
-bool prop_gfsk_link_rx_dequeue(struct prop_gfsk_frame *frame, k_timeout_t timeout);
+bool pgfsk_link_set_config(const struct pgfsk_link_config *config);
+bool pgfsk_link_stop(void);
+bool pgfsk_link_is_enabled(void);
+enum pgfsk_link_state pgfsk_link_get_state(void);
+void pgfsk_link_get_report(struct pgfsk_link_report *report);
+bool pgfsk_link_tx_enqueue(const struct pgfsk_frame *frame, k_timeout_t timeout);
+bool pgfsk_link_rx_dequeue(struct pgfsk_frame *frame, k_timeout_t timeout);

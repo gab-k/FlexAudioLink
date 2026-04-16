@@ -5,12 +5,12 @@
 #include <hal/nrf_clock.h>
 #include <soc.h>
 
-#define PROP_GFSK_RADIO_EVENT_QUEUE_DEPTH 8
+#define PGFSK_HW_EVENT_QUEUE_DEPTH 8
 
-static struct prop_gfsk_packet g_rx_packet;
-static struct prop_gfsk_packet g_tx_packet;
+static struct pgfsk_packet g_rx_packet;
+static struct pgfsk_packet g_tx_packet;
 
-K_MSGQ_DEFINE(g_radio_event_queue, sizeof(struct prop_gfsk_radio_event), PROP_GFSK_RADIO_EVENT_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(g_radio_event_queue, sizeof(struct pgfsk_hw_event), PGFSK_HW_EVENT_QUEUE_DEPTH, 4);
 
 struct radio_hw_state {
 	bool running;
@@ -20,10 +20,10 @@ struct radio_hw_state {
 };
 
 static volatile struct radio_hw_state g_hw;
-static struct prop_gfsk_hw_stats g_stats;
+static struct pgfsk_hw_stats g_stats;
 static struct k_spinlock g_lock;
 
-static void queue_radio_event(const struct prop_gfsk_radio_event *event)
+static void queue_radio_event(const struct pgfsk_hw_event *event)
 {
 	if (!g_hw.running || event == NULL) {
 		return;
@@ -71,10 +71,10 @@ static void hfclk_start(void)
 
 static void radio_program_address_table(void)
 {
-	const uint32_t dongle_base = (PROP_GFSK_RADIO_ADDR_DONGLE & 0x00FFFFFFUL) << 8;
-	const uint32_t headset_base = (PROP_GFSK_RADIO_ADDR_HEADSET & 0x00FFFFFFUL) << 8;
-	const uint32_t prefix0 = ((PROP_GFSK_RADIO_ADDR_DONGLE >> 24) & 0xFFU) |
-							 (((PROP_GFSK_RADIO_ADDR_HEADSET >> 24) & 0xFFU) << 8);
+	const uint32_t dongle_base = (PGFSK_HW_ADDR_DONGLE & 0x00FFFFFFUL) << 8;
+	const uint32_t headset_base = (PGFSK_HW_ADDR_HEADSET & 0x00FFFFFFUL) << 8;
+	const uint32_t prefix0 = ((PGFSK_HW_ADDR_DONGLE >> 24) & 0xFFU) |
+							 (((PGFSK_HW_ADDR_HEADSET >> 24) & 0xFFU) << 8);
 
 	nrf_radio_base0_set(NRF_RADIO, dongle_base);
 	nrf_radio_base1_set(NRF_RADIO, headset_base);
@@ -102,28 +102,28 @@ static void radio_isr(const void *arg)
 		if (g_hw.running && g_hw.in_tx_phase) {
 			g_hw.in_tx_phase = false;
 			g_hw.tx_phyend_seen = true;
-			g_hw.last_tx_phyend_tick = nrf_timer_cc_get(PROP_GFSK_TIMER, PROP_GFSK_TIMER_CC_PHYEND_TS);
+			g_hw.last_tx_phyend_tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_PHYEND_TS);
 			note_tx_end();
 		}
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS)) {
-		struct prop_gfsk_radio_event event;
+		struct pgfsk_hw_event event;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
 
 		if (g_hw.running && !g_hw.in_tx_phase) {
-			uint32_t rx_tick = nrf_timer_cc_get(PROP_GFSK_TIMER, PROP_GFSK_TIMER_CC_RX_TS);
+			uint32_t rx_tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_RX_TS);
 
 			memset(&event, 0, sizeof(event));
-			event.type = PROP_GFSK_RADIO_EVENT_RX_ADDRESS;
+			event.type = PGFSK_HW_EVENT_RX_ADDRESS;
 			event.tick = rx_tick;
 			queue_radio_event(&event);
 		}
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCOK)) {
-		struct prop_gfsk_radio_event event;
+		struct pgfsk_hw_event event;
 		int16_t rssi_dbm;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCOK);
@@ -131,8 +131,8 @@ static void radio_isr(const void *arg)
 		if (g_hw.running) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
-			event.type = PROP_GFSK_RADIO_EVENT_RX_OK;
-			event.tick = nrf_timer_cc_get(PROP_GFSK_TIMER, PROP_GFSK_TIMER_CC_PHYEND_TS);
+			event.type = PGFSK_HW_EVENT_RX_OK;
+			event.tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_PHYEND_TS);
 			event.packet = g_rx_packet;
 			event.rssi_dbm = rssi_dbm;
 			note_rx_ok(rssi_dbm);
@@ -141,7 +141,7 @@ static void radio_isr(const void *arg)
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR)) {
-		struct prop_gfsk_radio_event event;
+		struct pgfsk_hw_event event;
 		int16_t rssi_dbm;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
@@ -149,8 +149,8 @@ static void radio_isr(const void *arg)
 		if (g_hw.running) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
-			event.type = PROP_GFSK_RADIO_EVENT_RX_BAD;
-			event.tick = nrf_timer_cc_get(PROP_GFSK_TIMER, PROP_GFSK_TIMER_CC_PHYEND_TS);
+			event.type = PGFSK_HW_EVENT_RX_BAD;
+			event.tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_PHYEND_TS);
 			event.rssi_dbm = rssi_dbm;
 			note_rx_bad(rssi_dbm);
 			queue_radio_event(&event);
@@ -158,7 +158,7 @@ static void radio_isr(const void *arg)
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_DISABLED)) {
-		struct prop_gfsk_radio_event event;
+		struct pgfsk_hw_event event;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_DISABLED);
 
@@ -179,13 +179,13 @@ static void radio_isr(const void *arg)
 		radio_enter_rx();
 
 		memset(&event, 0, sizeof(event));
-		event.type = PROP_GFSK_RADIO_EVENT_TX_END;
+		event.type = PGFSK_HW_EVENT_TX_END;
 		event.tick = g_hw.last_tx_phyend_tick;
 		queue_radio_event(&event);
 	}
 }
 
-void prop_gfsk_radio_hw_init(void)
+void pgfsk_hw_init(void)
 {
 	nrf_radio_packet_conf_t pkt_conf = {
 		.lflen = 8,
@@ -194,7 +194,7 @@ void prop_gfsk_radio_hw_init(void)
 		.s1incl = false,
 		.plen = NRF_RADIO_PREAMBLE_LENGTH_16BIT,
 		.crcinc = false,
-		.maxlen = sizeof(struct prop_gfsk_packet) - sizeof(uint8_t),
+		.maxlen = sizeof(struct pgfsk_packet) - sizeof(uint8_t),
 		.statlen = 0,
 		.balen = 3,
 		.big_endian = false,
@@ -203,36 +203,36 @@ void prop_gfsk_radio_hw_init(void)
 
 	hfclk_start();
 
-	nrf_radio_mode_set(NRF_RADIO, PROP_GFSK_RADIO_MODE_SETTING);
-	nrf_radio_frequency_set(NRF_RADIO, PROP_GFSK_RADIO_FREQUENCY_MHZ);
-	nrf_radio_txpower_set(NRF_RADIO, PROP_GFSK_RADIO_TXPOWER);
+	nrf_radio_mode_set(NRF_RADIO, PGFSK_HW_MODE_SETTING);
+	nrf_radio_frequency_set(NRF_RADIO, PGFSK_HW_FREQUENCY_MHZ);
+	nrf_radio_txpower_set(NRF_RADIO, PGFSK_HW_TXPOWER);
 	nrf_radio_packet_configure(NRF_RADIO, &pkt_conf);
 	nrf_radio_datawhiteiv_set(NRF_RADIO,
-				  (PROP_GFSK_RADIO_FREQUENCY_MHZ - 2400) & 0x3F);
+				  (PGFSK_HW_FREQUENCY_MHZ - 2400) & 0x3F);
 	nrf_radio_crc_configure(NRF_RADIO, 2, NRF_RADIO_CRC_ADDR_SKIP, 0x11021UL);
 	radio_program_address_table();
 
-	nrf_timer_mode_set(PROP_GFSK_TIMER, NRF_TIMER_MODE_TIMER);
-	nrf_timer_bit_width_set(PROP_GFSK_TIMER, NRF_TIMER_BIT_WIDTH_32);
-	nrf_timer_prescaler_set(PROP_GFSK_TIMER, PROP_GFSK_TIMER_PRESCALER);
+	nrf_timer_mode_set(PGFSK_TIMER, NRF_TIMER_MODE_TIMER);
+	nrf_timer_bit_width_set(PGFSK_TIMER, NRF_TIMER_BIT_WIDTH_32);
+	nrf_timer_prescaler_set(PGFSK_TIMER, PGFSK_TIMER_PRESCALER);
 
 	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS,
-			      PROP_GFSK_DPPI_CH_RX_TIMESTAMP);
-	nrf_timer_subscribe_set(PROP_GFSK_TIMER, NRF_TIMER_TASK_CAPTURE2,
-				PROP_GFSK_DPPI_CH_RX_TIMESTAMP);
+			      PGFSK_DPPI_CH_RX_TIMESTAMP);
+	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE2,
+				PGFSK_DPPI_CH_RX_TIMESTAMP);
 
 	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PHYEND,
-			      PROP_GFSK_DPPI_CH_PHYEND_TIMESTAMP);
-	nrf_timer_subscribe_set(PROP_GFSK_TIMER, NRF_TIMER_TASK_CAPTURE4,
-				PROP_GFSK_DPPI_CH_PHYEND_TIMESTAMP);
+			      PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE4,
+				PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
 
 	IRQ_CONNECT(RADIO_0_IRQn, 0, radio_isr, NULL, 0);
 	irq_enable(RADIO_0_IRQn);
 
-	prop_gfsk_radio_hw_reset_stats();
+	pgfsk_hw_reset_stats();
 }
 
-void prop_gfsk_radio_hw_start(void)
+void pgfsk_hw_start(void)
 {
 	unsigned int irq_key;
 
@@ -248,13 +248,13 @@ void prop_gfsk_radio_hw_start(void)
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_DISABLED);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PHYEND);
 
-	nrf_timer_task_trigger(PROP_GFSK_TIMER, NRF_TIMER_TASK_CLEAR);
-	nrf_timer_task_trigger(PROP_GFSK_TIMER, NRF_TIMER_TASK_START);
+	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_CLEAR);
+	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_START);
 
 	nrf_dppi_channels_enable(
-		PROP_GFSK_DPPI,
-		BIT(PROP_GFSK_DPPI_CH_RX_TIMESTAMP) |
-			BIT(PROP_GFSK_DPPI_CH_PHYEND_TIMESTAMP));
+		PGFSK_DPPI,
+		BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
+			BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
 
 	nrf_radio_shorts_set(NRF_RADIO,
 			    	     NRF_RADIO_SHORT_READY_START_MASK |
@@ -273,7 +273,7 @@ void prop_gfsk_radio_hw_start(void)
 	irq_unlock(irq_key);
 }
 
-void prop_gfsk_radio_hw_set_role(enum device_role role)
+void pgfsk_hw_set_role(enum device_role role)
 {
 	if (role == DEVICE_ROLE_DONGLE) {
 		nrf_radio_txaddress_set(NRF_RADIO, 0);
@@ -284,7 +284,7 @@ void prop_gfsk_radio_hw_set_role(enum device_role role)
 	}
 }
 
-void prop_gfsk_radio_hw_stop(void)
+void pgfsk_hw_stop(void)
 {
 	unsigned int irq_key;
 
@@ -292,7 +292,7 @@ void prop_gfsk_radio_hw_stop(void)
 
 	memset((void *)&g_hw, 0, sizeof(g_hw));
 
-	nrf_timer_task_trigger(PROP_GFSK_TIMER, NRF_TIMER_TASK_STOP);
+	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_STOP);
 	nrf_radio_int_disable(NRF_RADIO,
 			      NRF_RADIO_INT_ADDRESS_MASK |
 				      NRF_RADIO_INT_DISABLED_MASK |
@@ -301,9 +301,9 @@ void prop_gfsk_radio_hw_stop(void)
 				      NRF_RADIO_INT_PHYEND_MASK);
 	nrf_radio_shorts_set(NRF_RADIO, 0U);
 	nrf_dppi_channels_disable(
-		PROP_GFSK_DPPI,
-		BIT(PROP_GFSK_DPPI_CH_RX_TIMESTAMP) |
-			BIT(PROP_GFSK_DPPI_CH_PHYEND_TIMESTAMP));
+		PGFSK_DPPI,
+		BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
+			BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
@@ -316,7 +316,7 @@ void prop_gfsk_radio_hw_stop(void)
 	k_msgq_purge(&g_radio_event_queue);
 }
 
-void prop_gfsk_radio_hw_get_stats(struct prop_gfsk_hw_stats *stats)
+void pgfsk_hw_get_stats(struct pgfsk_hw_stats *stats)
 {
 	if (stats == NULL) {
 		return;
@@ -327,7 +327,7 @@ void prop_gfsk_radio_hw_get_stats(struct prop_gfsk_hw_stats *stats)
 	k_spin_unlock(&g_lock, key);
 }
 
-void prop_gfsk_radio_hw_reset_stats(void)
+void pgfsk_hw_reset_stats(void)
 {
 	k_spinlock_key_t key = k_spin_lock(&g_lock);
 
@@ -337,13 +337,13 @@ void prop_gfsk_radio_hw_reset_stats(void)
 	k_spin_unlock(&g_lock, key);
 }
 
-uint32_t prop_gfsk_radio_hw_get_tick(void)
+uint32_t pgfsk_hw_get_tick(void)
 {
-	nrf_timer_task_trigger(PROP_GFSK_TIMER, NRF_TIMER_TASK_CAPTURE5);
-	return nrf_timer_cc_get(PROP_GFSK_TIMER, PROP_GFSK_TIMER_CC_NOW);
+	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE5);
+	return nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_NOW);
 }
 
-bool prop_gfsk_radio_hw_start_listen(void)
+bool pgfsk_hw_start_listen(void)
 {
 	nrf_radio_state_t radio_state;
 	unsigned int irq_key;
@@ -372,7 +372,7 @@ bool prop_gfsk_radio_hw_start_listen(void)
 	return true;
 }
 
-bool prop_gfsk_radio_hw_start_tx(const struct prop_gfsk_packet *packet)
+bool pgfsk_hw_start_tx(const struct pgfsk_packet *packet)
 {
 	unsigned int irq_key;
 
@@ -396,7 +396,7 @@ bool prop_gfsk_radio_hw_start_tx(const struct prop_gfsk_packet *packet)
 	return true;
 }
 
-bool prop_gfsk_radio_hw_dequeue_event(struct prop_gfsk_radio_event *event, k_timeout_t timeout)
+bool pgfsk_hw_dequeue_event(struct pgfsk_hw_event *event, k_timeout_t timeout)
 {
 	if (event == NULL) {
 		return false;
@@ -405,7 +405,7 @@ bool prop_gfsk_radio_hw_dequeue_event(struct prop_gfsk_radio_event *event, k_tim
 	return k_msgq_get(&g_radio_event_queue, event, timeout) == 0;
 }
 
-struct k_msgq *prop_gfsk_radio_hw_event_msgq(void)
+struct k_msgq *pgfsk_hw_event_msgq(void)
 {
 	return &g_radio_event_queue;
 }

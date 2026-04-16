@@ -48,14 +48,14 @@ static bool app_control_apply(struct app_state state)
 	if (state.mode == OPERATING_MODE_PROPRIETARY &&
 	    g_current_app_state.mode == OPERATING_MODE_PROPRIETARY &&
 	    role_changed &&
-	    prop_gfsk_test_mode_is_running()) {
+	    pgfsk_test_mode_is_running()) {
 		printk("app_control: stop linktest before changing role in proprietary mode\n");
 		return false;
 	}
 
 	if (state.mode != OPERATING_MODE_PROPRIETARY) {
-		if (!prop_gfsk_test_mode_stop()) {
-			printk("app_control: failed to disable prop_gfsk test mode\n");
+		if (!pgfsk_test_mode_stop()) {
+			printk("app_control: failed to disable pgfsk test mode\n");
 			return false;
 		}
 	}

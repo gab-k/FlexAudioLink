@@ -38,21 +38,21 @@ static void cli_thread(void *arg1, void *arg2, void *arg3);
 static void cli_init(void);
 static void cli_print(const char *fmt, ...);
 
-static const char *cli_get_link_state_name(enum prop_gfsk_link_state state)
+static const char *cli_get_link_state_name(enum pgfsk_link_state state)
 {
 	switch (state) {
-	case PROP_GFSK_LINK_STATE_DISABLED:
+	case PGFSK_LINK_STATE_DISABLED:
 		return "disabled";
-	case PROP_GFSK_LINK_STATE_NO_SERVICE:
+	case PGFSK_LINK_STATE_NO_SERVICE:
 		return "no_service";
-	case PROP_GFSK_LINK_STATE_IN_SERVICE:
+	case PGFSK_LINK_STATE_IN_SERVICE:
 		return "in_service";
 	default:
 		return "unknown";
 	}
 }
 
-static uint64_t cli_get_in_service_time_ms(const struct prop_gfsk_link_report *stats)
+static uint64_t cli_get_in_service_time_ms(const struct pgfsk_link_report *stats)
 {
 	if (stats == NULL) {
 		return 0U;
@@ -61,7 +61,7 @@ static uint64_t cli_get_in_service_time_ms(const struct prop_gfsk_link_report *s
 	return stats->time_in_service_us / 1000U;
 }
 
-static void cli_print_status_packet_group(const struct prop_gfsk_link_report *stats)
+static void cli_print_status_packet_group(const struct pgfsk_link_report *stats)
 {
 	if (stats == NULL) {
 		return;
@@ -85,7 +85,7 @@ static void cli_print_status_packet_group(const struct prop_gfsk_link_report *st
 	cli_print("turnaround_us=%u (max=%u)\n", stats->last_turnaround_us, stats->max_turnaround_us);
 }
 
-static void cli_print_status_link_group(const struct prop_gfsk_link_report *stats,
+static void cli_print_status_link_group(const struct pgfsk_link_report *stats,
 					uint32_t loss_permille)
 {
 	if (stats == NULL) {
@@ -161,10 +161,10 @@ static void cli_print(const char *fmt, ...)
 
 static void cli_emit_status_push(void)
 {
-	struct prop_gfsk_link_report stats;
+	struct pgfsk_link_report stats;
 	uint32_t loss_permille = 0U;
 
-	prop_gfsk_link_get_report(&stats);
+	pgfsk_link_get_report(&stats);
 
 	if ((stats.packets_rx + stats.packets_lost_in_service) > 0U) {
 		loss_permille = (stats.packets_lost_in_service * 1000U) /
@@ -201,12 +201,12 @@ static void cli_emit_status_push(void)
 
 static void cli_emit_status(void)
 {
-	struct prop_gfsk_link_report stats;
+	struct pgfsk_link_report stats;
 	uint32_t loss_permille = 0U;
 	enum operating_mode mode = app_control_get_current_operating_mode();
 	enum device_role role = app_control_get_current_role();
 
-	prop_gfsk_link_get_report(&stats);
+	pgfsk_link_get_report(&stats);
 
 	if ((stats.packets_rx + stats.packets_lost_in_service) > 0U) {
 		loss_permille = (stats.packets_lost_in_service * 1000U) /
@@ -473,12 +473,12 @@ static void cli_cmd_linktest(char *args)
 	enum device_role role = app_control_get_current_role();
 
 	if (args == NULL || *args == '\0' || strcasecmp(args, "status") == 0) {
-		cli_print("linktest=%s\n", prop_gfsk_test_mode_is_running() ? "on" : "off");
+		cli_print("linktest=%s\n", pgfsk_test_mode_is_running() ? "on" : "off");
 		return;
 	}
 
 	if (strcasecmp(args, "on") == 0) {
-		if (!prop_gfsk_test_mode_start(role)) {
+		if (!pgfsk_test_mode_start(role)) {
 			cli_print("ERR linktest start_failed\n");
 			return;
 		}
@@ -488,7 +488,7 @@ static void cli_cmd_linktest(char *args)
 	}
 
 	if (strcasecmp(args, "off") == 0) {
-		if (!prop_gfsk_test_mode_stop()) {
+		if (!pgfsk_test_mode_stop()) {
 			cli_print("ERR linktest stop_failed\n");
 			return;
 		}
