@@ -11,12 +11,12 @@
     },
     {
         "name": "CDC Headset",
-        "usb_serial": "0x75A7A0AF50404A62A9F84E867DAA1EED",
+        "usb_serial": "188F46252A2CDCC5",
         "baud": 115200
     },
     {
         "name": "CDC Dongle",
-        "usb_serial": "0x3248B3186C7449C9AC25B0C6A55EA648",
+        "usb_serial": "C0E0F4E32FEC07B0",
         "baud": 115200
     }
 ]
