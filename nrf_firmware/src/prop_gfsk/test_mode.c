@@ -6,8 +6,6 @@
 
 #include "prop_gfsk/link.h"
 
-#define PROP_GFSK_TEST_MODE_DONGLE_TX_SLOT_US  1000U
-#define PROP_GFSK_TEST_MODE_HEADSET_TX_SLOT_US 1000U
 #define PROP_GFSK_TEST_MODE_PAYLOAD_LEN        180U
 #define PROP_GFSK_TEST_TX_THREAD_STACK_SIZE    1536
 #define PROP_GFSK_TEST_RX_THREAD_STACK_SIZE    2048
@@ -66,8 +64,6 @@ bool prop_gfsk_test_mode_start(enum device_role local_device_role)
 	struct prop_gfsk_link_config config = {
 		.enabled = true,
 		.local_device_role = local_device_role,
-		.dongle_tx_slot_us = PROP_GFSK_TEST_MODE_DONGLE_TX_SLOT_US,
-		.headset_tx_slot_us = PROP_GFSK_TEST_MODE_HEADSET_TX_SLOT_US,
 	};
 
 	if (local_device_role != DEVICE_ROLE_DONGLE &&
@@ -103,8 +99,7 @@ static void prop_gfsk_test_tx_thread(void *arg1, void *arg2, void *arg3)
 
 	while (1) {
 		while ((k_event_wait(&g_test_events, PROP_GFSK_TEST_EVENT_RUNNING, false, K_FOREVER) &
-			PROP_GFSK_TEST_EVENT_RUNNING) == 0U) {
-		}
+				PROP_GFSK_TEST_EVENT_RUNNING) == 0U) { }
 		prop_gfsk_test_prepare_tx_frame(&frame);
 		(void)prop_gfsk_link_tx_enqueue(&frame, K_FOREVER);
 	}
@@ -120,15 +115,14 @@ static void prop_gfsk_test_rx_thread(void *arg1, void *arg2, void *arg3)
 
 	while (1) {
 		while ((k_event_wait(&g_test_events, PROP_GFSK_TEST_EVENT_RUNNING, false, K_FOREVER) &
-			PROP_GFSK_TEST_EVENT_RUNNING) == 0U) {
-		}
+				PROP_GFSK_TEST_EVENT_RUNNING) == 0U) { }
 		(void)prop_gfsk_link_rx_dequeue(&frame, K_MSEC(100));
 	}
 }
 
 K_THREAD_DEFINE(prop_gfsk_test_tx_thread_id, PROP_GFSK_TEST_TX_THREAD_STACK_SIZE,
-		prop_gfsk_test_tx_thread, NULL, NULL, NULL,
-		PROP_GFSK_TEST_THREAD_PRIORITY, 0, 0);
+				prop_gfsk_test_tx_thread, NULL, NULL, NULL,
+				PROP_GFSK_TEST_THREAD_PRIORITY, 0, 0);
 K_THREAD_DEFINE(prop_gfsk_test_rx_thread_id, PROP_GFSK_TEST_RX_THREAD_STACK_SIZE,
-		prop_gfsk_test_rx_thread, NULL, NULL, NULL,
-		PROP_GFSK_TEST_THREAD_PRIORITY, 0, 0);
+				prop_gfsk_test_rx_thread, NULL, NULL, NULL,
+				PROP_GFSK_TEST_THREAD_PRIORITY, 0, 0);
