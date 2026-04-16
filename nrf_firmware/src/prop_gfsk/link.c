@@ -456,7 +456,7 @@ static void prop_gfsk_link_commit_prepared_tx(uint32_t now_tick)
 	g_link.state = PROP_GFSK_STATE_IN_TX;
 	g_link.stats.tx_intended_count++;
 
-	if (prop_gfsk_radio_hw_try_start_tx(&g_link.prepared_tx_packet)) {
+	if (prop_gfsk_radio_hw_start_tx(&g_link.prepared_tx_packet)) {
 		return;
 	}
 

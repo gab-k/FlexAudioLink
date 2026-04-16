@@ -372,7 +372,7 @@ bool prop_gfsk_radio_hw_start_listen(void)
 	return true;
 }
 
-bool prop_gfsk_radio_hw_try_start_tx(const struct prop_gfsk_packet *packet)
+bool prop_gfsk_radio_hw_start_tx(const struct prop_gfsk_packet *packet)
 {
 	unsigned int irq_key;
 

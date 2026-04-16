@@ -86,6 +86,6 @@ void prop_gfsk_radio_hw_reset_stats(void);
 
 uint32_t prop_gfsk_radio_hw_get_tick(void);
 bool prop_gfsk_radio_hw_start_listen(void);
-bool prop_gfsk_radio_hw_try_start_tx(const struct prop_gfsk_packet *packet);
+bool prop_gfsk_radio_hw_start_tx(const struct prop_gfsk_packet *packet);
 bool prop_gfsk_radio_hw_dequeue_event(struct prop_gfsk_radio_event *event, k_timeout_t timeout);
 struct k_msgq *prop_gfsk_radio_hw_event_msgq(void);
