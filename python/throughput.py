@@ -43,7 +43,6 @@ def parse_log(path):
                     "rx": int(fields["rx_ok"]),
                     "in_service_ms": int(fields["in_service_ms"]),
                     "lost": int(fields.get("lost", "0")),
-                    "state": fields.get("state", "?"),
                     "rssi": fields.get("rssi", "?"),
                 })
             except (KeyError, ValueError):
@@ -56,12 +55,12 @@ def print_throughput(samples, payload_bytes):
         print("Need at least 2 #S samples to compute throughput.")
         return
 
-    print(f"{'Time':>8}  {'State':>12}  {'RSSI':>5}  "
+    print(f"{'Time':>8}  {'RSSI':>5}  "
           f"{'dRX':>7}  {'dTX':>7}  {'dt(ms)':>8}  "
           f"{'RX pkt/s':>9}  {'TX pkt/s':>9}  "
           f"{'RX kbit/s':>10}  {'TX kbit/s':>10}  "
           f"{'Loss%':>6}")
-    print("-" * 119)
+    print("-" * 105)
 
     for i in range(1, len(samples)):
         prev, cur = samples[i - 1], samples[i]
@@ -81,7 +80,7 @@ def print_throughput(samples, payload_bytes):
         total = d_rx + (cur["lost"] - prev["lost"])
         loss_pct = ((cur["lost"] - prev["lost"]) / total * 100.0) if total > 0 else 0.0
 
-        print(f"{cur['time']:>8}  {cur['state']:>12}  {cur['rssi']:>5}  "
+        print(f"{cur['time']:>8}  {cur['rssi']:>5}  "
               f"{d_rx:>7}  {d_tx:>7}  {dt_ms:>8}  "
               f"{rx_pps:>9.1f}  {tx_pps:>9.1f}  "
               f"{rx_kbits:>10.1f}  {tx_kbits:>10.1f}  "
@@ -97,8 +96,8 @@ def print_throughput(samples, payload_bytes):
         total_lost = last["lost"] - first["lost"]
         total_total = total_rx + total_lost
 
-        print("-" * 119)
-        print(f"{'TOTAL':>8}  {'':>12}  {'':>5}  "
+        print("-" * 105)
+        print(f"{'TOTAL':>8}  {'':>5}  "
               f"{total_rx:>7}  {total_tx:>7}  {total_dt_ms:>8}  "
               f"{total_rx / total_dt_s:>9.1f}  {total_tx / total_dt_s:>9.1f}  "
               f"{total_rx * payload_bytes * 8 / 1000.0 / total_dt_s:>10.1f}  "
