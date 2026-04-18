@@ -226,7 +226,7 @@ class MockDevice:
         bat = max(0, min(100, 85 + random.randint(-1, 1)))
         loss = round(random.uniform(0, 0.5), 1)
         return (f'#S rssi={rssi} bat={bat} loss={loss} conn=yes '
-                f'tx={self._tx} rx={self._rx} lost={self._lost} '
+                f'tx={self._tx} rx_ok={self._rx} lost={self._lost} '
                 f'urun=0 orun=0 cerr=0 fw=0.1.0')
 
 

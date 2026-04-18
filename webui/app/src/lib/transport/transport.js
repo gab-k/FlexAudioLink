@@ -271,7 +271,7 @@ export class DemoTransport extends TransportEvent {
     const rssi = -45 + Math.floor(Math.random() * 11) - 5;
     const bat = Math.max(0, Math.min(100, 85 + Math.floor(Math.random() * 3) - 1));
     const loss = (Math.random() * 0.5).toFixed(1);
-    this.emit(`#S rssi=${rssi} bat=${bat} loss=${loss} conn=yes tx=${this._tx} rx=${this._rx} lost=${this._lost} urun=0 orun=0 cerr=0 fw=0.1.0-demo`);
+    this.emit(`#S rssi=${rssi} bat=${bat} loss=${loss} conn=yes tx=${this._tx} rx_ok=${this._rx} lost=${this._lost} urun=0 orun=0 cerr=0 fw=0.1.0-demo`);
   }
 
   async disconnect() {
