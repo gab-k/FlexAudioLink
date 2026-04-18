@@ -366,12 +366,6 @@ static void pgfsk_link_compose_packet(struct pgfsk_packet *packet, uint16_t seq)
 	memcpy(packet->data, frame.payload, frame.len);
 }
 
-static void pgfsk_link_begin_hardware_reply(void)
-{
-	pgfsk_hw_clear_deadline();
-	g_link.state = PGFSK_STATE_IN_TX;
-}
-
 static void pgfsk_link_handle_rx_address(const struct pgfsk_hw_event *event)
 {
 	if (event == NULL) {
@@ -404,7 +398,8 @@ static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 	g_link.consecutive_rx_misses = 0U;
 	pgfsk_link_enter_in_service();
 	pgfsk_link_record_in_service_rx(event->packet.seq);
-	pgfsk_link_begin_hardware_reply();
+	pgfsk_hw_clear_deadline();
+	g_link.state = PGFSK_STATE_IN_TX;
 }
 
 static void pgfsk_link_handle_rx_bad(void)
@@ -414,7 +409,8 @@ static void pgfsk_link_handle_rx_bad(void)
 	}
 
 	g_link.consecutive_rx_misses = 0U;
-	pgfsk_link_begin_hardware_reply();
+	pgfsk_hw_clear_deadline();
+	g_link.state = PGFSK_STATE_IN_TX;
 }
 
 static void pgfsk_link_handle_tx_end(const struct pgfsk_hw_event *event)
@@ -545,7 +541,7 @@ static void pgfsk_link_print_banner(const struct pgfsk_link_config *config)
 
 static bool pgfsk_link_apply_config_internal(const struct pgfsk_link_config *config)
 {
-	struct pgfsk_link_config prev;
+	struct pgfsk_link_config prev_config;
 	bool changed;
 
 	if (config == NULL) {
@@ -557,7 +553,7 @@ static bool pgfsk_link_apply_config_internal(const struct pgfsk_link_config *con
 		return false;
 	}
 
-	prev = pgfsk_link_get_config();
+	prev_config = pgfsk_link_get_config();
 
 	pgfsk_hw_stop();
 	k_msgq_purge(&g_pgfsk_tx_queue);
@@ -573,7 +569,7 @@ static bool pgfsk_link_apply_config_internal(const struct pgfsk_link_config *con
 		return false;
 	}
 
-	changed = (!prev.enabled || prev.local_device_role != config->local_device_role);
+	changed = (!prev_config.enabled || prev_config.local_device_role != config->local_device_role);
 	if (changed) {
 		pgfsk_link_print_banner(config);
 	}
