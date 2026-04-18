@@ -113,7 +113,7 @@ static void cli_write_raw(const char *data, size_t len)
 
 static void cli_print(const char *fmt, ...)
 {
-	char buf[256];
+	char buf[CLI_MAX_OUTPUT_LEN];
 	va_list args;
 	int len;
 
