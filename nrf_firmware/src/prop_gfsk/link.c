@@ -166,8 +166,8 @@ static bool pgfsk_link_start_enabled(const struct pgfsk_link_config *config)
 		return pgfsk_link_abort_enable();
 	}
 
-	/* PACKETPTR is double-buffered, but startup still needs the radio to actively enter RX
-	 * before TX is pre-armed.
+	/* PACKETPTR is double-buffered, but startup still needs the radio to be
+	 * actively in RX before the next TX packet is pre-armed.
 	 */
 	if (!pgfsk_hw_wait_for_rx_active()) {
 		return pgfsk_link_abort_enable();
@@ -263,8 +263,6 @@ static void pgfsk_link_enter_in_service(void)
 static void pgfsk_link_enter_no_service(uint32_t now_tick)
 {
 	bool was_in_service = (g_link.service_state == PGFSK_LINK_STATE_IN_SERVICE);
-	bool listen_ok;
-	bool tx_ok;
 
 	if (was_in_service) {
 		g_link.stats.outage_count++;
@@ -276,24 +274,27 @@ static void pgfsk_link_enter_no_service(uint32_t now_tick)
 	g_link.in_service_since_cyc = 0U;
 	g_link.have_last_rx_seq = false;
 	g_link.rx_deadline_tick = now_tick + PGFSK_LINK_FIXED_TICK_US + pgfsk_link_random_probe_jitter();
-	listen_ok = pgfsk_hw_start_listen();
-	tx_ok = listen_ok && pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet);
 
-	if (!listen_ok || !tx_ok) {
-		pgfsk_hw_stop();
-		pgfsk_hw_set_role(g_link.config.local_device_role);
-		pgfsk_hw_start();
-		listen_ok = pgfsk_hw_start_listen();
-		tx_ok = listen_ok && pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet);
-	}
-
-	pgfsk_hw_set_deadline(g_link.rx_deadline_tick);
-
-	if (!listen_ok || !tx_ok) {
-		LOG_ERR("failed to enter no-service listen posture");
+	/* Re-enter RX and pre-arm the already composed TX packet. */
+	if (!pgfsk_hw_start_listen()) {
+		LOG_ERR("failed to restart RX listen in no-service");
 		(void)pgfsk_link_abort_enable();
 		return;
 	}
+
+	if (!pgfsk_hw_wait_for_rx_active()) {
+		LOG_ERR("timed out waiting for RX active in no-service");
+		(void)pgfsk_link_abort_enable();
+		return;
+	}
+
+	if (!pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet)) {
+		LOG_ERR("failed to pre-arm TX in no-service");
+		(void)pgfsk_link_abort_enable();
+		return;
+	}
+
+	pgfsk_hw_set_deadline(g_link.rx_deadline_tick);
 
 	if (was_in_service) {
 		LOG_WRN("service outage (listen timeouts)");
