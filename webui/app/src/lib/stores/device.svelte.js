@@ -167,7 +167,7 @@ function createDeviceStore() {
     loss: 'packetLoss',
     conn: 'peerConnected',
     tx: 'packetsTx',
-    rx: 'packetsRx',
+    rx_ok: 'packetsRx',
     lost: 'packetsLost',
     urun: 'bufferUnderruns',
     orun: 'bufferOverruns',

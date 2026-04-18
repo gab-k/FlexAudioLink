@@ -40,7 +40,7 @@ def parse_log(path):
                 samples.append({
                     "time": m.group("time"),
                     "tx": int(fields["tx"]),
-                    "rx": int(fields["rx"]),
+                    "rx": int(fields["rx_ok"]),
                     "in_service_ms": int(fields["in_service_ms"]),
                     "lost": int(fields.get("lost", "0")),
                     "state": fields.get("state", "?"),
