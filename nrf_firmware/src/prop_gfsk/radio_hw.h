@@ -18,8 +18,8 @@
 #define PGFSK_HW_ADDR_HEADSET        0x55D391A5UL
 
 /* Packet layout */
-#define PGFSK_PAYLOAD_LEN               242
-#define PGFSK_PACKET_METADATA_LEN       4U   /* seq(2) + payload_len(1) + reserved(1) */
+#define PGFSK_PAYLOAD_MAX_LEN               252
+#define PGFSK_PACKET_METADATA_LEN       2U   /* seq(2) */
 
 /*
  * TIMER10 runs free at 1 MHz (prescaler 5 on a 32 MHz base clock).
@@ -42,18 +42,19 @@
 /*
  * Timer CC channel assignments:
  *   CC[2]  RX ADDRESS timestamp
+ *   CC[3]  deadline (generates TIMEOUT event when reached)
  *   CC[4]  PHYEND timestamp
  *   CC[5]  ad-hoc "now" capture
  */
 #define PGFSK_TIMER_CC_RX_TS            NRF_TIMER_CC_CHANNEL2
+#define PGFSK_TIMER_CC_DEADLINE         NRF_TIMER_CC_CHANNEL3
 #define PGFSK_TIMER_CC_PHYEND_TS        NRF_TIMER_CC_CHANNEL4
 #define PGFSK_TIMER_CC_NOW              NRF_TIMER_CC_CHANNEL5
 
 struct pgfsk_packet {
 	uint8_t  length;
 	uint16_t seq;
-	uint8_t  payload_len;
-	uint8_t  data[PGFSK_PAYLOAD_LEN];
+	uint8_t  data[PGFSK_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 
 enum pgfsk_hw_event_type {
@@ -61,6 +62,7 @@ enum pgfsk_hw_event_type {
 	PGFSK_HW_EVENT_RX_OK,
 	PGFSK_HW_EVENT_RX_BAD,
 	PGFSK_HW_EVENT_TX_END,
+	PGFSK_HW_EVENT_TIMEOUT,
 };
 
 struct pgfsk_hw_event {
@@ -86,6 +88,9 @@ void pgfsk_hw_reset_stats(void);
 
 uint32_t pgfsk_hw_get_tick(void);
 bool pgfsk_hw_start_listen(void);
-bool pgfsk_hw_start_tx(const struct pgfsk_packet *packet);
+bool pgfsk_hw_prepare_tx(const struct pgfsk_packet *packet);
+bool pgfsk_hw_trigger_prepared_tx(void);
+void pgfsk_hw_set_deadline(uint32_t deadline_tick);
+void pgfsk_hw_clear_deadline(void);
 bool pgfsk_hw_dequeue_event(struct pgfsk_hw_event *event, k_timeout_t timeout);
 struct k_msgq *pgfsk_hw_event_msgq(void);

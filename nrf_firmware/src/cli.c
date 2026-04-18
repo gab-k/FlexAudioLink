@@ -38,29 +38,6 @@ static void cli_thread(void *arg1, void *arg2, void *arg3);
 static void cli_init(void);
 static void cli_print(const char *fmt, ...);
 
-static const char *cli_get_link_state_name(enum pgfsk_link_state state)
-{
-	switch (state) {
-	case PGFSK_LINK_STATE_DISABLED:
-		return "disabled";
-	case PGFSK_LINK_STATE_NO_SERVICE:
-		return "no_service";
-	case PGFSK_LINK_STATE_IN_SERVICE:
-		return "in_service";
-	default:
-		return "unknown";
-	}
-}
-
-static uint64_t cli_get_in_service_time_ms(const struct pgfsk_link_report *stats)
-{
-	if (stats == NULL) {
-		return 0U;
-	}
-
-	return stats->time_in_service_us / 1000U;
-}
-
 static void cli_print_status_packet_group(const struct pgfsk_link_report *stats)
 {
 	if (stats == NULL) {
@@ -77,12 +54,8 @@ static void cli_print_status_packet_group(const struct pgfsk_link_report *stats)
 	cli_print("loss_burst_5_plus=%u\n", stats->loss_burst_5_plus_count);
 	cli_print("loss_burst_max=%u\n", stats->max_loss_burst_len);
 	cli_print("crc_err=%u\n", stats->crc_error_count);
-	cli_print("tx_intended=%u\n", stats->tx_intended_count);
-	cli_print("tx_missed_deadline=%u\n", stats->tx_missed_deadline_count);
-	cli_print("\n");
-	cli_print("[timing]\n");
-	cli_print("prepare_us=%u (max=%u)\n", stats->last_prepare_us, stats->max_prepare_us);
-	cli_print("turnaround_us=%u (max=%u)\n", stats->last_turnaround_us, stats->max_turnaround_us);
+	cli_print("rx_incomplete=%u\n", stats->rx_incomplete_count);
+	cli_print("tx_trigger_fail=%u\n", stats->tx_trigger_fail_count);
 }
 
 static void cli_print_status_link_group(const struct pgfsk_link_report *stats,
@@ -93,13 +66,12 @@ static void cli_print_status_link_group(const struct pgfsk_link_report *stats,
 	}
 
 	cli_print("[link]\n");
-	cli_print("state=%s\n", cli_get_link_state_name(stats->state));
 	cli_print("rssi=%d\n", stats->last_rssi_dbm);
 	cli_print("loss_pct=%u.%u\n",
 		  loss_permille / 10U,
 		  loss_permille % 10U);
 	cli_print("outages=%u\n", stats->outage_count);
-	cli_print("in_service_ms=%llu\n", cli_get_in_service_time_ms(stats));
+	cli_print("in_service_ms=%llu\n", stats->time_in_service_us / 1000U);
 }
 
 static size_t cli_strnlen(const char *s, size_t max_len)
@@ -171,12 +143,10 @@ static void cli_emit_status_push(void)
 			(stats.packets_rx + stats.packets_lost_in_service);
 	}
 
-	cli_print("#S state=%s rssi=%d loss=%u.%u tx=%u rx=%u "
-		  "lost=%u crc_err=%u txi=%u txm=%u "
+	cli_print("#S rssi=%d loss=%u.%u tx=%u rx=%u "
+		  "lost=%u crc_err=%u rxi=%u txf=%u "
 		  "lb1=%u lb2=%u lb34=%u lb5p=%u lbmax=%u "
-		  "outages=%u in_service_ms=%llu "
-		  "prep=%u/%u ta=%u/%u\n",
-		  cli_get_link_state_name(stats.state),
+		  "outages=%u in_service_ms=%llu\n",
 		  stats.last_rssi_dbm,
 		  loss_permille / 10U,
 		  loss_permille % 10U,
@@ -184,19 +154,15 @@ static void cli_emit_status_push(void)
 		  stats.packets_rx,
 		  stats.packets_lost_in_service,
 		  stats.crc_error_count,
-		  stats.tx_intended_count,
-		  stats.tx_missed_deadline_count,
+		  stats.rx_incomplete_count,
+		  stats.tx_trigger_fail_count,
 		  stats.loss_burst_1_count,
 		  stats.loss_burst_2_count,
 		  stats.loss_burst_3_4_count,
 		  stats.loss_burst_5_plus_count,
 		  stats.max_loss_burst_len,
 		  stats.outage_count,
-		  cli_get_in_service_time_ms(&stats),
-		  stats.last_prepare_us,
-		  stats.max_prepare_us,
-		  stats.last_turnaround_us,
-		  stats.max_turnaround_us);
+		  stats.time_in_service_us / 1000U);
 }
 
 static void cli_emit_status(void)

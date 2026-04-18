@@ -34,14 +34,14 @@ static void pgfsk_test_prepare_tx_frame(struct pgfsk_frame *frame)
 static void pgfsk_test_stop_traffic(void)
 {
 	g_test_tx_seq = 0U;
-	g_test_payload_len = PGFSK_PAYLOAD_LEN;
+	g_test_payload_len = PGFSK_PAYLOAD_MAX_LEN;
 	k_event_clear(&g_test_events, PGFSK_TEST_EVENT_RUNNING);
 }
 
 static void pgfsk_test_start_traffic(size_t payload_len)
 {
-	if (payload_len == 0U || payload_len > PGFSK_PAYLOAD_LEN) {
-		g_test_payload_len = PGFSK_PAYLOAD_LEN;
+	if (payload_len == 0U || payload_len > PGFSK_PAYLOAD_MAX_LEN) {
+		g_test_payload_len = PGFSK_PAYLOAD_MAX_LEN;
 	} else {
 		g_test_payload_len = payload_len;
 	}

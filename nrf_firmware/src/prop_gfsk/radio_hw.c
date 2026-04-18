@@ -6,6 +6,14 @@
 #include <soc.h>
 
 #define PGFSK_HW_EVENT_QUEUE_DEPTH 8
+#define PGFSK_RADIO_BASE_SHORTS \
+		(NRF_RADIO_SHORT_READY_START_MASK | \
+	 	NRF_RADIO_SHORT_PHYEND_DISABLE_MASK | \
+	 	NRF_RADIO_SHORT_ADDRESS_RSSISTART_MASK)
+
+BUILD_ASSERT(offsetof(struct pgfsk_packet, seq) == 1U, "seq must follow length byte");
+BUILD_ASSERT(offsetof(struct pgfsk_packet, data) == 1U + PGFSK_PACKET_METADATA_LEN,
+	     "data offset inconsistent with METADATA_LEN");
 
 static struct pgfsk_packet g_rx_packet;
 static struct pgfsk_packet g_tx_packet;
@@ -15,7 +23,9 @@ K_MSGQ_DEFINE(g_radio_event_queue, sizeof(struct pgfsk_hw_event), PGFSK_HW_EVENT
 struct radio_hw_state {
 	bool running;
 	bool in_tx_phase;
+	bool tx_armed;
 	bool tx_phyend_seen;
+	bool deadline_armed;
 	uint32_t last_tx_phyend_tick;
 };
 
@@ -92,6 +102,27 @@ static void radio_enter_rx(void)
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_RXEN);
 }
 
+static void timer_isr(const void *arg)
+{
+	struct pgfsk_hw_event event;
+
+	ARG_UNUSED(arg);
+
+	if (nrf_timer_event_check(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3)) {
+		nrf_timer_event_clear(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
+
+		if (g_hw.running && g_hw.deadline_armed) {
+			g_hw.deadline_armed = false;
+			nrf_timer_int_disable(PGFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
+
+			memset(&event, 0, sizeof(event));
+			event.type = PGFSK_HW_EVENT_TIMEOUT;
+			event.tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_DEADLINE);
+			queue_radio_event(&event);
+		}
+	}
+}
+
 static void radio_isr(const void *arg)
 {
 	ARG_UNUSED(arg);
@@ -119,6 +150,10 @@ static void radio_isr(const void *arg)
 			event.type = PGFSK_HW_EVENT_RX_ADDRESS;
 			event.tick = rx_tick;
 			queue_radio_event(&event);
+		} else if (g_hw.running && g_hw.in_tx_phase) {
+			/* TX is already on air here, so it is safe to preload next RX buffer/shorts. */
+			nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_rx_packet);
+			nrf_radio_shorts_set(NRF_RADIO, PGFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_RXEN_MASK);
 		}
 	}
 
@@ -166,8 +201,9 @@ static void radio_isr(const void *arg)
 			return;
 		}
 
-		if (g_hw.in_tx_phase) {
-			nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_TXEN);
+		if (g_hw.tx_armed) {
+			g_hw.tx_armed = false;
+			g_hw.in_tx_phase = true;
 			return;
 		}
 
@@ -176,7 +212,6 @@ static void radio_isr(const void *arg)
 		}
 
 		g_hw.tx_phyend_seen = false;
-		radio_enter_rx();
 
 		memset(&event, 0, sizeof(event));
 		event.type = PGFSK_HW_EVENT_TX_END;
@@ -207,8 +242,7 @@ void pgfsk_hw_init(void)
 	nrf_radio_frequency_set(NRF_RADIO, PGFSK_HW_FREQUENCY_MHZ);
 	nrf_radio_txpower_set(NRF_RADIO, PGFSK_HW_TXPOWER);
 	nrf_radio_packet_configure(NRF_RADIO, &pkt_conf);
-	nrf_radio_datawhiteiv_set(NRF_RADIO,
-				  (PGFSK_HW_FREQUENCY_MHZ - 2400) & 0x3F);
+	nrf_radio_datawhiteiv_set(NRF_RADIO, (PGFSK_HW_FREQUENCY_MHZ - 2400) & 0x3F);
 	nrf_radio_crc_configure(NRF_RADIO, 2, NRF_RADIO_CRC_ADDR_SKIP, 0x11021UL);
 	radio_program_address_table();
 
@@ -216,18 +250,17 @@ void pgfsk_hw_init(void)
 	nrf_timer_bit_width_set(PGFSK_TIMER, NRF_TIMER_BIT_WIDTH_32);
 	nrf_timer_prescaler_set(PGFSK_TIMER, PGFSK_TIMER_PRESCALER);
 
-	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS,
-			      PGFSK_DPPI_CH_RX_TIMESTAMP);
-	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE2,
-				PGFSK_DPPI_CH_RX_TIMESTAMP);
+	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS, PGFSK_DPPI_CH_RX_TIMESTAMP);
+	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE2, PGFSK_DPPI_CH_RX_TIMESTAMP);
 
-	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PHYEND,
-			      PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
-	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE4,
-				PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PHYEND, PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE4, PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
 
 	IRQ_CONNECT(RADIO_0_IRQn, 0, radio_isr, NULL, 0);
 	irq_enable(RADIO_0_IRQn);
+
+	IRQ_CONNECT(TIMER10_IRQn, 1, timer_isr, NULL, 0);
+	irq_enable(TIMER10_IRQn);
 
 	pgfsk_hw_reset_stats();
 }
@@ -257,9 +290,8 @@ void pgfsk_hw_start(void)
 			BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
 
 	nrf_radio_shorts_set(NRF_RADIO,
-			    	     NRF_RADIO_SHORT_READY_START_MASK |
-				         NRF_RADIO_SHORT_PHYEND_DISABLE_MASK |
-				         NRF_RADIO_SHORT_ADDRESS_RSSISTART_MASK);
+			     PGFSK_RADIO_BASE_SHORTS |
+				     NRF_RADIO_SHORT_DISABLED_RXEN_MASK);
 
 	g_hw.running = true;
 
@@ -372,7 +404,7 @@ bool pgfsk_hw_start_listen(void)
 	return true;
 }
 
-bool pgfsk_hw_start_tx(const struct pgfsk_packet *packet)
+bool pgfsk_hw_prepare_tx(const struct pgfsk_packet *packet)
 {
 	unsigned int irq_key;
 
@@ -389,11 +421,67 @@ bool pgfsk_hw_start_tx(const struct pgfsk_packet *packet)
 
 	memcpy(&g_tx_packet, packet, sizeof(g_tx_packet));
 	nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_tx_packet);
-	g_hw.in_tx_phase = true;
+	g_hw.tx_armed = true;
+	nrf_radio_shorts_set(NRF_RADIO, PGFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_TXEN_MASK);
+
+	irq_unlock(irq_key);
+	return true;
+}
+
+bool pgfsk_hw_trigger_prepared_tx(void)
+{
+	nrf_radio_state_t radio_state;
+	unsigned int irq_key;
+
+	irq_key = irq_lock();
+
+	if (!g_hw.running || g_hw.in_tx_phase || !g_hw.tx_armed) {
+		irq_unlock(irq_key);
+		return false;
+	}
+
+	radio_state = nrf_radio_state_get(NRF_RADIO);
+	if (radio_state != NRF_RADIO_STATE_RX && radio_state != NRF_RADIO_STATE_RXIDLE) {
+		irq_unlock(irq_key);
+		return false;
+	}
+
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 
 	irq_unlock(irq_key);
 	return true;
+}
+
+void pgfsk_hw_set_deadline(uint32_t deadline_tick)
+{
+	unsigned int irq_key;
+
+	irq_key = irq_lock();
+
+	if (!g_hw.running) {
+		irq_unlock(irq_key);
+		return;
+	}
+
+	nrf_timer_cc_set(PGFSK_TIMER, PGFSK_TIMER_CC_DEADLINE, deadline_tick);
+	nrf_timer_event_clear(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
+	g_hw.deadline_armed = true;
+	nrf_timer_int_enable(PGFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
+
+	irq_unlock(irq_key);
+}
+
+void pgfsk_hw_clear_deadline(void)
+{
+	unsigned int irq_key;
+
+	irq_key = irq_lock();
+
+	g_hw.deadline_armed = false;
+	nrf_timer_int_disable(PGFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
+	nrf_timer_event_clear(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
+
+	irq_unlock(irq_key);
 }
 
 bool pgfsk_hw_dequeue_event(struct pgfsk_hw_event *event, k_timeout_t timeout)

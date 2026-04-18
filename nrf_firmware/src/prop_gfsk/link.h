@@ -21,7 +21,7 @@ struct pgfsk_link_config {
 
 struct pgfsk_frame {
 	uint16_t seq;
-	uint8_t payload[PGFSK_PAYLOAD_LEN];
+	uint8_t payload[PGFSK_PAYLOAD_MAX_LEN];
 	size_t len;
 	int16_t rssi_dbm;
 };
@@ -36,14 +36,10 @@ struct pgfsk_link_report {
 	uint32_t loss_burst_5_plus_count;
 	uint32_t max_loss_burst_len;
 	uint32_t crc_error_count;
-	uint32_t tx_intended_count;
-	uint32_t tx_missed_deadline_count;
+	uint32_t rx_incomplete_count;
+	uint32_t tx_trigger_fail_count;
 	uint32_t outage_count;
 	uint64_t time_in_service_us;
-	uint32_t last_prepare_us;
-	uint32_t max_prepare_us;
-	uint32_t last_turnaround_us;
-	uint32_t max_turnaround_us;
 	int16_t last_rssi_dbm;
 	enum pgfsk_link_state state;
 };

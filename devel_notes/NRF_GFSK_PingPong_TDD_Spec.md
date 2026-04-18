@@ -2,9 +2,11 @@
 
 ## Status
 
-Design target for the next `nrf_firmware/` link-layer rewrite.
-This replaces the fixed time slots with a simpler symmetric ping-pong protocol.
-This version is intentionally minimal.
+Living spec for the `nrf_firmware/src/prop_gfsk/` link layer. Replaces the
+previous fixed time-slot scheduler with a symmetric ping-pong protocol.
+Implemented with a three-state machine (IN_RX, IN_TX, LISTEN) and
+timer-based deadlines. Section names use the symbols actually present in
+the code (`pgfsk_*`, `PGFSK_*`).
 
 ## Rewrite Rule
 
@@ -14,7 +16,7 @@ exercise.
 Implementation rule:
 
 - anything in the current implementation that is not strictly needed for this
-  four-state ping-pong design should be removed entirely
+  three-state ping-pong design should be removed entirely
 
 That means:
 
@@ -97,17 +99,17 @@ This remains shared between dongle and headset.
 
 ## Internal State Machine
 
-The first implementation should use exactly these four internal states:
+The implementation uses exactly three internal states:
 
 - `IN_RX`
-- `PREPARE_PACKET`
 - `IN_TX`
 - `LISTEN`
 
 This state machine is shared by both devices.
 
 On enable (`DISABLED` -> `NO_SERVICE`), the internal state machine enters
-`LISTEN` with a randomized initial `rx_deadline_tick`.
+`LISTEN` with a randomized initial `rx_deadline_tick` and a pre-armed TX
+packet.
 
 ## State Meaning
 
@@ -122,27 +124,11 @@ Notes:
 
 - this does not mean the packet is valid yet
 - validity is only known at `PHYEND` / CRC result
-- if `PHYEND` does not arrive within `ADDRESS_tick + MAX_PACKET_AIRTIME_US`,
-  treat as a failed reception and transition to `PREPARE_PACKET` (same as
-  `RX_BAD`)
-
-### `PREPARE_PACKET`
-
-Meaning:
-
-- the local side owns the next turn
-- the reply packet is being assembled
-- local TX is not yet committed to hardware
-- there is no protocol-level path from this state back to `IN_RX`
-- if this state was entered from a `LISTEN` timeout, that timeout already
-  decided turn ownership; any later peer `ADDRESS` is too late for this turn
-- transmission may be committed once both are true:
-  - packet preparation is complete
-  - `IFS_US` has elapsed since the relevant anchor
-
-This is intentionally simple:
-
-- packet preparation and IFS waiting are merged into one state
+- a hardware timer deadline is set at `ADDRESS_tick + MAX_PACKET_AIRTIME_US`; if the timer fires before `PHYEND`, the hardware triggers
+  `DISABLE` → TX via the pre-armed `DISABLED_TXEN` short
+- in steady state, `IN_RX` exits directly to `IN_TX` on RX PHYEND because
+  the HW chain into TX is pre-armed during the previous `LISTEN` — see the
+  RX Re-Arm Rule section
 
 ### `IN_TX`
 
@@ -163,6 +149,8 @@ Meaning:
 - not currently transmitting
 - waiting either for a peer packet to start or for the current listen timeout
   to expire
+- TX is always pre-armed (invariant): the next TX packet is composed and
+  staged via `pgfsk_hw_prepare_tx()`, with `DISABLED_TXEN` short active
 
 `LISTEN` has two different timeout policies depending on external service
 state:
@@ -170,6 +158,9 @@ state:
 - in `IN_SERVICE`, `LISTEN` waits for peer `ADDRESS` after a local TX
 - in `NO_SERVICE`, `LISTEN` waits for a randomized probe deadline before
   initiating a probe TX
+
+A hardware timer fires at `rx_deadline_tick`; if no peer `ADDRESS` arrives
+first, the timer triggers `DISABLE` → TX via the pre-armed short.
 
 This is the passive waiting state after a local TX or during out-of-service
 acquisition.
@@ -190,12 +181,13 @@ Meaning:
 Action:
 
 - transition to `IN_RX`
+- set new deadline timer at `ADDRESS_tick + MAX_PACKET_AIRTIME_US`
 
-### `LISTEN -> PREPARE_PACKET`
+### `LISTEN -> IN_TX` (timeout)
 
 Trigger:
 
-- `LISTEN` timeout exceeded
+- hardware timer fires at `rx_deadline_tick` (delivered as `TIMEOUT` event)
 
 Meaning:
 
@@ -209,81 +201,79 @@ Meaning:
 
 Action:
 
-- transition to `PREPARE_PACKET`
-- once this transition happens, the turn is considered reclaimed; there is no
-  `PREPARE_PACKET -> IN_RX` transition for a late peer packet
-
-### `IN_RX -> PREPARE_PACKET`
-
-Trigger:
-
-- RX `PHYEND`
-
-Meaning:
-
-- a peer packet just finished
-- valid or invalid, the medium is now free at a known end time
-
-Action:
-
-- record RX outcome
-- use RX `PHYEND` as the new timing anchor
-- transition to `PREPARE_PACKET`
-
-### `PREPARE_PACKET -> IN_TX`
-
-Trigger:
-
-- packet preparation complete
-- `IFS_US` elapsed since the current anchor
-
-Meaning:
-
-- there is no additional protocol event needed
-- once payload is ready and IFS has elapsed, transition to `IN_TX` and then
-  enable hardware TX
-- once in `IN_TX`, there is no going back to RX for this turn
-
-Action:
-
+- the timer ISR posts a `TIMEOUT` event
+- the link thread calls `pgfsk_hw_trigger_prepared_tx()` to trigger the pre-armed
+  TX (hardware chains `DISABLE` → `TXEN` via the `DISABLED_TXEN` short)
 - transition to `IN_TX`
-- enable TX in hardware
-- if hardware enable fails after the transition:
-  - transition to `LISTEN`
-  - set `rx_deadline_tick = now + 2 * MAX_PACKET_AIRTIME_US`
-  - treat as a missed turn and wait for possible peer reclaim activity
+- once this transition happens, the turn is considered reclaimed; there is no
+  `IN_TX -> IN_RX` transition for a late peer packet
+
+### `IN_RX -> IN_TX`
+
+Trigger:
+
+- RX `PHYEND` (delivered as `RX_OK` or `RX_BAD`), or
+- hardware timer fires (delivered as `TIMEOUT` event) if `PHYEND` doesn't
+  arrive in time
+
+Meaning:
+
+- a peer packet just finished (or timed out); hardware has already chained
+  into TXEN via the pre-armed `DISABLED_TXEN` short — local TX is on air
+
+Action:
+
+- clear the deadline timer
+- record RX outcome (valid/invalid, seq/loss accounting)
+- use RX `PHYEND` (or timeout tick) as the new timing anchor
+- transition to `IN_TX`
 
 ### `IN_TX -> LISTEN`
 
 Trigger:
 
-- TX `PHYEND`
+- TX `PHYEND` (delivered as `TX_END`)
 
 Meaning:
 
 - local transmission just ended
+- hardware has already chained TX→RX via `DISABLED_RXEN` (shorts swap was
+  performed in the TX-phase `ADDRESS` ISR)
 - now wait for the peer reply
 
 Action:
 
-- store the next `rx_deadline_tick`
+- increment `next_tx_seq`
+- set `rx_deadline_tick = event->tick + MAX_PACKET_AIRTIME_US`
+  (in service), or `+ random(0..RANDOM_TICKS_US)` additional jitter in
+  `NO_SERVICE`
 - transition to `LISTEN`
+- compose the next reply into `prepared_tx_packet`
+- call `pgfsk_hw_prepare_tx(&prepared_tx_packet)` to stage DMA +
+  swap shorts to `DISABLED_TXEN`
+- hardware is now pre-armed so the next RX PHYEND (or timeout) will
+  chain directly into TX
+- arm the deadline timer at `rx_deadline_tick`
 
 ## Timing Deadlines
 
-The protocol uses two live timing values:
+The protocol uses a single live timing value:
 
-- `tx_ready_tick`
 - `rx_deadline_tick`
+
+This value is programmed into a hardware timer compare register. When the
+timer fires, the ISR posts a `TIMEOUT` event to the link thread.
 
 Rules:
 
-- on `ADDRESS` (entering `IN_RX`), `rx_deadline_tick = ADDRESS_tick + MAX_PACKET_AIRTIME_US`
-- after RX completes, `tx_ready_tick = rx_end_tick + IFS_US`
-- after TX completes (entering `LISTEN`) while `service_state == IN_SERVICE`,
+- on `ADDRESS` (entering `IN_RX`):
+  `rx_deadline_tick = ADDRESS_tick + MAX_PACKET_AIRTIME_US`
+- after TX completes (entering `LISTEN`) while `service_state == IN_SERVICE`:
   `rx_deadline_tick = tx_end_tick + MAX_PACKET_AIRTIME_US`
-- on entry to `NO_SERVICE`, `LISTEN` is re-seeded with a randomized probe
-  timeout:
+- after TX completes while `service_state == NO_SERVICE`:
+  `rx_deadline_tick = tx_end_tick + MAX_PACKET_AIRTIME_US +
+  random(0..RANDOM_TICKS_US)`
+- on entry to `NO_SERVICE`:
   `rx_deadline_tick = now + FIXED_TICK_US + random(0..RANDOM_TICKS_US)`
 
 `rx_deadline_tick` is reused across `IN_RX` and `LISTEN`:
@@ -306,58 +296,23 @@ Assumption:
 - the hardware timer is a free-running 32-bit microsecond counter
 - tick arithmetic therefore wraps naturally every `2^32` ticks
 
-Required rule:
-
-- all deadline comparisons must be wrap-safe
-- do **not** compare live ticks using raw relational operators such as
-  `now >= deadline`, `now < deadline`, or `a > b`
-
-Use signed modular subtraction instead:
-
-```c
-static inline int32_t tick_diff(uint32_t a, uint32_t b)
-{
-	return (int32_t)(a - b);
-}
-
-static inline bool tick_reached(uint32_t now, uint32_t deadline)
-{
-	return tick_diff(now, deadline) >= 0;
-}
-
-static inline bool tick_before(uint32_t a, uint32_t b)
-{
-	return tick_diff(a, b) < 0;
-}
-```
-
-Meaning:
-
-- `tick_reached(now, deadline)` is true once `now` reaches or passes
-  `deadline`, even across 32-bit wrap
-- `tick_before(a, b)` is true when `a` is still earlier than `b`, even across
-  wrap
-
 Allowed arithmetic:
 
 - `deadline = anchor + delta_us`
 - `delta_us` values in this protocol are always small relative to `2^31` ticks
-- therefore signed-difference comparisons are unambiguous for all live
-  deadlines in this design
 
-Implementation rule:
+Hardware timer behavior:
 
-- any logic that waits for `tx_ready_tick` or `rx_deadline_tick` must use the
-  wrap-safe helpers above or an equivalent signed-difference form
-- the same rule applies to timeout polling, missed-turn detection, and any
-  hardware scheduling guard that checks whether a tick is in the past
+- the timer compare register (CC[3]) is programmed with `rx_deadline_tick`
+- the hardware handles wrap correctly: the compare fires when the timer
+  counter reaches the CC value
+- no software wrap-safe comparison is needed since timeouts are handled via
+  hardware interrupt, not polling
 
 ## First-Iteration Timing Constants
 
 Keep constants minimal:
 
-- `IFS_US`
-  - delay from packet end to local reply start
 - `MAX_PACKET_AIRTIME_US`
   - worst-case on-air duration for one packet in the current mode
   - also reused as the in-service `LISTEN` reclaim window after TX
@@ -400,10 +355,18 @@ On any transition into `NO_SERVICE`:
 - reset `consecutive_rx_misses`
 - remain in `LISTEN`
 - re-seed `rx_deadline_tick = now + FIXED_TICK_US + random(0..RANDOM_TICKS_US)`
+- restore RX listen posture
+- ensure the next probe/reply TX is staged again via `pgfsk_hw_prepare_tx()`
 - do not immediately reclaim the turn on the old in-service cadence
 - after a `NO_SERVICE` probe TX completes, the following `LISTEN` timeout is
   anchored from that probe packet's `PHYEND`:
   `rx_deadline_tick = phyend_tick + MAX_PACKET_AIRTIME_US + random(0..RANDOM_TICKS_US)`
+
+Implementation note:
+
+- if restoring RX listen posture or TX pre-arm fails on entry to `NO_SERVICE`,
+  the implementation may hard-reset the radio block and retry once before
+  giving up and disabling the link
 
 Important distinction:
 
@@ -421,10 +384,9 @@ Both devices start in `LISTEN` when entering `NO_SERVICE`. The normal
 state machine handles acquisition:
 
 - the initial `rx_deadline_tick` is set to
-  `now + FIXED_TICK_US + random(0..RANDOM_TICKS_US)` to break symmetry on
-  simultaneous boot
-- whichever device times out first transitions to `PREPARE_PACKET` and
-  sends a probe TX
+  `now + FIXED_TICK_US + random(0..RANDOM_TICKS_US)` to break
+  symmetry on simultaneous boot
+- whichever device times out first transitions to `IN_TX` and sends a probe
 - the other device sees `ADDRESS` and receives
 - after this first exchange, the protocol is self-sustaining
 
@@ -434,7 +396,7 @@ initial boot.
 Collision / symmetry note:
 
 - if both devices time out and reclaim at nearly the same time, both may enter
-  `PREPARE_PACKET` and transmit in the same turn
+  `IN_TX` and transmit in the same turn
 - during that collision turn, neither side is listening, so no peer activity
   is observed
 - in `NO_SERVICE`, this is acceptable for the first iteration; the randomized
@@ -454,7 +416,7 @@ It overrides the internal state machine from any state.
 On disable request:
 
 - external service state becomes `DISABLED`
-- the internal four-state machine is no longer active
+- the internal three-state machine is no longer active
 - no further RX/TX turn-taking decisions are made until re-enabled
 - pending app TX and RX queue contents may be discarded
 - pending or stale radio events may be discarded
@@ -470,64 +432,115 @@ Hardware expectation:
 
 ## Minimal Runtime State
 
-First version runtime should stay small:
+Runtime should stay small. Actual shape (`link.c`):
 
 ```c
-enum prop_gfsk_internal_state {
-	PROP_GFSK_STATE_IN_RX = 0,
-	PROP_GFSK_STATE_PREPARE_PACKET,
-	PROP_GFSK_STATE_IN_TX,
-	PROP_GFSK_STATE_LISTEN,
+enum pgfsk_internal_state {
+	PGFSK_STATE_IN_RX = 0,
+	PGFSK_STATE_IN_TX,
+	PGFSK_STATE_LISTEN,
 };
 
-struct prop_gfsk_link_runtime {
-	struct prop_gfsk_link_config config;
-	enum prop_gfsk_link_state service_state;      // DISABLED / NO_SERVICE / IN_SERVICE
-	enum prop_gfsk_internal_state state;          // IN_RX / PREPARE_PACKET / IN_TX / LISTEN
+struct pgfsk_link_runtime {
+	struct pgfsk_link_config config;
+	enum pgfsk_link_state service_state;
+	enum pgfsk_internal_state state;
 	struct link_stats stats;
 
-	uint32_t tx_ready_tick;       // earliest legal TX start while in PREPARE_PACKET
-	uint32_t rx_deadline_tick;  // packet-end deadline in IN_RX, ADDRESS/probe deadline in LISTEN
+	uint32_t rx_deadline_tick;    // programmed into hardware timer
 
-	uint8_t consecutive_rx_misses;
+	uint8_t  consecutive_rx_misses;
 	uint64_t in_service_since_cyc;
+
+	uint16_t next_tx_seq;
+	uint16_t last_rx_seq;
+	bool     have_last_rx_seq;
+
+	struct pgfsk_packet prepared_tx_packet;   // staging buffer for next TX
+
+	struct k_spinlock lock;
 };
 ```
 
 Meaning of the timing fields:
 
-- `tx_ready_tick`
-  - earliest legal TX start after the current turn anchor plus `IFS_US`
 - `rx_deadline_tick`
-  - deadline for current RX completion in `IN_RX`
-  - latest acceptable peer `ADDRESS` in `LISTEN` while `IN_SERVICE`
-  - randomized probe deadline in `LISTEN` while `NO_SERVICE`
+  - programmed into hardware timer CC register
+  - when timer fires, ISR posts `TIMEOUT` event
+  - in `IN_RX`: deadline for current RX completion
+  - in `LISTEN` + `IN_SERVICE`: reclaim timeout after our previous TX
+  - in `LISTEN` + `NO_SERVICE`: randomized probe deadline
 
-This is simpler than keeping historical RX/TX end ticks in link state.
-The link only stores the deadlines it still cares about.
+Invariant: when entering `LISTEN`, the next TX packet is always pre-composed
+into `prepared_tx_packet` and staged via `pgfsk_hw_prepare_tx()`. This
+ensures the hardware-chained RX→TX path works, and timeout-triggered TX
+works without additional preparation.
+
+## Packet Format
+
+On-air frame (per nRF radio config with `lflen = 8`, `s0len = 0`, `s1len = 0`):
+
+```
+[PREAMBLE] [ACCESS_ADDR] [LENGTH] [PAYLOAD] [CRC]
+```
+
+PREAMBLE, ACCESS_ADDR, and CRC are managed by hardware and never appear in
+the DMA buffer. The buffer pointed to by `PACKETPTR` contains:
+
+```
+offset 0:    LENGTH byte (value written by link, read by peer HW)
+offset 1..N: PAYLOAD bytes (N = LENGTH)
+```
+
+The link-layer packet struct mirrors this layout:
+
+```c
+struct pgfsk_packet {
+	uint8_t  length;                           // HW LFLEN byte
+	uint16_t seq;                              // first 2 bytes of PAYLOAD
+	uint8_t  data[PGFSK_PAYLOAD_MAX_LEN];      // remaining PAYLOAD bytes
+} __packed __aligned(4);
+```
+
+Rules:
+
+- `length = PGFSK_PACKET_METADATA_LEN + data_bytes_used`
+  (currently `METADATA_LEN = 2`, covering `seq`)
+- `PGFSK_PAYLOAD_MAX_LEN = 252` sets the capacity of `data[]`
+- Effective maximum `length` byte value = `METADATA_LEN + PAYLOAD_MAX_LEN = 254`
+- Each packet transmits only `length` bytes of PAYLOAD on air — short packets
+  (e.g. 2-byte seq-only keepalive) use less airtime; full audio packets
+  (`length = 254`) reach the LFLEN=8 upper bound
+- `__packed` is load-bearing: without it, natural alignment of `seq`
+  introduces a pad byte at offset 1 and silently breaks the wire format.
+  Compile-time asserts in `radio_hw.c` lock `offsetof(seq)` and
+  `offsetof(data)` to catch this.
 
 ## Radio Event Model
 
-For simplicity, the hardware layer should provide one ordered event stream.
+The hardware layer (`radio_hw`) provides one ordered event stream consumed by
+the link thread.
 
-Suggested event types:
+Event types:
 
 ```c
-enum prop_gfsk_radio_event_type {
-	PROP_GFSK_RADIO_EVENT_RX_ADDRESS = 0,
-	PROP_GFSK_RADIO_EVENT_RX_OK,
-	PROP_GFSK_RADIO_EVENT_RX_BAD,
-	PROP_GFSK_RADIO_EVENT_TX_END,
+enum pgfsk_hw_event_type {
+	PGFSK_HW_EVENT_RX_ADDRESS = 0,
+	PGFSK_HW_EVENT_RX_OK,
+	PGFSK_HW_EVENT_RX_BAD,
+	PGFSK_HW_EVENT_TX_END,
+	PGFSK_HW_EVENT_TIMEOUT,
 };
 ```
 
-Suggested payload:
+Event payload:
 
 ```c
-struct prop_gfsk_radio_event {
-	enum prop_gfsk_radio_event_type type;
-	uint32_t tick;                 // ADDRESS tick or PHYEND tick
-	struct prop_gfsk_packet packet; // valid only for RX_OK, keep current definition
+struct pgfsk_hw_event {
+	enum pgfsk_hw_event_type type;
+	uint32_t tick;                 // ADDRESS tick, PHYEND tick, or deadline tick
+	struct pgfsk_packet packet;    // valid only for RX_OK
+	int16_t  rssi_dbm;             // valid for RX_OK and RX_BAD
 };
 ```
 
@@ -540,7 +553,10 @@ Use:
 - `RX_BAD`
   - invalid packet ended at `PHYEND`
 - `TX_END`
-  - local TX ended
+  - local TX ended at `PHYEND`
+- `TIMEOUT`
+  - hardware timer fired at `rx_deadline_tick`
+  - drives `LISTEN -> IN_TX` or `IN_RX -> IN_TX`
 
 ## State Handling Rules
 
@@ -550,43 +566,37 @@ If current state is:
 
 - `LISTEN`
   - transition to `IN_RX`
+  - set deadline timer at `ADDRESS_tick + MAX_PACKET_AIRTIME_US`
 - otherwise
   - ignore
 
 Core rule:
 
 - only `LISTEN` may accept `ADDRESS` as a turn-taking event
-- after `LISTEN` times out and the link enters `PREPARE_PACKET`, a later
-  `ADDRESS` does not pull the state machine back into `IN_RX`
+- after `LISTEN` times out and the link enters `IN_TX`, a later `ADDRESS`
+  does not pull the state machine back into `IN_RX`
 
-RX is logically active only during `LISTEN`. During `PREPARE_PACKET` and
-`IN_TX`, the link does not accept new peer turn claims, even if hardware has
-not yet been deliberately disabled on the timeout-to-prepare path.
+RX is logically active only during `LISTEN`. During `IN_TX`, the link does
+not accept new peer turn claims.
 
 ### On `RX_OK`
 
 Actions:
 
-1. use `tick` as the new turn anchor
-2. synchronously prepare the next local packet
-3. set:
-   - `tx_ready_tick = tick + IFS_US`
-4. transition to `PREPARE_PACKET`
-5. queue payload to app RX queue
-6. reset `consecutive_rx_misses = 0`
-7. enter or remain `IN_SERVICE`
+1. clear deadline timer
+2. queue payload to app RX queue
+3. reset `consecutive_rx_misses = 0`
+4. enter or remain `IN_SERVICE`; update seq / loss accounting
+5. transition to `IN_TX` (hardware already chained RX→TX via `DISABLED_TXEN`)
 
 ### On `RX_BAD`
 
 Actions:
 
-1. use `tick` as the new turn anchor
-2. synchronously prepare the next local packet
-3. set:
-   - `tx_ready_tick = tick + IFS_US`
-4. transition to `PREPARE_PACKET`
-5. update CRC stats
-6. reset `consecutive_rx_misses = 0`
+1. clear deadline timer
+2. reset `consecutive_rx_misses = 0`
+3. update CRC stats (tracked in `radio_hw` stats)
+4. transition to `IN_TX` (hardware already chained RX→TX via `DISABLED_TXEN`)
 
 Reason:
 
@@ -596,85 +606,54 @@ Reason:
 - a bad CRC packet proves the peer is present, so it does **not** increment
   `consecutive_rx_misses` — only listen timeouts do
 
-### On `IN_RX` timeout
+### On `TIMEOUT`
 
-When in `IN_RX`, if:
-
-- `tick_reached(now, rx_deadline_tick)`
-
-where `rx_deadline_tick = ADDRESS_tick + MAX_PACKET_AIRTIME_US`
-
-then:
+When in `IN_RX`:
 
 - `PHYEND` never arrived — treat as a failed reception
-- handle identically to `RX_BAD` (use `rx_deadline_tick` as the turn anchor)
-
-### On prepare completion
-
-When in `PREPARE_PACKET`:
-
-packet preparation is done immediately on state entry.
-
-If:
-
-- `tick_reached(now, tx_ready_tick)`
-
-then:
-
+- increment `rx_incomplete_count`
+- reset `consecutive_rx_misses = 0`
+- call `pgfsk_hw_trigger_prepared_tx()` to trigger the already-staged TX
 - transition to `IN_TX`
-- call `radio_hw` to enable TX
-- if hardware enable fails after the transition:
-  - transition to `LISTEN`
-  - set `rx_deadline_tick = now + 2 * MAX_PACKET_AIRTIME_US`
-  - treat as a missed turn and wait for possible peer reclaim activity
 
-No extra protocol event is required.
-
-### On `TX_END`
-
-Actions:
-
-1. if `service_state == IN_SERVICE`, set:
-   - `rx_deadline_tick = phyend_tick + MAX_PACKET_AIRTIME_US`
-2. if `service_state == NO_SERVICE`, set:
-   - `rx_deadline_tick = phyend_tick + MAX_PACKET_AIRTIME_US + random(0..RANDOM_TICKS_US)`
-3. transition to `LISTEN`
-
-### On listen timeout
-
-When in `LISTEN`, if:
-
-- `tick_reached(now, rx_deadline_tick)`
-
-then:
+When in `LISTEN`:
 
 1. if `service_state == IN_SERVICE`:
    - increment `consecutive_rx_misses`
    - if threshold reached:
      - enter `NO_SERVICE`
      - reset `consecutive_rx_misses`
-     - set
-       `rx_deadline_tick = now + FIXED_TICK_US + random(0..RANDOM_TICKS_US)`
+     - set `rx_deadline_tick = now + FIXED_TICK_US +
+       random(0..RANDOM_TICKS_US)`
+     - restore RX listen posture and re-stage the next TX
+     - arm deadline timer
      - remain in `LISTEN`
-   - otherwise:
-     - set `tx_ready_tick = rx_deadline_tick + IFS_US`
-     - transition to `PREPARE_PACKET`
-2. if `service_state == NO_SERVICE`:
-   - set `tx_ready_tick = rx_deadline_tick + IFS_US`
-   - transition to `PREPARE_PACKET`
+     - return (do not TX)
+2. call `pgfsk_hw_trigger_prepared_tx()` to trigger the already-staged TX
+3. transition to `IN_TX`
 
 Important:
 
 - `LISTEN` timeout is a hard protocol boundary
-- once timeout has fired and the state machine enters `PREPARE_PACKET`, the
-  local side owns the turn
+- once timeout has fired and the state machine enters `IN_TX`, the local
+  side owns the turn
 - there is no late-`ADDRESS` recovery path back to `IN_RX`
 
-This splits `LISTEN` behavior cleanly:
+### On `TX_END`
 
-- in `IN_SERVICE`, timeout means no peer `ADDRESS` was received in time after
-  our TX
-- in `NO_SERVICE`, timeout means the randomized probe deadline expired
+Actions:
+
+1. increment `next_tx_seq`
+2. transition to `LISTEN`
+3. if `service_state == IN_SERVICE`, set:
+   - `rx_deadline_tick = phyend_tick + MAX_PACKET_AIRTIME_US`
+4. if `service_state == NO_SERVICE`, set:
+   - `rx_deadline_tick = phyend_tick + MAX_PACKET_AIRTIME_US +
+     random(0..RANDOM_TICKS_US)`
+5. compose the next reply into `prepared_tx_packet`, then call
+   `pgfsk_hw_prepare_tx(&prepared_tx_packet)` to stage the HW chain. The
+   next RX PHYEND (or timeout) will chain directly into TX.
+6. arm deadline timer at `rx_deadline_tick`
 
 ## ISR Ownership
 
@@ -695,61 +674,123 @@ This keeps the design understandable:
 
 ## RX Re-Arm Rule
 
-RX is logically active only during `LISTEN`. During `PREPARE_PACKET` and
-`IN_TX`, the protocol does not listen for a peer turn claim. This is simple
+RX is logically active only during `LISTEN` (at the protocol layer). During
+`IN_TX`, the protocol does not accept a peer turn claim. This is simple
 because the protocol is strict ping-pong — each peer transmits exactly one
 packet per turn. There is no reason to listen during our own turn.
 
 On the `LISTEN` timeout path specifically:
 
 - the timeout itself decides turn ownership
-- even if the radio hardware is still physically in RX until the later TX
-  commit path disables it, that does not create a `PREPARE_PACKET -> IN_RX`
-  transition
-- any such late `ADDRESS` is ignored by core link logic
+- even if the radio hardware is still physically in RX until the timeout
+  handler calls `pgfsk_hw_trigger_prepared_tx()`, that does not create an
+  `IN_TX -> IN_RX` transition
+- any late `ADDRESS` is ignored by core link logic
 
-Re-arm policy:
+### Hardware re-arm mechanism
 
-- `radio_hw` auto-re-arms RX immediately in the TX_END ISR, before queuing
-  the `TX_END` event. This eliminates any gap between TX completion and RX
-  readiness — the peer's reply is never missed due to link thread scheduling
-  latency.
-- `radio_hw` does **not** re-arm RX after RX completion (PHYEND). The radio
-  stays idle until the next TX_END.
-- on startup / enable (entering `LISTEN` from `NO_SERVICE`): `link.c`
-  explicitly arms RX once.
+Re-arm is driven entirely by RADIO SHORTS (DPPI-style hardware chains), not
+by the TX_END ISR. The base shorts active at all times are:
+
+- `READY_START`          (ramp-up → start on time)
+- `PHYEND_DISABLE`       (end-of-packet → DISABLED)
+- `ADDRESS_RSSISTART`    (address detected → start RSSI sample)
+
+A single additional bit selects what DISABLED chains into:
+
+- `DISABLED_RXEN` — after any PHYEND, the radio ramps back into RX
+- `DISABLED_TXEN` — after the NEXT PHYEND (or manual DISABLE), the radio
+  ramps into TX using the currently programmed `PACKETPTR`
+
+Steady-state sequence:
+
+1. `pgfsk_hw_start()` sets shorts = `BASE | DISABLED_RXEN`; `link.c` calls
+   `pgfsk_hw_start_listen()` once to trigger `RXEN` initially.
+2. After any RX PHYEND, `DISABLED_RXEN` chains the radio back into RX with
+   no CPU involvement. `radio_hw` does not re-arm RX in software.
+3. To pre-arm a reply, `link.c` calls `pgfsk_hw_prepare_tx(&packet)`. This
+   copies the packet into the TX DMA buffer, sets `PACKETPTR` to it, and
+   swaps shorts to `BASE | DISABLED_TXEN`. The NEXT PHYEND (i.e. the
+   incoming peer RX's PHYEND) now chains directly into TXEN — a
+   hardware-chained RX→TX turnaround.
+4. During that local TX, the RADIO `ADDRESS` interrupt fires while the
+   outbound preamble/address is on air. The ISR notices `in_tx_phase`,
+   repoints `PACKETPTR` back to the RX buffer, and swaps shorts back to
+   `BASE | DISABLED_RXEN`. PHYEND of the local TX then chains the radio
+   back into RX — a hardware-chained TX→RX turnaround.
+5. On the listen-timeout or IN_RX-timeout path, `link.c` calls
+   `pgfsk_hw_trigger_prepared_tx()` which triggers the `DISABLE` task.
+   Since TX was already pre-armed (shorts = `DISABLED_TXEN`, packet staged),
+   DISABLE chains into TXEN.
+
+### TX pre-arm invariant
+
+When entering `LISTEN`, the link always pre-arms the next TX:
+
+- `link.c` composes the packet into `prepared_tx_packet` and calls
+  `pgfsk_hw_prepare_tx()` to stage it
+- shorts are swapped to `DISABLED_TXEN`
+- a deadline timer is armed
+
+This invariant ensures:
+
+- RX PHYEND chains directly into TX (hardware path)
+- timeout-triggered TX works via `pgfsk_hw_trigger_prepared_tx()` (the packet
+  is already staged, so `trigger_prepared_tx` just triggers `DISABLE`)
+
+If `pgfsk_hw_trigger_prepared_tx()` fails, the current turn is abandoned and
+the link falls back to `NO_SERVICE` reacquisition rather than trying to
+preserve steady-state timing.
+
+If `pgfsk_hw_prepare_tx()` fails (rare edge case), the link logs a warning
+but continues. The next turn may be missed.
 
 If the peer replies fast enough that ADDRESS and RX_OK/RX_BAD are queued
-before the link thread processes TX_END, the event ordering is still correct:
-TX_END → LISTEN, ADDRESS → IN_RX, RX_OK → PREPARE_PACKET.
+before the link thread processes TX_END, the event ordering is still
+correct: TX_END → LISTEN, ADDRESS → IN_RX, RX_OK → IN_TX.
 
 ## Hardware Responsibilities
 
-`radio_hw` should own:
+`radio_hw` owns:
 
-- RX `ADDRESS` timestamp capture
-- RX `PHYEND` timestamp capture
-- TX `PHYEND` timestamp capture
-- immediate TX launch (DISABLE → TXEN sequence)
-- ordered delivery of radio events
+- RX `ADDRESS` timestamp capture (DPPI → TIMER CC[2])
+- RX/TX `PHYEND` timestamp capture (DPPI → TIMER CC[4])
+- deadline timer (TIMER CC[3] compare → `TIMEOUT` event)
+- continuous RX via `DISABLED_RXEN` short (no software re-arm)
+- hardware-chained RX→TX via `DISABLED_TXEN` short (staged by
+  `pgfsk_hw_prepare_tx`)
+- hardware-chained TX→RX via shorts swap in the TX-phase `ADDRESS` ISR
+- manual `DISABLE`-and-TX for timeout reclaims (`pgfsk_hw_trigger_prepared_tx`)
+- ordered delivery of radio events via `pgfsk_hw_event_msgq()`
 
-`radio_hw` should expose:
+`radio_hw` exposes (see `radio_hw.h`):
 
-- `dequeue_radio_event(...)`
-- `try_start_tx(...)` or `try_arm_tx(...)`
+- `pgfsk_hw_init()`, `pgfsk_hw_start()`, `pgfsk_hw_stop()`
+- `pgfsk_hw_set_role(role)`
+- `pgfsk_hw_start_listen()`           — explicit initial RX arm
+- `pgfsk_hw_prepare_tx(packet)`       — stage packet + swap shorts to TXEN
+- `pgfsk_hw_trigger_prepared_tx()`   — trigger DISABLE for the pre-staged TX
+- `pgfsk_hw_set_deadline(tick)`       — arm timer CC[3], enable interrupt
+- `pgfsk_hw_clear_deadline()`         — disarm timer, clear pending interrupt
+- `pgfsk_hw_dequeue_event(evt, to)` / `pgfsk_hw_event_msgq()`
+- `pgfsk_hw_get_tick()`               — 1 µs free-running timer read
+- `pgfsk_hw_get_stats(stats)` / `pgfsk_hw_reset_stats()`
 
-`radio_hw` should not own:
+`radio_hw` does not own:
 
 - service/no-service policy
 - packet sequencing policy
 - retransmission policy
+- the three-state link state machine
 
 ## Link Responsibilities
 
-`link.c` should own:
+`link.c` owns:
 
-- the four-state machine
-- packet preparation
+- the three-state machine (IN_RX, IN_TX, LISTEN)
+- packet preparation and pre-arming (invariant: always armed in LISTEN)
+- deadline timer management (arm/clear via `pgfsk_hw_set_deadline` /
+  `pgfsk_hw_clear_deadline`)
 - service/no-service transitions
 - sequence/loss accounting
 - app TX/RX queues
@@ -760,10 +801,12 @@ Keep existing useful counters:
 
 - `lost`
 - `crc_err`
+- `rxi` (`rx_incomplete_count`)
 - `outages`
-- `in_service_ms`
-- `txi`
-- `txm`
+- `in_service_ms` (current uninterrupted in-service streak; derived live from
+  `in_service_since_cyc`, reports 0 while out of service, resets on service
+  loss)
+- `txf` (`tx_trigger_fail_count`)
 - loss-burst histogram
 
 Possible new counters:
@@ -777,27 +820,27 @@ Possible new counters:
 2. `PHYEND` is the only authoritative turn boundary.
 3. `ADDRESS` is the only early RX-start-like gate used in core logic.
 4. `FRAMESTART` is not used.
-5. The link-layer state machine has only four internal states:
-   `IN_RX`, `PREPARE_PACKET`, `IN_TX`, `LISTEN`.
-6. RX is only armed during `LISTEN`. `PREPARE_PACKET` and `IN_TX` do not
-   listen.
-7. Missed peer replies in `LISTEN` + `IN_SERVICE` are modeled using
-   `MAX_PACKET_AIRTIME_US`.
-8. `LISTEN` timeout is a hard boundary; there is no `PREPARE_PACKET -> IN_RX`
+5. The link-layer state machine has only three internal states:
+   `IN_RX`, `IN_TX`, `LISTEN`.
+6. RX is only armed during `LISTEN`. `IN_TX` does not listen.
+7. TX is always pre-armed when entering `LISTEN` (packet staged, shorts set
+   to `DISABLED_TXEN`).
+8. Timeouts are handled via hardware timer compare → `TIMEOUT` event, not
+   software polling.
+9. `LISTEN` timeout is a hard boundary; there is no `IN_TX -> IN_RX`
    recovery path for a late peer packet.
-9. All tick comparisons are modulo-32-bit wrap-safe; raw relational
-   comparisons on live ticks are forbidden.
-10. Simultaneous reclaim collisions are allowed in the first iteration;
-    recovery may fall back through `NO_SERVICE` randomized reacquisition.
+10. Simultaneous reclaim collisions are allowed; recovery may fall back
+    through `NO_SERVICE` randomized reacquisition.
 11. Disable overrides protocol state; after disable, pre-disable radio events
     must not re-enter the state machine.
 
 ## First Iteration Success Criteria
 
-The first implementation is successful if:
+The implementation is successful if:
 
 - there is no per-role slot timing logic in `link.c`
-- both boards run the same internal state machine
-- timing is driven by packet ends, not fixed frame intervals
+- both boards run the same three-state internal state machine
+- timing is driven by packet ends and hardware timer deadlines
 - variable payload sizes work without timing-policy changes
-- the code is easier to understand than the current fixed-slot scheduler
+- the link thread is fully event-driven (no polling loops)
+- TX is always pre-armed when entering `LISTEN`

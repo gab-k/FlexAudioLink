@@ -4,6 +4,7 @@
 
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/__assert.h>
 #include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(pgfsk_link, CONFIG_LOG_DEFAULT_LEVEL);
@@ -11,7 +12,6 @@ LOG_MODULE_REGISTER(pgfsk_link, CONFIG_LOG_DEFAULT_LEVEL);
 #define PGFSK_LINK_THREAD_STACK_SIZE       2048
 #define PGFSK_LINK_THREAD_PRIORITY         6
 #define PGFSK_LINK_QUEUE_DEPTH             4
-#define PGFSK_LINK_IFS_US                  80U
 #define PGFSK_LINK_MAX_PACKET_AIRTIME_US   550U
 #define PGFSK_LINK_SYNC_LOSS_TURNS         8U
 #define PGFSK_LINK_FIXED_TICK_US           1000U
@@ -20,16 +20,8 @@ LOG_MODULE_REGISTER(pgfsk_link, CONFIG_LOG_DEFAULT_LEVEL);
 
 enum pgfsk_internal_state {
 	PGFSK_STATE_IN_RX = 0,
-	PGFSK_STATE_PREPARE_PACKET,
 	PGFSK_STATE_IN_TX,
 	PGFSK_STATE_LISTEN,
-};
-
-struct link_timing {
-	uint32_t last_prepare_us;
-	uint32_t max_prepare_us;
-	uint32_t last_turnaround_us;
-	uint32_t max_turnaround_us;
 };
 
 struct link_stats {
@@ -40,9 +32,8 @@ struct link_stats {
 	uint32_t loss_burst_5_plus_count;
 	uint32_t max_loss_burst_len;
 	uint32_t outage_count;
-	uint32_t tx_intended_count;
-	uint32_t tx_missed_deadline_count;
-	uint64_t time_in_service_us;
+	uint32_t rx_incomplete_count;
+	uint32_t tx_trigger_fail_count;
 };
 
 struct pgfsk_link_runtime {
@@ -50,16 +41,12 @@ struct pgfsk_link_runtime {
 	enum pgfsk_link_state service_state;
 	enum pgfsk_internal_state state;
 	struct link_stats stats;
-	struct link_timing timing;
-	uint32_t tx_ready_tick;
 	uint32_t rx_deadline_tick;
-	uint32_t last_anchor_tick;
 	uint8_t consecutive_rx_misses;
 	uint64_t in_service_since_cyc;
 	uint16_t next_tx_seq;
 	uint16_t last_rx_seq;
 	bool have_last_rx_seq;
-	bool tx_packet_ready;
 	struct pgfsk_packet prepared_tx_packet;
 	struct k_spinlock lock;
 };
@@ -83,21 +70,14 @@ static uint32_t g_pgfsk_config_completed_seq;
 static bool g_pgfsk_config_completed_result;
 static uint32_t g_pgfsk_probe_prng_state;
 
+static uint32_t pgfsk_link_random_probe_jitter(void);
+static void pgfsk_link_compose_packet(struct pgfsk_packet *packet, uint16_t seq);
+
 K_MSGQ_DEFINE(g_pgfsk_tx_queue, sizeof(struct pgfsk_frame),PGFSK_LINK_QUEUE_DEPTH, 4);
 K_MSGQ_DEFINE(g_pgfsk_rx_queue, sizeof(struct pgfsk_frame),PGFSK_LINK_QUEUE_DEPTH, 4);
 K_MSGQ_DEFINE(g_pgfsk_config_queue,sizeof(struct pgfsk_link_config_request), 1, 4);
 K_MUTEX_DEFINE(g_pgfsk_config_lock);
 K_SEM_DEFINE(g_pgfsk_config_done_sem, 0, 1);
-
-static inline int32_t tick_diff(uint32_t a, uint32_t b)
-{
-	return (int32_t)(a - b);
-}
-
-static inline bool tick_reached(uint32_t now, uint32_t deadline)
-{
-	return tick_diff(now, deadline) >= 0;
-}
 
 static bool pgfsk_link_seq_gap_from_expected(uint16_t expected, uint16_t seq, uint16_t *gap)
 {
@@ -123,6 +103,76 @@ static struct pgfsk_link_config pgfsk_link_get_config(void)
 
 	k_spin_unlock(&g_link.lock, key);
 	return config;
+}
+
+static void pgfsk_link_reset_runtime(const struct pgfsk_link_config *config)
+{
+	k_spinlock_key_t key;
+
+	__ASSERT_NO_MSG(config != NULL);
+
+	key = k_spin_lock(&g_link.lock);
+
+	g_link.config = *config;
+	g_link.service_state = config->enabled ? PGFSK_LINK_STATE_NO_SERVICE : PGFSK_LINK_STATE_DISABLED;
+	g_link.state = PGFSK_STATE_LISTEN;
+	memset(&g_link.stats, 0, sizeof(g_link.stats));
+	g_link.rx_deadline_tick = 0U;
+	g_link.consecutive_rx_misses = 0U;
+	g_link.in_service_since_cyc = 0U;
+	g_link.next_tx_seq = 0U;
+	g_link.last_rx_seq = 0U;
+	g_link.have_last_rx_seq = false;
+	memset(&g_link.prepared_tx_packet, 0, sizeof(g_link.prepared_tx_packet));
+
+	k_spin_unlock(&g_link.lock, key);
+}
+
+static bool pgfsk_link_abort_enable(void)
+{
+	k_spinlock_key_t key;
+
+	pgfsk_hw_stop();
+
+	key = k_spin_lock(&g_link.lock);
+	g_link.config.enabled = false;
+	g_link.service_state = PGFSK_LINK_STATE_DISABLED;
+	g_link.rx_deadline_tick = 0U;
+	k_spin_unlock(&g_link.lock, key);
+
+	return false;
+}
+
+static bool pgfsk_link_start_enabled(const struct pgfsk_link_config *config)
+{
+	k_spinlock_key_t key;
+	uint32_t now_tick;
+	uint32_t deadline_tick;
+
+	__ASSERT_NO_MSG(config != NULL);
+
+	pgfsk_hw_set_role(config->local_device_role);
+	pgfsk_hw_start();
+	pgfsk_hw_reset_stats();
+
+	now_tick = pgfsk_hw_get_tick();
+	deadline_tick = now_tick + PGFSK_LINK_FIXED_TICK_US + pgfsk_link_random_probe_jitter();
+
+	key = k_spin_lock(&g_link.lock);
+	g_link.rx_deadline_tick = deadline_tick;
+	k_spin_unlock(&g_link.lock, key);
+
+	if (!pgfsk_hw_start_listen()) {
+		return pgfsk_link_abort_enable();
+	}
+
+	pgfsk_link_compose_packet(&g_link.prepared_tx_packet, g_link.next_tx_seq);
+	if (!pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet)) {
+		return pgfsk_link_abort_enable();
+	}
+
+	pgfsk_hw_set_deadline(deadline_tick);
+	return true;
 }
 
 static void pgfsk_link_seed_probe_prng(void)
@@ -191,21 +241,6 @@ static void pgfsk_link_record_loss_burst(uint32_t burst_len)
 	}
 }
 
-static void pgfsk_link_note_in_service_time(uint64_t now_cyc)
-{
-	if (g_link.service_state != PGFSK_LINK_STATE_IN_SERVICE ||
-	    g_link.in_service_since_cyc == 0U) {
-		return;
-	}
-
-	if (now_cyc > g_link.in_service_since_cyc) {
-		g_link.stats.time_in_service_us +=
-			k_cyc_to_us_floor64(now_cyc - g_link.in_service_since_cyc);
-	}
-
-	g_link.in_service_since_cyc = 0U;
-}
-
 static void pgfsk_link_enter_in_service(void)
 {
 	if (g_link.service_state == PGFSK_LINK_STATE_IN_SERVICE) {
@@ -220,22 +255,38 @@ static void pgfsk_link_enter_in_service(void)
 
 static void pgfsk_link_enter_no_service(uint32_t now_tick)
 {
-	bool was_in_service = (g_link.service_state ==
-			       PGFSK_LINK_STATE_IN_SERVICE);
+	bool was_in_service = (g_link.service_state == PGFSK_LINK_STATE_IN_SERVICE);
+	bool listen_ok;
+	bool tx_ok;
 
 	if (was_in_service) {
-		pgfsk_link_note_in_service_time(k_cycle_get_64());
 		g_link.stats.outage_count++;
 	}
 
 	g_link.service_state = PGFSK_LINK_STATE_NO_SERVICE;
 	g_link.state = PGFSK_STATE_LISTEN;
 	g_link.consecutive_rx_misses = 0U;
+	g_link.in_service_since_cyc = 0U;
 	g_link.have_last_rx_seq = false;
-	g_link.tx_packet_ready = false;
-	g_link.rx_deadline_tick = now_tick +
-		PGFSK_LINK_FIXED_TICK_US +
-		pgfsk_link_random_probe_jitter();
+	g_link.rx_deadline_tick = now_tick + PGFSK_LINK_FIXED_TICK_US + pgfsk_link_random_probe_jitter();
+	listen_ok = pgfsk_hw_start_listen();
+	tx_ok = listen_ok && pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet);
+
+	if (!listen_ok || !tx_ok) {
+		pgfsk_hw_stop();
+		pgfsk_hw_set_role(g_link.config.local_device_role);
+		pgfsk_hw_start();
+		listen_ok = pgfsk_hw_start_listen();
+		tx_ok = listen_ok && pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet);
+	}
+
+	pgfsk_hw_set_deadline(g_link.rx_deadline_tick);
+
+	if (!listen_ok || !tx_ok) {
+		LOG_ERR("failed to enter no-service listen posture");
+		(void)pgfsk_link_abort_enable();
+		return;
+	}
 
 	if (was_in_service) {
 		LOG_WRN("service outage (listen timeouts)");
@@ -263,29 +314,30 @@ static void pgfsk_link_queue_rx_frame(const struct pgfsk_hw_event *event)
 {
 	struct pgfsk_frame frame;
 	const struct pgfsk_packet *packet;
+	size_t payload_len;
 
 	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
 		return;
 	}
 
 	packet = &event->packet;
 	if (packet->length < PGFSK_PACKET_METADATA_LEN ||
-	    packet->payload_len > PGFSK_PAYLOAD_LEN ||
-	    packet->payload_len >
-		    (packet->length - PGFSK_PACKET_METADATA_LEN)) {
+	    (packet->length - PGFSK_PACKET_METADATA_LEN) > PGFSK_PAYLOAD_MAX_LEN) {
 		return;
 	}
 
+	payload_len = packet->length - PGFSK_PACKET_METADATA_LEN;
 	frame = (struct pgfsk_frame){
 		.seq = packet->seq,
-		.len = packet->payload_len,
+		.len = payload_len,
 		.rssi_dbm = event->rssi_dbm,
 	};
-	memcpy(frame.payload, packet->data, frame.len);
+	memcpy(frame.payload, packet->data, payload_len);
 	(void)k_msgq_put(&g_pgfsk_rx_queue, &frame, K_NO_WAIT);
 }
 
-static void pgfsk_link_prepare_tx_packet(struct pgfsk_packet *packet, uint16_t seq)
+static void pgfsk_link_compose_packet(struct pgfsk_packet *packet, uint16_t seq)
 {
 	struct pgfsk_frame frame;
 	bool has_payload;
@@ -301,52 +353,44 @@ static void pgfsk_link_prepare_tx_packet(struct pgfsk_packet *packet, uint16_t s
 	packet->seq = seq;
 
 	if (!has_payload) {
-		packet->payload_len = 0U;
 		return;
 	}
 
-	packet->payload_len = frame.len;
-	packet->length = PGFSK_PACKET_METADATA_LEN + packet->payload_len;
+	packet->length = PGFSK_PACKET_METADATA_LEN + frame.len;
 	memcpy(packet->data, frame.payload, frame.len);
 }
 
-static void pgfsk_link_transition_to_prepare(uint32_t anchor_tick)
+static void pgfsk_link_begin_hardware_reply(void)
 {
-	uint32_t t0, t1, prepare_us;
-
-	g_link.state = PGFSK_STATE_PREPARE_PACKET;
-	g_link.tx_ready_tick = anchor_tick + PGFSK_LINK_IFS_US;
-	g_link.last_anchor_tick = anchor_tick;
-
-	t0 = pgfsk_hw_get_tick();
-	pgfsk_link_prepare_tx_packet(&g_link.prepared_tx_packet, g_link.next_tx_seq);
-	t1 = pgfsk_hw_get_tick();
-
-	prepare_us = t1 - t0;
-	g_link.timing.last_prepare_us = prepare_us;
-	if (prepare_us > g_link.timing.max_prepare_us) {
-		g_link.timing.max_prepare_us = prepare_us;
-	}
-
-	g_link.tx_packet_ready = true;
+	pgfsk_hw_clear_deadline();
+	g_link.state = PGFSK_STATE_IN_TX;
 }
 
 static void pgfsk_link_handle_rx_address(const struct pgfsk_hw_event *event)
 {
-	if (event == NULL || g_link.state != PGFSK_STATE_LISTEN) {
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	if (g_link.state != PGFSK_STATE_LISTEN) {
 		return;
 	}
 
 	g_link.state = PGFSK_STATE_IN_RX;
-	g_link.rx_deadline_tick = event->tick +
-		PGFSK_LINK_MAX_PACKET_AIRTIME_US;
+	g_link.rx_deadline_tick = event->tick + PGFSK_LINK_MAX_PACKET_AIRTIME_US;
+	pgfsk_hw_set_deadline(g_link.rx_deadline_tick);
 }
 
 static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 {
-	if (event == NULL ||
-	    (g_link.state != PGFSK_STATE_LISTEN &&
-	     g_link.state != PGFSK_STATE_IN_RX)) {
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	if (g_link.state != PGFSK_STATE_LISTEN &&
+	    g_link.state != PGFSK_STATE_IN_RX) {
 		return;
 	}
 
@@ -354,10 +398,10 @@ static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 	g_link.consecutive_rx_misses = 0U;
 	pgfsk_link_enter_in_service();
 	pgfsk_link_record_in_service_rx(event->packet.seq);
-	pgfsk_link_transition_to_prepare(event->tick);
+	pgfsk_link_begin_hardware_reply();
 }
 
-static void pgfsk_link_handle_rx_bad_anchor(uint32_t anchor_tick)
+static void pgfsk_link_handle_rx_bad(void)
 {
 	if (g_link.state != PGFSK_STATE_LISTEN &&
 	    g_link.state != PGFSK_STATE_IN_RX) {
@@ -365,31 +409,88 @@ static void pgfsk_link_handle_rx_bad_anchor(uint32_t anchor_tick)
 	}
 
 	g_link.consecutive_rx_misses = 0U;
-	pgfsk_link_transition_to_prepare(anchor_tick);
+	pgfsk_link_begin_hardware_reply();
 }
 
 static void pgfsk_link_handle_tx_end(const struct pgfsk_hw_event *event)
 {
-	if (event == NULL || g_link.state != PGFSK_STATE_IN_TX) {
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	if (g_link.state != PGFSK_STATE_IN_TX) {
 		return;
 	}
 
 	g_link.next_tx_seq++;
-	g_link.tx_packet_ready = false;
 	g_link.state = PGFSK_STATE_LISTEN;
+
 	if (g_link.service_state == PGFSK_LINK_STATE_IN_SERVICE) {
-		g_link.rx_deadline_tick = event->tick +
-			PGFSK_LINK_MAX_PACKET_AIRTIME_US;
+		g_link.rx_deadline_tick = event->tick + PGFSK_LINK_MAX_PACKET_AIRTIME_US;
 	} else {
-		g_link.rx_deadline_tick = event->tick +
-			PGFSK_LINK_MAX_PACKET_AIRTIME_US +
-			pgfsk_link_random_probe_jitter();
+		g_link.rx_deadline_tick = event->tick + PGFSK_LINK_MAX_PACKET_AIRTIME_US + pgfsk_link_random_probe_jitter();
+	}
+
+	pgfsk_link_compose_packet(&g_link.prepared_tx_packet, g_link.next_tx_seq);
+	if (!pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet)) {
+		LOG_WRN("failed to arm next reply");
+	}
+
+	pgfsk_hw_set_deadline(g_link.rx_deadline_tick);
+}
+
+static void pgfsk_link_trigger_timeout_tx(void)
+{
+	g_link.state = PGFSK_STATE_IN_TX;
+
+	if (!pgfsk_hw_trigger_prepared_tx()) {
+		g_link.stats.tx_trigger_fail_count++;
+		pgfsk_link_enter_no_service(pgfsk_hw_get_tick());
+	}
+}
+
+static void pgfsk_link_handle_in_rx_timeout(void)
+{
+	g_link.stats.rx_incomplete_count++;
+	g_link.consecutive_rx_misses = 0U;
+	pgfsk_link_trigger_timeout_tx();
+}
+
+static void pgfsk_link_handle_listen_timeout(uint32_t now_tick)
+{
+	if (g_link.service_state == PGFSK_LINK_STATE_IN_SERVICE) {
+		g_link.consecutive_rx_misses++;
+		if (g_link.consecutive_rx_misses >= PGFSK_LINK_SYNC_LOSS_TURNS) {
+			pgfsk_link_enter_no_service(now_tick);
+			return;
+		}
+	}
+
+	pgfsk_link_trigger_timeout_tx();
+}
+
+static void pgfsk_link_handle_timeout(const struct pgfsk_hw_event *event)
+{
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	if (g_link.state == PGFSK_STATE_LISTEN) {
+		pgfsk_link_handle_listen_timeout(event->tick);
+		return;
+	}
+
+	if (g_link.state == PGFSK_STATE_IN_RX) {
+		pgfsk_link_handle_in_rx_timeout();
 	}
 }
 
 static void pgfsk_link_handle_radio_event(const struct pgfsk_hw_event *event)
 {
 	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
 		return;
 	}
 
@@ -401,129 +502,17 @@ static void pgfsk_link_handle_radio_event(const struct pgfsk_hw_event *event)
 		pgfsk_link_handle_rx_ok(event);
 		break;
 	case PGFSK_HW_EVENT_RX_BAD:
-		pgfsk_link_handle_rx_bad_anchor(event->tick);
+		pgfsk_link_handle_rx_bad();
 		break;
 	case PGFSK_HW_EVENT_TX_END:
 		pgfsk_link_handle_tx_end(event);
 		break;
+	case PGFSK_HW_EVENT_TIMEOUT:
+		pgfsk_link_handle_timeout(event);
+		break;
 	default:
 		break;
 	}
-}
-
-static void pgfsk_link_handle_in_rx_timeout(void)
-{
-	if (g_link.state != PGFSK_STATE_IN_RX) {
-		return;
-	}
-
-	pgfsk_link_handle_rx_bad_anchor(g_link.rx_deadline_tick);
-}
-
-static void pgfsk_link_handle_listen_timeout(uint32_t now_tick)
-{
-	if (g_link.state != PGFSK_STATE_LISTEN) {
-		return;
-	}
-
-	if (g_link.service_state == PGFSK_LINK_STATE_IN_SERVICE) {
-		g_link.consecutive_rx_misses++;
-		if (g_link.consecutive_rx_misses >=
-		    PGFSK_LINK_SYNC_LOSS_TURNS) {
-			pgfsk_link_enter_no_service(now_tick);
-			return;
-		}
-	}
-
-	pgfsk_link_transition_to_prepare(g_link.rx_deadline_tick);
-}
-
-static void pgfsk_link_commit_prepared_tx(uint32_t now_tick)
-{
-	uint32_t turnaround_us;
-
-	if (g_link.state != PGFSK_STATE_PREPARE_PACKET ||
-	    !g_link.tx_packet_ready) {
-		return;
-	}
-
-	turnaround_us = now_tick - g_link.last_anchor_tick;
-	g_link.timing.last_turnaround_us = turnaround_us;
-	if (turnaround_us > g_link.timing.max_turnaround_us) {
-		g_link.timing.max_turnaround_us = turnaround_us;
-	}
-
-	g_link.state = PGFSK_STATE_IN_TX;
-	g_link.stats.tx_intended_count++;
-
-	if (pgfsk_hw_start_tx(&g_link.prepared_tx_packet)) {
-		return;
-	}
-
-	g_link.stats.tx_missed_deadline_count++;
-	g_link.state = PGFSK_STATE_LISTEN;
-	g_link.tx_packet_ready = false;
-	g_link.rx_deadline_tick = now_tick + (2U * PGFSK_LINK_MAX_PACKET_AIRTIME_US);
-	(void)pgfsk_hw_start_listen();
-}
-
-static void pgfsk_link_run_state_machine(void)
-{
-	while (g_link.config.enabled) {
-		uint32_t now_tick = pgfsk_hw_get_tick();
-
-		switch (g_link.state) {
-		case PGFSK_STATE_IN_RX:
-			if (tick_reached(now_tick, g_link.rx_deadline_tick)) {
-				pgfsk_link_handle_in_rx_timeout();
-				continue;
-			}
-			return;
-		case PGFSK_STATE_PREPARE_PACKET:
-			if (g_link.tx_packet_ready && tick_reached(now_tick, g_link.tx_ready_tick)) {
-				pgfsk_link_commit_prepared_tx(now_tick);
-				continue;
-			}
-			return;
-		case PGFSK_STATE_LISTEN:
-			if (tick_reached(now_tick, g_link.rx_deadline_tick)) {
-				pgfsk_link_handle_listen_timeout(now_tick);
-				continue;
-			}
-			return;
-		case PGFSK_STATE_IN_TX:
-		default:
-			return;
-		}
-	}
-}
-
-static k_timeout_t pgfsk_link_get_poll_timeout(void)
-{
-	uint32_t deadline_tick;
-	uint32_t now_tick;
-	int32_t delta_us;
-
-	switch (g_link.state) {
-	case PGFSK_STATE_IN_RX:
-	case PGFSK_STATE_LISTEN:
-		deadline_tick = g_link.rx_deadline_tick;
-		break;
-	case PGFSK_STATE_PREPARE_PACKET:
-		deadline_tick = g_link.tx_ready_tick;
-		break;
-	case PGFSK_STATE_IN_TX:
-	default:
-		return K_FOREVER;
-	}
-
-	now_tick = pgfsk_hw_get_tick();
-	delta_us = tick_diff(deadline_tick, now_tick);
-	if (delta_us <= 0) {
-		return K_NO_WAIT;
-	}
-
-	return K_USEC((uint32_t)delta_us);
 }
 
 static void pgfsk_link_print_banner(const struct pgfsk_link_config *config)
@@ -540,7 +529,6 @@ static void pgfsk_link_print_banner(const struct pgfsk_link_config *config)
 	LOG_INF("Frequency: %u MHz", PGFSK_HW_FREQUENCY_MHZ);
 	LOG_INF("Rate: 4 Mbps");
 	LOG_INF("TX Power: +8 dBm");
-	LOG_INF("IFS: %u us", PGFSK_LINK_IFS_US);
 	LOG_INF("Max packet airtime: %u us", PGFSK_LINK_MAX_PACKET_AIRTIME_US);
 	LOG_INF("Sync loss turns: %u", PGFSK_LINK_SYNC_LOSS_TURNS);
 	LOG_INF("Probe delay: %u..%u us", 
@@ -553,7 +541,6 @@ static void pgfsk_link_print_banner(const struct pgfsk_link_config *config)
 static bool pgfsk_link_apply_config_internal(const struct pgfsk_link_config *config)
 {
 	struct pgfsk_link_config prev;
-	uint32_t now_tick;
 	bool changed;
 
 	if (config == NULL) {
@@ -571,45 +558,13 @@ static bool pgfsk_link_apply_config_internal(const struct pgfsk_link_config *con
 	k_msgq_purge(&g_pgfsk_tx_queue);
 	k_msgq_purge(&g_pgfsk_rx_queue);
 
-	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
-
-	g_link.config = *config;
-	g_link.service_state = config->enabled ? PGFSK_LINK_STATE_NO_SERVICE : PGFSK_LINK_STATE_DISABLED;
-	g_link.state = PGFSK_STATE_LISTEN;
-	memset(&g_link.stats, 0, sizeof(g_link.stats));
-	g_link.tx_ready_tick = 0U;
-	g_link.rx_deadline_tick = 0U;
-	g_link.consecutive_rx_misses = 0U;
-	g_link.in_service_since_cyc = 0U;
-	g_link.next_tx_seq = 0U;
-	g_link.last_rx_seq = 0U;
-	g_link.have_last_rx_seq = false;
-	g_link.tx_packet_ready = false;
-	memset(&g_link.prepared_tx_packet, 0, sizeof(g_link.prepared_tx_packet));
-
-	k_spin_unlock(&g_link.lock, key);
+	pgfsk_link_reset_runtime(config);
 
 	if (!config->enabled) {
 		return true;
 	}
 
-	pgfsk_hw_set_role(config->local_device_role);
-	pgfsk_hw_start();
-	pgfsk_hw_reset_stats();
-
-	now_tick = pgfsk_hw_get_tick();
-
-	key = k_spin_lock(&g_link.lock);
-	g_link.rx_deadline_tick = now_tick + PGFSK_LINK_FIXED_TICK_US + pgfsk_link_random_probe_jitter();
-	k_spin_unlock(&g_link.lock, key);
-
-	if (!pgfsk_hw_start_listen()) {
-		pgfsk_hw_stop();
-		key = k_spin_lock(&g_link.lock);
-		g_link.config.enabled = false;
-		g_link.service_state = PGFSK_LINK_STATE_DISABLED;
-		g_link.rx_deadline_tick = 0U;
-		k_spin_unlock(&g_link.lock, key);
+	if (!pgfsk_link_start_enabled(config)) {
 		return false;
 	}
 
@@ -707,9 +662,9 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 {
 	struct pgfsk_hw_stats hw_stats;
 	struct link_stats stats;
-	struct link_timing timing;
 	enum pgfsk_link_state state;
 	uint64_t in_service_since_cyc;
+	uint64_t time_in_service_us = 0U;
 
 	if (report == NULL) {
 		return;
@@ -719,13 +674,12 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 
 	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
 	stats = g_link.stats;
-	timing = g_link.timing;
 	state = g_link.service_state;
 	in_service_since_cyc = g_link.in_service_since_cyc;
 	k_spin_unlock(&g_link.lock, key);
 
 	if (state == PGFSK_LINK_STATE_IN_SERVICE && in_service_since_cyc != 0U) {
-		stats.time_in_service_us += k_cyc_to_us_floor64(k_cycle_get_64() - in_service_since_cyc);
+		time_in_service_us = k_cyc_to_us_floor64(k_cycle_get_64() - in_service_since_cyc);
 	}
 
 	*report = (struct pgfsk_link_report){
@@ -738,14 +692,10 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 		.loss_burst_5_plus_count = stats.loss_burst_5_plus_count,
 		.max_loss_burst_len = stats.max_loss_burst_len,
 		.crc_error_count = hw_stats.crc_errors,
-		.tx_intended_count = stats.tx_intended_count,
-		.tx_missed_deadline_count = stats.tx_missed_deadline_count,
+		.rx_incomplete_count = stats.rx_incomplete_count,
+		.tx_trigger_fail_count = stats.tx_trigger_fail_count,
 		.outage_count = stats.outage_count,
-		.time_in_service_us = stats.time_in_service_us,
-		.last_prepare_us = timing.last_prepare_us,
-		.max_prepare_us = timing.max_prepare_us,
-		.last_turnaround_us = timing.last_turnaround_us,
-		.max_turnaround_us = timing.max_turnaround_us,
+		.time_in_service_us = time_in_service_us,
 		.last_rssi_dbm = hw_stats.last_rssi_dbm,
 		.state = state,
 	};
@@ -753,7 +703,7 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 
 bool pgfsk_link_tx_enqueue(const struct pgfsk_frame *frame, k_timeout_t timeout)
 {
-	if (frame == NULL || frame->len > PGFSK_PAYLOAD_LEN ||
+	if (frame == NULL || frame->len > PGFSK_PAYLOAD_MAX_LEN ||
 	    !pgfsk_link_is_enabled()) {
 		return false;
 	}
@@ -796,7 +746,7 @@ static void pgfsk_link_thread(void *arg1, void *arg2, void *arg3)
 		events[POLL_RADIO].state = K_POLL_STATE_NOT_READY;
 		events[POLL_CONFIG].state = K_POLL_STATE_NOT_READY;
 
-		(void)k_poll(events, ARRAY_SIZE(events), pgfsk_link_get_poll_timeout());
+		(void)k_poll(events, ARRAY_SIZE(events), K_FOREVER);
 
 		if (events[POLL_CONFIG].state == K_POLL_STATE_MSGQ_DATA_AVAILABLE) {
 			while (pgfsk_link_process_config_request(K_NO_WAIT));
@@ -809,8 +759,6 @@ static void pgfsk_link_thread(void *arg1, void *arg2, void *arg3)
 				pgfsk_link_handle_radio_event(&event);
 			}
 		}
-
-		pgfsk_link_run_state_machine();
 	}
 }
 
