@@ -74,8 +74,9 @@ struct pgfsk_hw_event {
 
 struct pgfsk_hw_stats {
 	uint32_t packets_tx;
-	uint32_t packets_rx;
+	uint32_t rx_ok_count;
 	uint32_t crc_errors;
+	uint32_t deadline_late_count;
 	int16_t  last_rssi_dbm;
 };
 
@@ -88,6 +89,7 @@ void pgfsk_hw_reset_stats(void);
 
 uint32_t pgfsk_hw_get_tick(void);
 bool pgfsk_hw_start_listen(void);
+bool pgfsk_hw_wait_for_rx_active(void);
 bool pgfsk_hw_prepare_tx(const struct pgfsk_packet *packet);
 bool pgfsk_hw_trigger_prepared_tx(void);
 void pgfsk_hw_set_deadline(uint32_t deadline_tick);

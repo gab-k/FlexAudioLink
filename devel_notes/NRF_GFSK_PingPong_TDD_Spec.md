@@ -109,7 +109,9 @@ This state machine is shared by both devices.
 
 On enable (`DISABLED` -> `NO_SERVICE`), the internal state machine enters
 `LISTEN` with a randomized initial `rx_deadline_tick` and a pre-armed TX
-packet.
+packet. In the current implementation, startup first enters RX and waits
+until the radio is actively in `RX` before pre-arming the first TX, even
+though `PACKETPTR` is double-buffered.
 
 ## State Meaning
 
@@ -308,6 +310,9 @@ Hardware timer behavior:
   counter reaches the CC value
 - no software wrap-safe comparison is needed since timeouts are handled via
   hardware interrupt, not polling
+- when software arms a deadline too late or too close to the current tick,
+  `pgfsk_hw_set_deadline()` clamps it forward by a small minimum lead instead
+  of programming an immediately stale compare value
 
 ## First-Iteration Timing Constants
 
@@ -705,7 +710,10 @@ A single additional bit selects what DISABLED chains into:
 Steady-state sequence:
 
 1. `pgfsk_hw_start()` sets shorts = `BASE | DISABLED_RXEN`; `link.c` calls
-   `pgfsk_hw_start_listen()` once to trigger `RXEN` initially.
+   `pgfsk_hw_start_listen()` once to trigger `RXEN` initially. On initial
+   enable, `link.c` then waits for `pgfsk_hw_wait_for_rx_active()` before
+   calling `pgfsk_hw_prepare_tx()`, to avoid corrupting the first RX packet
+   by switching `PACKETPTR` to the TX buffer too early.
 2. After any RX PHYEND, `DISABLED_RXEN` chains the radio back into RX with
    no CPU involvement. `radio_hw` does not re-arm RX in software.
 3. To pre-arm a reply, `link.c` calls `pgfsk_hw_prepare_tx(&packet)`. This
@@ -768,6 +776,7 @@ correct: TX_END → LISTEN, ADDRESS → IN_RX, RX_OK → IN_TX.
 - `pgfsk_hw_init()`, `pgfsk_hw_start()`, `pgfsk_hw_stop()`
 - `pgfsk_hw_set_role(role)`
 - `pgfsk_hw_start_listen()`           — explicit initial RX arm
+- `pgfsk_hw_wait_for_rx_active()`     — startup-only wait until radio state is `RX`
 - `pgfsk_hw_prepare_tx(packet)`       — stage packet + swap shorts to TXEN
 - `pgfsk_hw_trigger_prepared_tx()`   — trigger DISABLE for the pre-staged TX
 - `pgfsk_hw_set_deadline(tick)`       — arm timer CC[3], enable interrupt
@@ -801,6 +810,7 @@ Keep existing useful counters:
 
 - `lost`
 - `crc_err`
+- `dlate` (`deadline_late_count`)
 - `rxi` (`rx_incomplete_count`)
 - `outages`
 - `in_service_ms` (current uninterrupted in-service streak; derived live from

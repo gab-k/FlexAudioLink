@@ -28,7 +28,7 @@ struct pgfsk_frame {
 
 struct pgfsk_link_report {
 	uint32_t packets_tx;
-	uint32_t packets_rx;
+	uint32_t rx_ok_count;
 	uint32_t packets_lost_in_service;
 	uint32_t loss_burst_1_count;
 	uint32_t loss_burst_2_count;
@@ -36,6 +36,7 @@ struct pgfsk_link_report {
 	uint32_t loss_burst_5_plus_count;
 	uint32_t max_loss_burst_len;
 	uint32_t crc_error_count;
+	uint32_t deadline_late_count;
 	uint32_t rx_incomplete_count;
 	uint32_t tx_trigger_fail_count;
 	uint32_t outage_count;

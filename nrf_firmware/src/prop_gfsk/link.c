@@ -166,6 +166,13 @@ static bool pgfsk_link_start_enabled(const struct pgfsk_link_config *config)
 		return pgfsk_link_abort_enable();
 	}
 
+	/* PACKETPTR is double-buffered, but startup still needs the radio to actively enter RX
+	 * before TX is pre-armed.
+	 */
+	if (!pgfsk_hw_wait_for_rx_active()) {
+		return pgfsk_link_abort_enable();
+	}
+
 	pgfsk_link_compose_packet(&g_link.prepared_tx_packet, g_link.next_tx_seq);
 	if (!pgfsk_hw_prepare_tx(&g_link.prepared_tx_packet)) {
 		return pgfsk_link_abort_enable();
@@ -299,8 +306,7 @@ static void pgfsk_link_record_in_service_rx(uint16_t seq)
 		uint16_t expected = g_link.last_rx_seq + 1U;
 		uint16_t gap;
 
-		if (pgfsk_link_seq_gap_from_expected(expected, seq, &gap) &&
-		    gap > 0U) {
+		if (pgfsk_link_seq_gap_from_expected(expected, seq, &gap) && gap > 0U) {
 			g_link.stats.packets_lost_in_service += gap;
 			pgfsk_link_record_loss_burst(gap);
 		}
@@ -403,8 +409,7 @@ static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 
 static void pgfsk_link_handle_rx_bad(void)
 {
-	if (g_link.state != PGFSK_STATE_LISTEN &&
-	    g_link.state != PGFSK_STATE_IN_RX) {
+	if (g_link.state != PGFSK_STATE_LISTEN && g_link.state != PGFSK_STATE_IN_RX) {
 		return;
 	}
 
@@ -684,7 +689,7 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 
 	*report = (struct pgfsk_link_report){
 		.packets_tx = hw_stats.packets_tx,
-		.packets_rx = hw_stats.packets_rx,
+		.rx_ok_count = hw_stats.rx_ok_count,
 		.packets_lost_in_service = stats.packets_lost_in_service,
 		.loss_burst_1_count = stats.loss_burst_1_count,
 		.loss_burst_2_count = stats.loss_burst_2_count,
@@ -692,6 +697,7 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 		.loss_burst_5_plus_count = stats.loss_burst_5_plus_count,
 		.max_loss_burst_len = stats.max_loss_burst_len,
 		.crc_error_count = hw_stats.crc_errors,
+		.deadline_late_count = hw_stats.deadline_late_count,
 		.rx_incomplete_count = stats.rx_incomplete_count,
 		.tx_trigger_fail_count = stats.tx_trigger_fail_count,
 		.outage_count = stats.outage_count,

@@ -33,6 +33,9 @@ static volatile struct radio_hw_state g_hw;
 static struct pgfsk_hw_stats g_stats;
 static struct k_spinlock g_lock;
 
+#define PGFSK_HW_RX_READY_POLL_US 100U
+#define PGFSK_HW_DEADLINE_MIN_LEAD_US 20U
+
 static void queue_radio_event(const struct pgfsk_hw_event *event)
 {
 	if (!g_hw.running || event == NULL) {
@@ -46,7 +49,7 @@ static void note_rx_ok(int16_t rssi_dbm)
 {
 	k_spinlock_key_t key = k_spin_lock(&g_lock);
 
-	g_stats.packets_rx++;
+	g_stats.rx_ok_count++;
 	g_stats.last_rssi_dbm = rssi_dbm;
 
 	k_spin_unlock(&g_lock, key);
@@ -284,10 +287,8 @@ void pgfsk_hw_start(void)
 	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_CLEAR);
 	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_START);
 
-	nrf_dppi_channels_enable(
-		PGFSK_DPPI,
-		BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
-			BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_enable(PGFSK_DPPI,
+							 BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) | BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
 
 	nrf_radio_shorts_set(NRF_RADIO,
 			     PGFSK_RADIO_BASE_SHORTS |
@@ -375,6 +376,17 @@ uint32_t pgfsk_hw_get_tick(void)
 	return nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_NOW);
 }
 
+bool pgfsk_hw_wait_for_rx_active(void)
+{
+	for (uint32_t waited_us = 0U; waited_us < PGFSK_HW_RX_READY_POLL_US; ++waited_us) {
+		if (nrf_radio_state_get(NRF_RADIO) == NRF_RADIO_STATE_RX) {
+			return true;
+		}
+		k_busy_wait(1U);
+	}
+	return false;
+}
+
 bool pgfsk_hw_start_listen(void)
 {
 	nrf_radio_state_t radio_state;
@@ -388,8 +400,7 @@ bool pgfsk_hw_start_listen(void)
 	}
 
 	radio_state = nrf_radio_state_get(NRF_RADIO);
-	if (radio_state == NRF_RADIO_STATE_RX ||
-	    radio_state == NRF_RADIO_STATE_RXIDLE) {
+	if (radio_state == NRF_RADIO_STATE_RX || radio_state == NRF_RADIO_STATE_RXIDLE) {
 		irq_unlock(irq_key);
 		return true;
 	}
@@ -455,12 +466,23 @@ bool pgfsk_hw_trigger_prepared_tx(void)
 void pgfsk_hw_set_deadline(uint32_t deadline_tick)
 {
 	unsigned int irq_key;
+	uint32_t now_tick;
 
 	irq_key = irq_lock();
 
 	if (!g_hw.running) {
 		irq_unlock(irq_key);
 		return;
+	}
+
+	now_tick = pgfsk_hw_get_tick();
+	if ((int32_t)(deadline_tick - now_tick) <= (int32_t)PGFSK_HW_DEADLINE_MIN_LEAD_US) {
+		k_spinlock_key_t key = k_spin_lock(&g_lock);
+
+		deadline_tick = now_tick + PGFSK_HW_DEADLINE_MIN_LEAD_US;
+		g_stats.deadline_late_count++;
+
+		k_spin_unlock(&g_lock, key);
 	}
 
 	nrf_timer_cc_set(PGFSK_TIMER, PGFSK_TIMER_CC_DEADLINE, deadline_tick);

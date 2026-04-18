@@ -46,7 +46,7 @@ static void cli_print_status_packet_group(const struct pgfsk_link_report *stats)
 
 	cli_print("[packets]\n");
 	cli_print("tx=%u\n", stats->packets_tx);
-	cli_print("rx=%u\n", stats->packets_rx);
+	cli_print("rx=%u\n", stats->rx_ok_count);
 	cli_print("lost=%u\n", stats->packets_lost_in_service);
 	cli_print("loss_burst_1=%u\n", stats->loss_burst_1_count);
 	cli_print("loss_burst_2=%u\n", stats->loss_burst_2_count);
@@ -54,6 +54,7 @@ static void cli_print_status_packet_group(const struct pgfsk_link_report *stats)
 	cli_print("loss_burst_5_plus=%u\n", stats->loss_burst_5_plus_count);
 	cli_print("loss_burst_max=%u\n", stats->max_loss_burst_len);
 	cli_print("crc_err=%u\n", stats->crc_error_count);
+	cli_print("deadline_late=%u\n", stats->deadline_late_count);
 	cli_print("rx_incomplete=%u\n", stats->rx_incomplete_count);
 	cli_print("tx_trigger_fail=%u\n", stats->tx_trigger_fail_count);
 }
@@ -138,22 +139,23 @@ static void cli_emit_status_push(void)
 
 	pgfsk_link_get_report(&stats);
 
-	if ((stats.packets_rx + stats.packets_lost_in_service) > 0U) {
+	if ((stats.rx_ok_count + stats.packets_lost_in_service) > 0U) {
 		loss_permille = (stats.packets_lost_in_service * 1000U) /
-			(stats.packets_rx + stats.packets_lost_in_service);
+			(stats.rx_ok_count + stats.packets_lost_in_service);
 	}
 
-	cli_print("#S rssi=%d loss=%u.%u tx=%u rx=%u "
-		  "lost=%u crc_err=%u rxi=%u txf=%u "
+	cli_print("#S rssi=%d loss=%u.%u tx=%u rx_ok=%u "
+		  "lost=%u crc_err=%u dlate=%u rx_incmplt=%u txf=%u "
 		  "lb1=%u lb2=%u lb34=%u lb5p=%u lbmax=%u "
 		  "outages=%u in_service_ms=%llu\n",
 		  stats.last_rssi_dbm,
 		  loss_permille / 10U,
 		  loss_permille % 10U,
 		  stats.packets_tx,
-		  stats.packets_rx,
+		  stats.rx_ok_count,
 		  stats.packets_lost_in_service,
 		  stats.crc_error_count,
+		  stats.deadline_late_count,
 		  stats.rx_incomplete_count,
 		  stats.tx_trigger_fail_count,
 		  stats.loss_burst_1_count,
@@ -174,9 +176,9 @@ static void cli_emit_status(void)
 
 	pgfsk_link_get_report(&stats);
 
-	if ((stats.packets_rx + stats.packets_lost_in_service) > 0U) {
+	if ((stats.rx_ok_count + stats.packets_lost_in_service) > 0U) {
 		loss_permille = (stats.packets_lost_in_service * 1000U) /
-			(stats.packets_rx + stats.packets_lost_in_service);
+			(stats.rx_ok_count + stats.packets_lost_in_service);
 	}
 
 	cli_print("[status]\n");
