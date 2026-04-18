@@ -91,11 +91,13 @@ So the state machine should be built around:
 
 Keep the existing shared external state:
 
-- `DISABLED`
 - `NO_SERVICE`
 - `IN_SERVICE`
 
-This remains shared between dongle and headset.
+This remains shared between dongle and headset. Whether the link is running
+at all is tracked separately via the config `enabled` flag (exposed through
+`pgfsk_link_is_enabled()`); when disabled, the external state reads as
+`NO_SERVICE`.
 
 ## Internal State Machine
 
@@ -107,7 +109,8 @@ The implementation uses exactly three internal states:
 
 This state machine is shared by both devices.
 
-On enable (`DISABLED` -> `NO_SERVICE`), the internal state machine enters
+On enable, the external state (already `NO_SERVICE` while disabled) stays
+`NO_SERVICE` and the internal state machine enters
 `LISTEN` with a randomized initial `rx_deadline_tick` and a pre-armed TX
 packet. In the current implementation, startup first enters RX and waits
 until the radio is actively in `RX` before pre-arming the first TX, even
@@ -420,7 +423,8 @@ It overrides the internal state machine from any state.
 
 On disable request:
 
-- external service state becomes `DISABLED`
+- `pgfsk_link_is_enabled()` returns false; external service state is reset to
+  `NO_SERVICE`
 - the internal three-state machine is no longer active
 - no further RX/TX turn-taking decisions are made until re-enabled
 - pending app TX and RX queue contents may be discarded

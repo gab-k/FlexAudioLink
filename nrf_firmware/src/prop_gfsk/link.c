@@ -61,7 +61,7 @@ static struct pgfsk_link_runtime g_link = {
 		.enabled = false,
 		.local_device_role = DEVICE_ROLE_HEADSET,
 	},
-	.service_state = PGFSK_LINK_STATE_DISABLED,
+	.service_state = PGFSK_LINK_STATE_NO_SERVICE,
 	.state = PGFSK_STATE_LISTEN,
 };
 
@@ -114,7 +114,7 @@ static void pgfsk_link_reset_runtime(const struct pgfsk_link_config *config)
 	key = k_spin_lock(&g_link.lock);
 
 	g_link.config = *config;
-	g_link.service_state = config->enabled ? PGFSK_LINK_STATE_NO_SERVICE : PGFSK_LINK_STATE_DISABLED;
+	g_link.service_state = PGFSK_LINK_STATE_NO_SERVICE;
 	g_link.state = PGFSK_STATE_LISTEN;
 	memset(&g_link.stats, 0, sizeof(g_link.stats));
 	g_link.rx_deadline_tick = 0U;
@@ -136,7 +136,7 @@ static bool pgfsk_link_abort_enable(void)
 
 	key = k_spin_lock(&g_link.lock);
 	g_link.config.enabled = false;
-	g_link.service_state = PGFSK_LINK_STATE_DISABLED;
+	g_link.service_state = PGFSK_LINK_STATE_NO_SERVICE;
 	g_link.rx_deadline_tick = 0U;
 	k_spin_unlock(&g_link.lock, key);
 
