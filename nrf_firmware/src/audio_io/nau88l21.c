@@ -4,6 +4,7 @@
 
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
 #define NAU88L21_I2C_ADDR 0x1B
 
@@ -17,8 +18,7 @@
 #define NAU88L21_REG_DAC_CONTROL                   0x73
 #define NAU88L21_REG_BOOST                         0x76
 #define NAU88L21_REG_POWER_UP_CONTROL              0x7F
-#define NAU88L21_REG_OUTPUT_DRIVER_CONTROL         0x80
-#define NAU88L21_REG_CHARGE_PUMP_CONTROL           0x81
+#define NAU88L21_REG_CHARGE_PUMP_CONTROL           0x80
 #define NAU88L21_REG_GENERAL_STATUS                0x82
 
 /* First-pass playback bring-up for the NAU88L21 eval board:
@@ -34,9 +34,9 @@
 #define NAU88L21_I2S_PCM_CTRL2_I2S_48K             0x301B
 #define NAU88L21_DAC_CONTROL_ENABLE_BOTH           0x0F08
 #define NAU88L21_BOOST_ENABLE_ANALOG_BIAS          0x0100
-#define NAU88L21_POWER_UP_OUTPUT_INTEGRATORS       0x0003
-#define NAU88L21_OUTPUT_DRIVER_STAGE_ONLY          0x000C
-#define NAU88L21_OUTPUT_DRIVER_MAIN_ENABLE         0x000F
+#define NAU88L21_POWER_UP_OUTPUT_INTEGRATORS       0x0030
+#define NAU88L21_POWER_UP_DRIVER_STAGE             0x003C
+#define NAU88L21_POWER_UP_DRIVER_MAIN              0x003F
 #define NAU88L21_CHARGE_PUMP_ENABLE_PRECHARGE      0x0B30
 
 static int nau88l21_write_reg(const struct device *i2c_dev, uint16_t reg, uint16_t value)
@@ -97,58 +97,49 @@ int nau88l21_init(const struct device *i2c_dev)
 
 	k_sleep(K_MSEC(1));
 
-	ret = nau88l21_read_reg(i2c_dev, NAU88L21_REG_GENERAL_STATUS,
-				(uint16_t *)&general_status);
+	ret = nau88l21_read_reg(i2c_dev, NAU88L21_REG_GENERAL_STATUS, (uint16_t *)&general_status);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL1,
-				 NAU88L21_I2S_PCM_CTRL1_I2S_16BIT);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL1, NAU88L21_I2S_PCM_CTRL1_I2S_16BIT);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL2,
-				 NAU88L21_I2S_PCM_CTRL2_I2S_48K);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL2, NAU88L21_I2S_PCM_CTRL2_I2S_48K);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BOOST,
-				 NAU88L21_BOOST_ENABLE_ANALOG_BIAS);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BOOST, NAU88L21_BOOST_ENABLE_ANALOG_BIAS);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_DAC_CONTROL,
-				 NAU88L21_DAC_CONTROL_ENABLE_BOTH);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_DAC_CONTROL, NAU88L21_DAC_CONTROL_ENABLE_BOTH);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL,
-				 NAU88L21_CHARGE_PUMP_ENABLE_PRECHARGE);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL, NAU88L21_CHARGE_PUMP_ENABLE_PRECHARGE);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL,
-				 NAU88L21_POWER_UP_OUTPUT_INTEGRATORS);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL, NAU88L21_POWER_UP_OUTPUT_INTEGRATORS);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_OUTPUT_DRIVER_CONTROL,
-				 NAU88L21_OUTPUT_DRIVER_STAGE_ONLY);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL, NAU88L21_POWER_UP_DRIVER_STAGE);
 	if (ret < 0) {
 		return ret;
 	}
 
 	k_sleep(K_MSEC(5));
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_OUTPUT_DRIVER_CONTROL,
-				 NAU88L21_OUTPUT_DRIVER_MAIN_ENABLE);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL, NAU88L21_POWER_UP_DRIVER_MAIN);
 	if (ret < 0) {
 		return ret;
 	}

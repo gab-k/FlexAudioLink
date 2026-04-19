@@ -24,8 +24,7 @@
 #define AUDIO_I2S_TONE_FREQUENCY_HZ        1000U
 #define AUDIO_I2S_TONE_AMPLITUDE           4000
 
-K_MEM_SLAB_DEFINE_STATIC(audio_i2s_tx_slab, AUDIO_I2S_BLOCK_SIZE,
-			 AUDIO_I2S_BLOCK_COUNT, 4);
+K_MEM_SLAB_DEFINE_STATIC(audio_i2s_tx_slab, AUDIO_I2S_BLOCK_SIZE, AUDIO_I2S_BLOCK_COUNT, 4);
 
 static const struct device *const i2s_dev = DEVICE_DT_GET(DT_NODELABEL(tdm));
 static const struct device *const codec_i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c23));
@@ -146,13 +145,16 @@ static void audio_i2s_thread(void *arg1, void *arg2, void *arg3)
 
 	ret = nau88l21_init(codec_i2c_dev);
 	if (ret < 0) {
-		printk("audio_i2s: codec init failed (%d)\n", ret);
+		printk("audio_i2s: codec init failed (%d: %s)\n", ret, strerror(-ret));
 		return;
+	}
+	else {
+		printk("audio_i2s: codec initialized (%d: %s)\n", ret, strerror(-ret));
 	}
 
 	ret = audio_i2s_configure();
 	if (ret < 0) {
-		printk("audio_i2s: I2S configure failed (%d)\n", ret);
+		printk("audio_i2s: I2S configure failed (%d: %s)\n", ret, strerror(-ret));
 		return;
 	}
 
@@ -168,7 +170,7 @@ static void audio_i2s_thread(void *arg1, void *arg2, void *arg3)
 		if (!audio_i2s_running) {
 			ret = audio_i2s_start();
 			if (ret < 0) {
-				printk("audio_i2s: start failed (%d)\n", ret);
+				printk("audio_i2s: start failed (%d: %s)\n", ret, strerror(-ret));
 				k_sleep(K_MSEC(100));
 				continue;
 			}
@@ -176,7 +178,7 @@ static void audio_i2s_thread(void *arg1, void *arg2, void *arg3)
 
 		ret = audio_i2s_queue_tone_block();
 		if (ret < 0) {
-			printk("audio_i2s: write failed (%d)\n", ret);
+			printk("audio_i2s: write failed (%d: %s)\n", ret, strerror(-ret));
 			audio_i2s_stop();
 			k_sleep(K_MSEC(50));
 		}
