@@ -2,6 +2,7 @@
 
 #include "app_control.h"
 #include "audio_io/i2s.h"
+#include "audio_io/i2s_tone.h"
 #include "prop_gfsk/link.h"
 #include "prop_gfsk/test_mode.h"
 
@@ -410,9 +411,10 @@ static void cli_cmd_i2s(char *args)
 	}
 
 	if (value == NULL || strcasecmp(value, "status") == 0) {
-		cli_print("i2s ready=%s tone=%s\n",
+		cli_print("i2s ready=%s tone=%s tone_blocks=%u\n",
 			  audio_i2s_is_ready() ? "yes" : "no",
-			  audio_i2s_is_tone_enabled() ? "on" : "off");
+			  audio_i2s_tone_is_enabled() ? "on" : "off",
+			  audio_i2s_tone_get_enqueued_blocks());
 		return;
 	}
 
@@ -422,13 +424,13 @@ static void cli_cmd_i2s(char *args)
 			return;
 		}
 
-		audio_i2s_set_tone_enabled(true);
+		audio_i2s_tone_set_enabled(true);
 		cli_print("OK i2s tone=on\n");
 		return;
 	}
 
 	if (strcasecmp(value, "off") == 0) {
-		audio_i2s_set_tone_enabled(false);
+		audio_i2s_tone_set_enabled(false);
 		cli_print("OK i2s tone=off\n");
 		return;
 	}

@@ -14,8 +14,8 @@ target_sources(app PRIVATE
     src/main.c
     src/app_control.c
     src/cli.c
-    src/audio_io/audio_io.c
     src/audio_io/i2s.c
+    src/audio_io/i2s_tone.c
     src/audio_io/nau88l21.c
     src/prop_gfsk/radio_hw.c
     src/prop_gfsk/link.c

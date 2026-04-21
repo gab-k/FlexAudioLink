@@ -1,10 +1,12 @@
 #include "audio_io/nau88l21.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 
 #define NAU88L21_I2C_ADDR 0x1B
 
@@ -13,31 +15,109 @@
  * authoritative address for the initial defensive reset in bring-up.
  */
 #define NAU88L21_REG_RESET                         0x00
+#define NAU88L21_REG_ENA_CTRL                      0x01
+#define NAU88L21_REG_CLK_DIVIDER                   0x03
+#define NAU88L21_REG_FLL1                          0x04
+#define NAU88L21_REG_FLL3                          0x06
+#define NAU88L21_REG_FLL4                          0x07
+#define NAU88L21_REG_FLL5                          0x08
+#define NAU88L21_REG_FLL6                          0x09
+#define NAU88L21_REG_FLL7                          0x0A
+#define NAU88L21_REG_FLL8                          0x0B
+#define NAU88L21_REG_JACK_DET_CTRL                 0x0D
 #define NAU88L21_REG_I2S_PCM_CTRL1                 0x1C
 #define NAU88L21_REG_I2S_PCM_CTRL2                 0x1D
+#define NAU88L21_REG_LEFT_TIME_SLOT                0x1E
+#define NAU88L21_REG_CLASSG_CTRL                   0x4B
+#define NAU88L21_REG_BIAS_ADJ                      0x66
+#define NAU88L21_REG_ANALOG_CONTROL_2              0x6A
 #define NAU88L21_REG_DAC_CONTROL                   0x73
 #define NAU88L21_REG_BOOST                         0x76
 #define NAU88L21_REG_POWER_UP_CONTROL              0x7F
 #define NAU88L21_REG_CHARGE_PUMP_CONTROL           0x80
 #define NAU88L21_REG_GENERAL_STATUS                0x82
 
-/* First-pass playback bring-up for the NAU88L21 eval board:
+#define NAU88L21_GENERAL_STATUS_FLL_LOCK_MASK      BIT(5)
+#define NAU88L21_FLL_LOCK_POLL_TIMEOUT_MS          100U
+#define NAU88L21_FLL_LOCK_POLL_INTERVAL_MS         2U
+
+BUILD_ASSERT(NAU88L21_I2S_CODEC_CLOCK_MASTER,
+	     "NAU88L21 register table expects codec-master I2S clocking");
+
+/* Playback bring-up for NAU88L21:
  * - standard I2S
  * - 16-bit stereo
- * - codec slave mode
+ * - codec master mode (48 kHz) using FLL from 32 MHz MCLKI
  * - DAC/headphone path powered up
  *
  * These values are derived from the datasheet register tables and kept
- * intentionally minimal for the first audible-tone milestone.
+ * intentionally minimal.
  */
 #define NAU88L21_I2S_PCM_CTRL1_I2S_16BIT           0x0002
-#define NAU88L21_I2S_PCM_CTRL2_I2S_48K             0x301B
-#define NAU88L21_DAC_CONTROL_ENABLE_BOTH           0x0F08
-#define NAU88L21_BOOST_ENABLE_ANALOG_BIAS          0x0100
-#define NAU88L21_POWER_UP_OUTPUT_INTEGRATORS       0x0030
-#define NAU88L21_POWER_UP_DRIVER_STAGE             0x003C
+/* FLL for 32 MHz reference:
+ * - keep FLL tuning defaults, but force ratio=1 and retune integer/fraction.
+ * - FLL4 pre-scale divider is REG0x07[11:10]; set to 10b (1/4), so FREF=8 MHz.
+ * - FDCO target is 98.304 MHz, then MCLK_SRC=1/4 => 12.288 MHz.
+ */
+#define NAU88L21_FLL1_RATIO_1_ICTRL_6              0x1801
+#define NAU88L21_FLL3_INTEGER_12                   0x000C
+#define NAU88L21_FLL4_REFDIV_1_4                   0x8810
+#define NAU88L21_FLL5_LOOP_FILTER_FRACTIONAL       0xC000
+#define NAU88L21_FLL6_FRACTIONAL_SDM_CUTOFF500     0x6000
+#define NAU88L21_CLK_DIVIDER_MCLK_48K_SETUP        0x0053
+#define NAU88L21_FLL7_FRAC_H_32M                   0x0049
+#define NAU88L21_FLL8_FRAC_L_32M                   0xBA5E
+/* REG0x03: SYSCLK from 1/2 DCO, MCLK_SRC = 1/4 (12.288 MHz from FLL DCO). */
+#define NAU88L21_CLK_DIVIDER_FLL_48K               0x8053
+/* REG0x1D:
+ * - master mode
+ * - BCLK=MCLK/8 (1.536 MHz), LRCK=BCLK/32 for 48 kHz -> 16 BCLK per channel
+ *   slot. Matches nRF TDM slave I2S geometry (sample_width=16 => 16 BCLK/slot).
+ * - clear I2S_TRI from default high-Z state
+ * - force clock outputs enabled (I2S_DRV=1) during bring-up
+ * Field layout: bit14 DRV=1, bits[13:12] LRC_DIV=11 (/32), bit4=1 (reserved
+ * NAU88L21 bit kept as seen in prior working-clocks readback), bit3 MS=1,
+ * bits[2:0] BLK_DIV=011 (MCLK/8).
+ */
+#define NAU88L21_I2S_PCM_CTRL2_MASTER_48K_16BIT    0x701B
+/* Output path bring-up values. Static init programs bias/clocks/pump, then a
+ * staged power-up sequence enables the DAC and HP driver chain:
+ *   stage 0: R4B Class G DAC enables
+ *   stage 1: R80 charge-pump enable, 20 ms settle, JAMNODCLOW
+ *   stage 2: R73 analog DACL/R
+ *   stage 3: R73 analog DAC clocks
+ *   stage 4-6: R7F integrators -> input stages -> main drivers
+ *   stage 7: R80 "Output DACL/R" (POWER_DOWN_DACL/R bits, misleadingly named)
+ *   stage 9: R76 HP boost driver, R4B Class G enable,
+ *            R66 clear BIAS_TESTDAC_EN so DAC signal reaches the HP path
+ *   final:   R01 EN_DACL/R
+ */
+#define NAU88L21_BIAS_ADJ_INIT                     0x0350
+/* Clear BIAS_TESTDAC_EN (R66[9:8]) so the DAC signal can reach the HP path. */
+#define NAU88L21_BIAS_ADJ_PLAYBACK                 0x0050
+#define NAU88L21_LEFT_TIME_SLOT_INIT               0x2000
+#define NAU88L21_BOOST_INIT                        0x3340
+#define NAU88L21_BOOST_PLAYBACK                    0x3140
+#define NAU88L21_CLASSG_CTRL_TIMER                 0x2000
+#define NAU88L21_CLASSG_CTRL_HP_AMPS               0x2006
+#define NAU88L21_CLASSG_CTRL_PLAYBACK              0x2007
+#define NAU88L21_ANALOG_CONTROL_2_INIT             0x1003
+#define NAU88L21_RDAC_INIT                         0x0034
+#define NAU88L21_RDAC_DAC_EN                       0x3034
+#define NAU88L21_RDAC_PLAYBACK                     0x3334
+#define NAU88L21_CHARGE_PUMP_CLEAR_PD              0x0000
+#define NAU88L21_CHARGE_PUMP_EN                    0x0020
+#define NAU88L21_CHARGE_PUMP_PLAYBACK              0x0420
+/* Setting R80 POWER_DOWN_DACL/R (bits 8,9) to 1 actually enables the DAC
+ * output stage despite the misleading register-field name.
+ */
+#define NAU88L21_CHARGE_PUMP_OUTPUT_DAC            0x0720
+/* SPKR_DWN1L/R=1 un-grounds HPL/HPR. Leaving them 0 shorts HP to GND -> silence. */
+#define NAU88L21_JACK_DET_CTRL_UNGROUND_HP         0xC000
+#define NAU88L21_POWER_UP_INTEGRATORS              0x0030
+#define NAU88L21_POWER_UP_DRIVER_INSTG             0x003C
 #define NAU88L21_POWER_UP_DRIVER_MAIN              0x003F
-#define NAU88L21_CHARGE_PUMP_ENABLE_PRECHARGE      0x0B30
+#define NAU88L21_ENA_CTRL_EN_DAC_MASK              0x0C00
 
 static int nau88l21_write_reg(const struct device *i2c_dev, uint16_t reg, uint16_t value)
 {
@@ -79,7 +159,9 @@ static int nau88l21_read_reg(const struct device *i2c_dev, uint16_t reg, uint16_
 int nau88l21_init(const struct device *i2c_dev)
 {
 	int ret;
-	volatile uint16_t general_status = 0U;
+	uint16_t fll_status = 0U;
+	uint32_t fll_wait_ms = 0U;
+	bool fll_locked = false;
 
 	if (i2c_dev == NULL) {
 		return -EINVAL;
@@ -90,61 +172,239 @@ int nau88l21_init(const struct device *i2c_dev)
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_RESET, 0x0001);
-	if (ret < 0) {
-		return ret;
-	}
-
 	k_sleep(K_MSEC(1));
-
-	ret = nau88l21_read_reg(i2c_dev, NAU88L21_REG_GENERAL_STATUS, (uint16_t *)&general_status);
-	if (ret < 0) {
-		return ret;
-	}
 
 	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL1, NAU88L21_I2S_PCM_CTRL1_I2S_16BIT);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL2, NAU88L21_I2S_PCM_CTRL2_I2S_48K);
+	/* Keep SYSCLK on MCLK pin while programming FLL. */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CLK_DIVIDER,
+				 NAU88L21_CLK_DIVIDER_MCLK_48K_SETUP);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BOOST, NAU88L21_BOOST_ENABLE_ANALOG_BIAS);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL1, NAU88L21_FLL1_RATIO_1_ICTRL_6);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_DAC_CONTROL, NAU88L21_DAC_CONTROL_ENABLE_BOTH);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL3, NAU88L21_FLL3_INTEGER_12);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL, NAU88L21_CHARGE_PUMP_ENABLE_PRECHARGE);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL4, NAU88L21_FLL4_REFDIV_1_4);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL, NAU88L21_POWER_UP_OUTPUT_INTEGRATORS);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL5, NAU88L21_FLL5_LOOP_FILTER_FRACTIONAL);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL, NAU88L21_POWER_UP_DRIVER_STAGE);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL6, NAU88L21_FLL6_FRACTIONAL_SDM_CUTOFF500);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL7, NAU88L21_FLL7_FRAC_H_32M);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL8, NAU88L21_FLL8_FRAC_L_32M);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Let the FLL settle before switching SYSCLK source to the FLL output. */
+	k_sleep(K_MSEC(2));
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CLK_DIVIDER, NAU88L21_CLK_DIVIDER_FLL_48K);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Poll FLL lock after clocking switches to the FLL path. */
+	for (fll_wait_ms = 0U; fll_wait_ms <= NAU88L21_FLL_LOCK_POLL_TIMEOUT_MS;
+	     fll_wait_ms += NAU88L21_FLL_LOCK_POLL_INTERVAL_MS) {
+		ret = nau88l21_read_reg(i2c_dev, NAU88L21_REG_GENERAL_STATUS, &fll_status);
+		if (ret < 0) {
+			return ret;
+		}
+
+		if ((fll_status & NAU88L21_GENERAL_STATUS_FLL_LOCK_MASK) != 0U) {
+			fll_locked = true;
+			break;
+		}
+
+		if (fll_wait_ms == NAU88L21_FLL_LOCK_POLL_TIMEOUT_MS) {
+			break;
+		}
+
+		k_sleep(K_MSEC(NAU88L21_FLL_LOCK_POLL_INTERVAL_MS));
+	}
+
+	if (!fll_locked) {
+		printk("nau88l21: WARN FLL not locked within %u ms (status=0x%04x)\n",
+		       NAU88L21_FLL_LOCK_POLL_TIMEOUT_MS, fll_status);
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_I2S_PCM_CTRL2,
+				 NAU88L21_I2S_PCM_CTRL2_MASTER_48K_16BIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Static output-path init. */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BIAS_ADJ, NAU88L21_BIAS_ADJ_INIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_LEFT_TIME_SLOT,
+				 NAU88L21_LEFT_TIME_SLOT_INIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BOOST, NAU88L21_BOOST_INIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CLASSG_CTRL, NAU88L21_CLASSG_CTRL_TIMER);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_ANALOG_CONTROL_2,
+				 NAU88L21_ANALOG_CONTROL_2_INIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_DAC_CONTROL, NAU88L21_RDAC_INIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL,
+				 NAU88L21_CHARGE_PUMP_CLEAR_PD);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Un-ground HPL/HPR (clear SPKR_DWN1L/R in JACK_DET_CTRL). */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_JACK_DET_CTRL,
+				 NAU88L21_JACK_DET_CTRL_UNGROUND_HP);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Stage 0: HP amp L/R (Class G DAC enables). */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CLASSG_CTRL, NAU88L21_CLASSG_CTRL_HP_AMPS);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Stage 1: Charge pump enable, then JAMNODCLOW after 20 ms (pump PMU event). */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL,
+				 NAU88L21_CHARGE_PUMP_EN);
+	if (ret < 0) {
+		return ret;
+	}
+
+	k_sleep(K_MSEC(20));
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL,
+				 NAU88L21_CHARGE_PUMP_PLAYBACK);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Stage 2: analog DACL/R. */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_DAC_CONTROL, NAU88L21_RDAC_DAC_EN);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Stage 3: analog DAC clocks. */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_DAC_CONTROL, NAU88L21_RDAC_PLAYBACK);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Stages 4..6: output driver integrators, input stages, main drivers. */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL,
+				 NAU88L21_POWER_UP_INTEGRATORS);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL,
+				 NAU88L21_POWER_UP_DRIVER_INSTG);
 	if (ret < 0) {
 		return ret;
 	}
 
 	k_sleep(K_MSEC(5));
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL, NAU88L21_POWER_UP_DRIVER_MAIN);
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_POWER_UP_CONTROL,
+				 NAU88L21_POWER_UP_DRIVER_MAIN);
 	if (ret < 0) {
 		return ret;
 	}
 
-	k_sleep(K_MSEC(1));
+	/* Stage 9: enable HP boost driver (clear HP_BOOST_DIS). */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BOOST, NAU88L21_BOOST_PLAYBACK);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Ungate Class G. */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CLASSG_CTRL,
+				 NAU88L21_CLASSG_CTRL_PLAYBACK);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Let the DAC signal pass through (clear BIAS_TESTDAC_EN). */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_BIAS_ADJ,
+				 NAU88L21_BIAS_ADJ_PLAYBACK);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Stage 7: assert "Output DACL/R" (R80 POWER_DOWN_DACL/R, misleadingly named
+	 * — setting them is what enables DAC output to drive the HP path).
+	 */
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_CHARGE_PUMP_CONTROL,
+				 NAU88L21_CHARGE_PUMP_OUTPUT_DAC);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Enable digital DACL/R in ENA_CTRL (preserve other default enables). */
+	{
+		uint16_t ena_ctrl = 0U;
+
+		ret = nau88l21_read_reg(i2c_dev, NAU88L21_REG_ENA_CTRL, &ena_ctrl);
+		if (ret < 0) {
+			return ret;
+		}
+		ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_ENA_CTRL,
+					 ena_ctrl | NAU88L21_ENA_CTRL_EN_DAC_MASK);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
+	k_sleep(K_MSEC(20));
 
 	return 0;
 }
