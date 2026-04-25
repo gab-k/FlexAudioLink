@@ -14,6 +14,9 @@ target_sources(app PRIVATE
     src/main.c
     src/app_control.c
     src/cli.c
+    src/audio_io/audio_path_common.c
+    src/audio_io/audio_path_wired.c
+    src/audio_io/audio_path_wireless.c
     src/audio_io/i2s.c
     src/audio_io/i2s_tone.c
     src/audio_io/nau88l21.c
@@ -21,6 +24,7 @@ target_sources(app PRIVATE
     src/prop_gfsk/link.c
     src/prop_gfsk/test_mode.c
     src/usb/usb_device.c
+    src/usb/usb_audio.c
     src/usb/usb_cdc.c
     src/usb/usb_descriptors.c
     ${TINYUSB_DIR}/src/tusb.c

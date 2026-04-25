@@ -306,15 +306,16 @@ void pgfsk_hw_start(void)
 	irq_unlock(irq_key);
 }
 
-void pgfsk_hw_set_role(enum device_role role)
+void pgfsk_hw_set_role_dongle(void)
 {
-	if (role == DEVICE_ROLE_DONGLE) {
-		nrf_radio_txaddress_set(NRF_RADIO, 0);
-		nrf_radio_rxaddresses_set(NRF_RADIO, 1 << 1);
-	} else {
-		nrf_radio_txaddress_set(NRF_RADIO, 1);
-		nrf_radio_rxaddresses_set(NRF_RADIO, 1 << 0);
-	}
+	nrf_radio_txaddress_set(NRF_RADIO, 0);
+	nrf_radio_rxaddresses_set(NRF_RADIO, 1 << 1);
+}
+
+void pgfsk_hw_set_role_headset(void)
+{
+	nrf_radio_txaddress_set(NRF_RADIO, 1);
+	nrf_radio_rxaddresses_set(NRF_RADIO, 1 << 0);
 }
 
 void pgfsk_hw_stop(void)

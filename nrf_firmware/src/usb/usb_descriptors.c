@@ -2,15 +2,14 @@
 
 #include <zephyr/drivers/hwinfo.h>
 
+#include "usb/usb_descriptors.h"
+
 #include "tusb.h"
-#include "usb/usb_device.h"
 
 //--------------------------------------------------------------------+
 // PID MAPPING
 //--------------------------------------------------------------------+
-// Defining two different PIDs. This is CRITICAL especially for Windows.
-// Using the same PID for two different descriptor layouts
-// (one with Audio, one without), might lead to issues in the OS driver.
+// Fixed UAC+CDC composite profile.
 #define PID_MAP(itf, n)  ((CFG_TUD_##itf) ? (1 << (n)) : 0)
 #define USB_VID          0xCafe
 #define USB_BCD          0x0200
@@ -19,50 +18,10 @@
 #define USB_PID_UAC_CDC  (0x4000 | PID_MAP(CDC, 0) | PID_MAP(MSC, 1) | \
                           PID_MAP(HID, 2) | PID_MAP(MIDI, 3) | PID_MAP(AUDIO, 4) | \
                           PID_MAP(VENDOR, 5))
-// PID for CDC Only Mode
-#define USB_PID_CDC      (0x4000 | PID_MAP(CDC, 0))
-
-enum
-{
-    ITF_NUM_AUDIO_CONTROL = 0,
-    ITF_NUM_AUDIO_STREAMING_SPK,
-    ITF_NUM_AUDIO_STREAMING_MIC,
-    ITF_NUM_CDC,
-    ITF_NUM_CDC_DATA,
-    ITF_NUM_TOTAL
-};
-
-enum
-{
-    ITF_NUM_CDC_ONLY = 0,
-    ITF_NUM_CDC_DATA_ONLY,
-    ITF_NUM_TOTAL_CDC_ONLY
-};
-
-enum
-{
-    STRID_LANGID = 0,
-    STRID_MANUFACTURER,
-    STRID_PRODUCT,
-    STRID_SERIAL,
-    STRID_UAC1,
-    STRID_UAC2,
-    STRID_CDC,
-};
 
 //--------------------------------------------------------------------+
 // UAC2 DESCRIPTOR TEMPLATES
 //--------------------------------------------------------------------+
-
-// Unit numbers are arbitrary selected
-#define UAC2_ENTITY_CLOCK               0x04
-// Speaker path
-#define UAC2_ENTITY_SPK_INPUT_TERMINAL  0x01
-#define UAC2_ENTITY_SPK_FEATURE_UNIT    0x02
-#define UAC2_ENTITY_SPK_OUTPUT_TERMINAL 0x03
-// Microphone path
-#define UAC2_ENTITY_MIC_INPUT_TERMINAL  0x11
-#define UAC2_ENTITY_MIC_OUTPUT_TERMINAL 0x13
 
 #define TUD_AUDIO20_HEADSET_STEREO_DESC_LEN (TUD_AUDIO20_DESC_IAD_LEN\
     + TUD_AUDIO20_DESC_STD_AC_LEN\
@@ -154,15 +113,6 @@ enum
 // UAC1 DESCRIPTOR TEMPLATES
 //--------------------------------------------------------------------+
 
-// UAC1 entity IDs for speaker and microphone
-// Speaker path
-#define UAC1_ENTITY_SPK_INPUT_TERMINAL  0x01
-#define UAC1_ENTITY_SPK_FEATURE_UNIT    0x02
-#define UAC1_ENTITY_SPK_OUTPUT_TERMINAL 0x03
-// Microphone path
-#define UAC1_ENTITY_MIC_INPUT_TERMINAL  0x11
-#define UAC1_ENTITY_MIC_OUTPUT_TERMINAL 0x13
-
 #define TUD_AUDIO10_HEADSET_STEREO_DESC_LEN(_nfreqs) (\
     + TUD_AUDIO10_DESC_STD_AC_LEN\
     + TUD_AUDIO10_DESC_CS_AC_LEN(2)\
@@ -249,34 +199,9 @@ tusb_desc_device_t const desc_device_uac_cdc =
     .bNumConfigurations = 0x01
 };
 
-tusb_desc_device_t const desc_device_cdc =
-{
-    .bLength            = sizeof(tusb_desc_device_t),
-    .bDescriptorType    = TUSB_DESC_DEVICE,
-    .bcdUSB             = USB_BCD,
-    .bDeviceClass       = TUSB_CLASS_MISC,
-    .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
-    .bDeviceProtocol    = MISC_PROTOCOL_IAD,
-    .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
-    .idVendor           = USB_VID,
-    .idProduct          = USB_PID_CDC,
-    .bcdDevice          = 0x0100,
-    .iManufacturer      = STRID_MANUFACTURER,
-    .iProduct           = STRID_PRODUCT,
-    .iSerialNumber      = STRID_SERIAL,
-    .bNumConfigurations = 0x01
-};
-
 uint8_t const *tud_descriptor_device_cb(void)
 {
-    switch (usb_device_get_current_profile()) {
-        case USB_DEVICE_PROFILE_UAC_CDC:
-            return (uint8_t const *) &desc_device_uac_cdc;
-
-        case USB_DEVICE_PROFILE_CDC:
-        default:
-            return (uint8_t const *) &desc_device_cdc;
-    }
+    return (uint8_t const *) &desc_device_uac_cdc;
 }
 
 //--------------------------------------------------------------------+
@@ -319,30 +244,15 @@ uint8_t const desc_fs_configuration_uac_cdc[] =
         /* TX */ CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_TX,
         /* EP */ EPNUM_AUDIO_SPK_OUT, UAC1_EP_OUT_SIZE,
         /* EP */ EPNUM_AUDIO_MIC_IN,  UAC1_EP_IN_SIZE,
-        /* Freqs */ 48000
+        /* Freqs */ CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE
     ),
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
 };
 TU_VERIFY_STATIC(sizeof(desc_fs_configuration_uac_cdc) == CONFIG_UAC1_TOTAL_LEN, "Incorrect UAC1 size");
 
-// ==========================================
-// CONFIG B: CDC ONLY
-// ==========================================
-#define CONFIG_CDC_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
-uint8_t const desc_configuration_cdc[] =
-{
-    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL_CDC_ONLY, 0, CONFIG_CDC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_ONLY, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
-};
-TU_VERIFY_STATIC(sizeof(desc_configuration_cdc) == CONFIG_CDC_TOTAL_LEN, "Incorrect CDC size");
-
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 {
     (void) index;
-
-    if (usb_device_get_current_profile() == USB_DEVICE_PROFILE_CDC) {
-        return desc_configuration_cdc;
-    }
 
 #if TUD_OPT_HIGH_SPEED
     return (tud_speed_get() == TUSB_SPEED_HIGH) ? desc_hs_configuration_uac_cdc : desc_fs_configuration_uac_cdc;
@@ -373,10 +283,6 @@ uint8_t const *tud_descriptor_device_qualifier_cb(void)
 uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
 {
     (void) index;
-
-    if (usb_device_get_current_profile() == USB_DEVICE_PROFILE_CDC) {
-        return desc_configuration_cdc;
-    }
 
     return (tud_speed_get() == TUSB_SPEED_HIGH) ? desc_fs_configuration_uac_cdc : desc_hs_configuration_uac_cdc;
 }
@@ -447,18 +353,16 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
         return desc_str;
     }
 
-    if (index == STRID_PRODUCT) {
-        str = (usb_device_get_current_profile() == USB_DEVICE_PROFILE_UAC_CDC) ? "TinyUSB Headset" : "TinyUSB CDC";
-    } else if (index == STRID_SERIAL) {
+    if (index == STRID_SERIAL) {
         chr_count = usb_get_serial_string(desc_str + 1, 32);
         desc_str[0] = (uint16_t) ((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
         return desc_str;
-    } else {
-        if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) {
-            return NULL;
-        }
-        str = string_desc_arr[index];
     }
+
+    if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) {
+        return NULL;
+    }
+    str = string_desc_arr[index];
 
     chr_count = strlen(str);
     if (chr_count > 32) {

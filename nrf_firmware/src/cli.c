@@ -3,6 +3,9 @@
 #include "app_control.h"
 #include "audio_io/i2s.h"
 #include "audio_io/i2s_tone.h"
+#include "audio_io/audio_path_common.h"
+#include "audio_io/audio_path_wired.h"
+#include "audio_io/audio_path_wireless.h"
 #include "prop_gfsk/link.h"
 #include "prop_gfsk/test_mode.h"
 
@@ -26,9 +29,12 @@
 
 static bool g_cli_connected;
 static bool g_cli_echo_enabled = true;
-static bool g_status_push_enabled;
-static uint32_t g_status_push_period_ms = 500;
-static int64_t g_next_status_deadline_ms;
+static bool g_status_link_push_enabled;
+static bool g_status_audio_push_enabled;
+static uint32_t g_status_link_push_period_ms = 500;
+static uint32_t g_status_audio_push_period_ms = 500;
+static int64_t g_next_status_link_deadline_ms;
+static int64_t g_next_status_audio_deadline_ms;
 /* Complete command lines are queued here and executed by the low-priority CLI thread. */
 K_MSGQ_DEFINE(g_cli_msgq, CLI_MAX_CMD_LEN, CLI_QUEUE_DEPTH, 4);
 /* Async user-visible messages from other threads are serialized here. */
@@ -38,43 +44,6 @@ static void cli_process_line(char *line);
 static void cli_thread(void *arg1, void *arg2, void *arg3);
 static void cli_init(void);
 static void cli_print(const char *fmt, ...);
-
-static void cli_print_status_packet_group(const struct pgfsk_link_report *stats)
-{
-	if (stats == NULL) {
-		return;
-	}
-
-	cli_print("[packets]\n");
-	cli_print("tx=%u\n", stats->packets_tx);
-	cli_print("rx=%u\n", stats->rx_ok_count);
-	cli_print("lost=%u\n", stats->packets_lost_in_service);
-	cli_print("loss_burst_1=%u\n", stats->loss_burst_1_count);
-	cli_print("loss_burst_2=%u\n", stats->loss_burst_2_count);
-	cli_print("loss_burst_3_4=%u\n", stats->loss_burst_3_4_count);
-	cli_print("loss_burst_5_plus=%u\n", stats->loss_burst_5_plus_count);
-	cli_print("loss_burst_max=%u\n", stats->max_loss_burst_len);
-	cli_print("crc_err=%u\n", stats->crc_error_count);
-	cli_print("deadline_late=%u\n", stats->deadline_late_count);
-	cli_print("rx_incomplete=%u\n", stats->rx_incomplete_count);
-	cli_print("tx_trigger_fail=%u\n", stats->tx_trigger_fail_count);
-}
-
-static void cli_print_status_link_group(const struct pgfsk_link_report *stats,
-					uint32_t loss_permille)
-{
-	if (stats == NULL) {
-		return;
-	}
-
-	cli_print("[link]\n");
-	cli_print("rssi=%d\n", stats->last_rssi_dbm);
-	cli_print("loss_pct=%u.%u\n",
-		  loss_permille / 10U,
-		  loss_permille % 10U);
-	cli_print("outages=%u\n", stats->outage_count);
-	cli_print("in_service_ms=%llu\n", stats->time_in_service_us / 1000U);
-}
 
 static size_t cli_strnlen(const char *s, size_t max_len)
 {
@@ -133,7 +102,7 @@ static void cli_print(const char *fmt, ...)
 	cli_write_raw(buf, (size_t)len);
 }
 
-static void cli_emit_status_push(void)
+static void cli_emit_status_link_push(void)
 {
 	struct pgfsk_link_report stats;
 	uint32_t loss_permille = 0U;
@@ -145,7 +114,7 @@ static void cli_emit_status_push(void)
 			(stats.rx_ok_count + stats.packets_lost_in_service);
 	}
 
-	cli_print("#S rssi=%d loss=%u.%u tx=%u rx_ok=%u "
+	cli_print("#L rssi=%d loss=%u.%u tx=%u rx_ok=%u "
 		  "lost=%u crc_err=%u dlate=%u rx_incmplt=%u txf=%u "
 		  "lb1=%u lb2=%u lb34=%u lb5p=%u lbmax=%u "
 		  "outages=%u in_service_ms=%llu\n",
@@ -168,39 +137,98 @@ static void cli_emit_status_push(void)
 		  stats.time_in_service_us / 1000U);
 }
 
-static void cli_emit_status(void)
+static void cli_emit_status_audio_push(void)
 {
-	struct pgfsk_link_report stats;
-	uint32_t loss_permille = 0U;
-	enum operating_mode mode = app_control_get_current_operating_mode();
-	enum device_role role = app_control_get_current_role();
+	enum app_profile profile = app_control_get_current_profile();
 
-	pgfsk_link_get_report(&stats);
+	switch (profile) {
+	case APP_PROFILE_USB: {
+		struct audio_path_wired_status s;
 
-	if ((stats.rx_ok_count + stats.packets_lost_in_service) > 0U) {
-		loss_permille = (stats.packets_lost_in_service * 1000U) /
-			(stats.rx_ok_count + stats.packets_lost_in_service);
+		audio_path_wired_get_status(&s);
+		cli_print("#A active=%s state=%s spk_level_bytes=%u "
+			  "spk_fifo_bytes=%u spk_pending_bytes=%u "
+			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
+			  "mic_level_bytes=%u mic_overruns=%u\n",
+			  "wired",
+			  audio_path_get_state_name(s.stream_state),
+			  s.spk_level_bytes,
+			  s.spk_fifo_bytes,
+			  s.spk_pending_bytes,
+			  s.spk_filtered_level_bytes,
+			  s.spk_error_bytes,
+			  s.spk_p_adjust_hz,
+			  s.mic_level_bytes,
+			  s.mic_overflow_bytes);
+		return;
 	}
+	case APP_PROFILE_PGFSK_DONGLE: {
+		struct audio_path_wireless_status s;
 
-	cli_print("[status]\n");
-	cli_print("role=%s\n", app_control_get_role_name(role));
-	cli_print("mode=%s\n", app_control_get_operating_mode_name(mode));
-	cli_print("\n");
-	cli_print_status_link_group(&stats, loss_permille);
-	cli_print("\n");
-	cli_print_status_packet_group(&stats);
-	cli_print("\n");
-	cli_print("[audio]\n");
-	cli_print("underruns=0\n");
-	cli_print("overruns=0\n");
-	cli_print("codec_errors=0\n");
+		audio_path_wireless_get_status(&s);
+		cli_print("#A active=%s state=%s spk_level_bytes=%u "
+			  "peer_adjust_hz=%d spk_underruns=%u overruns=%u spk_silence_bytes=%u "
+			  "spk_dropped_oldest_bytes=%u spk_usb_level_bytes=%u mic_usb_level_bytes=%u "
+			  "rx_malformed_frames=%u\n",
+			  "wireless",
+			  audio_path_get_state_name(s.stream_state),
+			  s.spk_level_bytes,
+			  s.peer_adjust_hz,
+			  s.spk_underrun_bytes,
+			  s.overflow_bytes,
+			  s.spk_silence_inserted_bytes,
+			  s.spk_dropped_oldest_bytes,
+			  s.spk_usb_level_bytes,
+			  s.mic_usb_level_bytes,
+			  s.rx_malformed_frames);
+		return;
+	}
+	case APP_PROFILE_PGFSK_HEADSET: {
+		struct audio_path_wireless_status s;
+
+		audio_path_wireless_get_status(&s);
+		cli_print("#A active=%s state=%s spk_level_bytes=%u "
+			  "spk_p_adjust_hz=%d spk_underruns=%u overruns=%u spk_silence_bytes=%u "
+			  "spk_dropped_oldest_bytes=%u rx_malformed_frames=%u\n",
+			  "wireless",
+			  audio_path_get_state_name(s.stream_state),
+			  s.spk_level_bytes,
+			  s.spk_p_adjust_hz,
+			  s.spk_underrun_bytes,
+			  s.overflow_bytes,
+			  s.spk_silence_inserted_bytes,
+			  s.spk_dropped_oldest_bytes,
+			  s.rx_malformed_frames);
+		return;
+	}
+	default:
+		cli_print("#A active=none\n");
+		return;
+	}
 }
 
-static void cli_print_mode_group(void)
+static uint32_t cli_parse_status_period_ms(char *args_after_on)
 {
-	cli_print("[mode]\n");
-	cli_print("role=%s\n", app_control_get_role_name(app_control_get_current_role()));
-	cli_print("mode=%s\n", app_control_get_operating_mode_name(app_control_get_current_operating_mode()));
+	unsigned long value = 500UL;
+
+	while (args_after_on != NULL && (*args_after_on == ' ' || *args_after_on == '\t')) {
+		++args_after_on;
+	}
+
+	if (args_after_on != NULL && *args_after_on != '\0') {
+		value = strtoul(args_after_on, NULL, 10);
+		if (value == 0UL) {
+			value = 500UL;
+		}
+	}
+
+	return (uint32_t)value;
+}
+
+static void cli_print_profile_group(void)
+{
+	cli_print("[profile]\n");
+	cli_print("profile=%s\n", app_control_get_profile_name(app_control_get_current_profile()));
 }
 
 static void cli_print_radio_group(void)
@@ -209,7 +237,6 @@ static void cli_print_radio_group(void)
 	cli_print("phy_rate=4\n");
 	cli_print("tx_power=8\n");
 	cli_print("fhss_exclusion=none\n");
-	cli_print("ble_phy=2M\n");
 	cli_print("payload_ms_dl=1\n");
 	cli_print("payload_ms_ul=1\n");
 	cli_print("jitter_buffer_ms=10\n");
@@ -217,8 +244,25 @@ static void cli_print_radio_group(void)
 
 static void cli_print_device_group(void)
 {
+	const char *audio_io;
+
+	switch (app_control_get_current_profile()) {
+	case APP_PROFILE_USB:
+		audio_io = "wired";
+		break;
+	case APP_PROFILE_PGFSK_DONGLE:
+		audio_io = "usb";
+		break;
+	case APP_PROFILE_PGFSK_HEADSET:
+		audio_io = "codec";
+		break;
+	default:
+		audio_io = "unknown";
+		break;
+	}
+
 	cli_print("[device]\n");
-	cli_print("audio_io=%s\n", app_control_get_current_role() == DEVICE_ROLE_DONGLE ? "usb" : "codec");
+	cli_print("audio_io=%s\n", audio_io);
 	cli_print("device_addr=0xD0D0D0D0\n");
 	cli_print("peer_addr=0xA1A1A1A1\n");
 	cli_print("auto_sleep=0\n");
@@ -258,13 +302,11 @@ static void cli_print_help(void)
 	cli_print("  help\n");
 	cli_print("  echo on|off\n");
 	cli_print("  get <group|param>\n");
-	cli_print("  set role <dongle|headset>\n");
-	cli_print("  set mode <proprietary|ble|usb>\n");
+	cli_print("  set profile <usb|pgfsk_dongle|pgfsk_headset>\n");
 	cli_print("  i2s tone on|off|status\n");
 	cli_print("  linktest on|off|status\n");
-	cli_print("  status\n");
-	cli_print("  status on [ms]\n");
-	cli_print("  status off\n");
+	cli_print("  status_link on [ms]|off\n");
+	cli_print("  status_audio on [ms]|off\n");
 	cli_print("  reset\n");
 	cli_print("  scan\n");
 }
@@ -274,14 +316,14 @@ static void cli_cmd_get(const char *arg)
 	if (arg == NULL || *arg == '\0' || strcasecmp(arg, "all") == 0) {
 		cli_print_audio_group();
 		cli_print_radio_group();
-		cli_print_mode_group();
+		cli_print_profile_group();
 		cli_print_device_group();
 		cli_print_eq_group();
 		return;
 	}
 
-	if (strcasecmp(arg, "mode") == 0) {
-		cli_print_mode_group();
+	if (strcasecmp(arg, "profile") == 0) {
+		cli_print_profile_group();
 		return;
 	}
 
@@ -305,16 +347,6 @@ static void cli_cmd_get(const char *arg)
 		return;
 	}
 
-	if (strcasecmp(arg, "role") == 0) {
-		cli_print("role=%s\n", app_control_get_role_name(app_control_get_current_role()));
-		return;
-	}
-
-	if (strcasecmp(arg, "operating_mode") == 0) {
-		cli_print("mode=%s\n", app_control_get_operating_mode_name(app_control_get_current_operating_mode()));
-		return;
-	}
-
 	cli_print("ERR %s unknown_param\n", arg);
 }
 
@@ -332,55 +364,29 @@ static void cli_cmd_set(char *args)
 		++value;
 	}
 
-	if (strcasecmp(param, "role") == 0) {
+	if (strcasecmp(param, "profile") == 0) {
 		bool ok;
-		enum device_role role;
-		enum operating_mode mode = app_control_get_current_operating_mode();
+		enum app_profile profile;
 
-		if (strcasecmp(value, "dongle") == 0) {
-			role = DEVICE_ROLE_DONGLE;
-		} else if (strcasecmp(value, "headset") == 0) {
-			role = DEVICE_ROLE_HEADSET;
+		if (strcasecmp(value, "usb") == 0) {
+			profile = APP_PROFILE_USB;
+		} else if (strcasecmp(value, "pgfsk_dongle") == 0) {
+			profile = APP_PROFILE_PGFSK_DONGLE;
+		} else if (strcasecmp(value, "pgfsk_headset") == 0) {
+			profile = APP_PROFILE_PGFSK_HEADSET;
 		} else {
-			cli_print("ERR role invalid_value\n");
+			cli_print("ERR profile invalid_value\n");
 			return;
 		}
 
-		ok = app_control_set(role, mode);
+		ok = app_control_set_profile(profile);
 
 		if (!ok) {
-			cli_print("ERR role rejected\n");
+			cli_print("ERR profile rejected\n");
 			return;
 		}
 
-		cli_print("OK applied role=%s\n", value);
-		return;
-	}
-
-	if (strcasecmp(param, "mode") == 0) {
-		bool ok;
-		enum device_role role = app_control_get_current_role();
-		enum operating_mode mode;
-
-		if (strcasecmp(value, "proprietary") == 0) {
-			mode = OPERATING_MODE_PROPRIETARY;
-		} else if (strcasecmp(value, "ble") == 0) {
-			mode = OPERATING_MODE_BLE;
-		} else if (strcasecmp(value, "usb") == 0) {
-			mode = OPERATING_MODE_USB;
-		} else {
-			cli_print("ERR mode invalid_value\n");
-			return;
-		}
-
-		ok = app_control_set(role, mode);
-
-		if (!ok) {
-			cli_print("ERR mode rejected\n");
-			return;
-		}
-
-		cli_print("OK applied mode=%s\n", value);
+		cli_print("OK profile=%s\n", app_control_get_profile_name(profile));
 		return;
 	}
 
@@ -440,15 +446,13 @@ static void cli_cmd_i2s(char *args)
 
 static void cli_cmd_linktest(char *args)
 {
-	enum device_role role = app_control_get_current_role();
-
 	if (args == NULL || *args == '\0' || strcasecmp(args, "status") == 0) {
 		cli_print("linktest=%s\n", pgfsk_test_mode_is_running() ? "on" : "off");
 		return;
 	}
 
 	if (strcasecmp(args, "on") == 0) {
-		if (!pgfsk_test_mode_start(role)) {
+		if (!pgfsk_test_mode_start()) {
 			cli_print("ERR linktest start_failed\n");
 			return;
 		}
@@ -468,6 +472,54 @@ static void cli_cmd_linktest(char *args)
 	}
 
 	cli_print("ERR linktest invalid_value\n");
+}
+
+static void cli_cmd_status_link(char *args)
+{
+	if (args == NULL || *args == '\0') {
+		cli_print("ERR status_link invalid_value\n");
+		return;
+	}
+
+	if (strncasecmp(args, "on", 2) == 0) {
+		g_status_link_push_period_ms = cli_parse_status_period_ms(args + 2);
+		g_status_link_push_enabled = true;
+		g_next_status_link_deadline_ms = k_uptime_get() + g_status_link_push_period_ms;
+		cli_print("OK status_link=%u\n", g_status_link_push_period_ms);
+		return;
+	}
+
+	if (strcasecmp(args, "off") == 0) {
+		g_status_link_push_enabled = false;
+		cli_print("OK status_link=off\n");
+		return;
+	}
+
+	cli_print("ERR status_link invalid_value\n");
+}
+
+static void cli_cmd_status_audio(char *args)
+{
+	if (args == NULL || *args == '\0') {
+		cli_print("ERR status_audio invalid_value\n");
+		return;
+	}
+
+	if (strncasecmp(args, "on", 2) == 0) {
+		g_status_audio_push_period_ms = cli_parse_status_period_ms(args + 2);
+		g_status_audio_push_enabled = true;
+		g_next_status_audio_deadline_ms = k_uptime_get() + g_status_audio_push_period_ms;
+		cli_print("OK status_audio=%u\n", g_status_audio_push_period_ms);
+		return;
+	}
+
+	if (strcasecmp(args, "off") == 0) {
+		g_status_audio_push_enabled = false;
+		cli_print("OK status_audio=off\n");
+		return;
+	}
+
+	cli_print("ERR status_audio invalid_value\n");
 }
 
 static void cli_process_line(char *line)
@@ -512,41 +564,13 @@ static void cli_process_line(char *line)
 		return;
 	}
 
-	if (strcasecmp(cmd, "status") == 0) {
-		if (args == NULL || *args == '\0') {
-			cli_emit_status();
-			return;
-		}
+	if (strcasecmp(cmd, "status_link") == 0) {
+		cli_cmd_status_link(args);
+		return;
+	}
 
-		if (strncasecmp(args, "on", 2) == 0) {
-			char *period = args + 2;
-			unsigned long value = 500UL;
-
-			while (*period == ' ' || *period == '\t') {
-				++period;
-			}
-
-			if (*period != '\0') {
-				value = strtoul(period, NULL, 10);
-				if (value == 0UL) {
-					value = 500UL;
-				}
-			}
-
-			g_status_push_period_ms = (uint32_t)value;
-			g_status_push_enabled = true;
-			g_next_status_deadline_ms = k_uptime_get() + g_status_push_period_ms;
-			cli_print("OK status=%u\n", g_status_push_period_ms);
-			return;
-		}
-
-		if (strcasecmp(args, "off") == 0) {
-			g_status_push_enabled = false;
-			cli_print("OK status=off\n");
-			return;
-		}
-
-		cli_print("ERR status invalid_value\n");
+	if (strcasecmp(cmd, "status_audio") == 0) {
+		cli_cmd_status_audio(args);
 		return;
 	}
 
@@ -587,9 +611,12 @@ static void cli_process_line(char *line)
 static void cli_init(void)
 {
 	g_cli_echo_enabled = true;
-	g_status_push_enabled = false;
-	g_status_push_period_ms = 500;
-	g_next_status_deadline_ms = 0;
+	g_status_link_push_enabled = false;
+	g_status_audio_push_enabled = false;
+	g_status_link_push_period_ms = 500;
+	g_status_audio_push_period_ms = 500;
+	g_next_status_link_deadline_ms = 0;
+	g_next_status_audio_deadline_ms = 0;
 	k_msgq_purge(&g_cli_msgq);
 	k_msgq_purge(&g_cli_output_msgq);
 }
@@ -662,11 +689,14 @@ static void cli_thread(void *arg1, void *arg2, void *arg3)
 			cli_write_raw(message, strlen(message));
 		}
 
-		if (g_status_push_enabled && g_cli_connected &&
-		    k_uptime_get() >= g_next_status_deadline_ms) {
-			cli_emit_status_push();
-			g_next_status_deadline_ms = k_uptime_get() +
-				g_status_push_period_ms;
+		if (g_status_link_push_enabled && g_cli_connected && k_uptime_get() >= g_next_status_link_deadline_ms) {
+			cli_emit_status_link_push();
+			g_next_status_link_deadline_ms = k_uptime_get() + g_status_link_push_period_ms;
+		}
+
+		if (g_status_audio_push_enabled && g_cli_connected && k_uptime_get() >= g_next_status_audio_deadline_ms) {
+			cli_emit_status_audio_push();
+			g_next_status_audio_deadline_ms = k_uptime_get() + g_status_audio_push_period_ms;
 		}
 	}
 }

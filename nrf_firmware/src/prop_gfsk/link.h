@@ -5,17 +5,12 @@
 
 #include <zephyr/kernel.h>
 
-#include "app_control.h"
 #include "prop_gfsk/radio_hw.h"
 
 enum pgfsk_link_state {
-	PGFSK_LINK_STATE_NO_SERVICE = 0,
+	PGFSK_LINK_STATE_STOPPED = 0,
+	PGFSK_LINK_STATE_NO_SERVICE,
 	PGFSK_LINK_STATE_IN_SERVICE,
-};
-
-struct pgfsk_link_config {
-	bool enabled;
-	enum device_role local_device_role;
 };
 
 struct pgfsk_frame {
@@ -44,9 +39,9 @@ struct pgfsk_link_report {
 	enum pgfsk_link_state state;
 };
 
-bool pgfsk_link_set_config(const struct pgfsk_link_config *config);
-bool pgfsk_link_stop(void);
-bool pgfsk_link_is_enabled(void);
+bool pgfsk_link_start_dongle(void);
+bool pgfsk_link_start_headset(void);
+void pgfsk_link_stop(void);
 enum pgfsk_link_state pgfsk_link_get_state(void);
 void pgfsk_link_get_report(struct pgfsk_link_report *report);
 bool pgfsk_link_tx_enqueue(const struct pgfsk_frame *frame, k_timeout_t timeout);

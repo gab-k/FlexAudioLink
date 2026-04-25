@@ -16,8 +16,6 @@ LOG_MODULE_REGISTER(pgfsk_link, CONFIG_LOG_DEFAULT_LEVEL);
 #define PGFSK_LINK_SYNC_LOSS_TURNS         8U
 #define PGFSK_LINK_FIXED_TICK_US           1000U
 #define PGFSK_LINK_RANDOM_TICKS_US         1000U
-#define PGFSK_LINK_CONFIG_SET_TIMEOUT_MS   1000
-
 enum pgfsk_internal_state {
 	PGFSK_STATE_IN_RX = 0,
 	PGFSK_STATE_IN_TX,
@@ -37,7 +35,6 @@ struct link_stats {
 };
 
 struct pgfsk_link_runtime {
-	struct pgfsk_link_config config;
 	enum pgfsk_link_state service_state;
 	enum pgfsk_internal_state state;
 	struct link_stats stats;
@@ -48,36 +45,21 @@ struct pgfsk_link_runtime {
 	uint16_t last_rx_seq;
 	bool have_last_rx_seq;
 	struct pgfsk_packet prepared_tx_packet;
-	struct k_spinlock lock;
-};
-
-struct pgfsk_link_config_request {
-	struct pgfsk_link_config config;
-	uint32_t seq;
+	struct k_mutex mutex_lock;
 };
 
 static struct pgfsk_link_runtime g_link = {
-	.config = {
-		.enabled = false,
-		.local_device_role = DEVICE_ROLE_HEADSET,
-	},
-	.service_state = PGFSK_LINK_STATE_NO_SERVICE,
+	.service_state = PGFSK_LINK_STATE_STOPPED,
 	.state = PGFSK_STATE_LISTEN,
+	.mutex_lock = Z_MUTEX_INITIALIZER(g_link.mutex_lock),
 };
-
-static uint32_t g_pgfsk_config_request_seq;
-static uint32_t g_pgfsk_config_completed_seq;
-static bool g_pgfsk_config_completed_result;
-static uint32_t g_pgfsk_probe_prng_state;
 
 static uint32_t pgfsk_link_random_probe_jitter(void);
 static void pgfsk_link_compose_packet(struct pgfsk_packet *packet, uint16_t seq);
 
 K_MSGQ_DEFINE(g_pgfsk_tx_queue, sizeof(struct pgfsk_frame),PGFSK_LINK_QUEUE_DEPTH, 4);
 K_MSGQ_DEFINE(g_pgfsk_rx_queue, sizeof(struct pgfsk_frame),PGFSK_LINK_QUEUE_DEPTH, 4);
-K_MSGQ_DEFINE(g_pgfsk_config_queue,sizeof(struct pgfsk_link_config_request), 1, 4);
-K_MUTEX_DEFINE(g_pgfsk_config_lock);
-K_SEM_DEFINE(g_pgfsk_config_done_sem, 0, 1);
+K_SEM_DEFINE(g_pgfsk_control_sem, 0, 1);
 
 static bool pgfsk_link_seq_gap_from_expected(uint16_t expected, uint16_t seq, uint16_t *gap)
 {
@@ -96,25 +78,9 @@ static bool pgfsk_link_seq_gap_from_expected(uint16_t expected, uint16_t seq, ui
 	return false;
 }
 
-static struct pgfsk_link_config pgfsk_link_get_config(void)
+static void pgfsk_link_reset_runtime(enum pgfsk_link_state service_state)
 {
-	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
-	struct pgfsk_link_config config = g_link.config;
-
-	k_spin_unlock(&g_link.lock, key);
-	return config;
-}
-
-static void pgfsk_link_reset_runtime(const struct pgfsk_link_config *config)
-{
-	k_spinlock_key_t key;
-
-	__ASSERT_NO_MSG(config != NULL);
-
-	key = k_spin_lock(&g_link.lock);
-
-	g_link.config = *config;
-	g_link.service_state = PGFSK_LINK_STATE_NO_SERVICE;
+	g_link.service_state = service_state;
 	g_link.state = PGFSK_STATE_LISTEN;
 	memset(&g_link.stats, 0, sizeof(g_link.stats));
 	g_link.rx_deadline_tick = 0U;
@@ -124,43 +90,30 @@ static void pgfsk_link_reset_runtime(const struct pgfsk_link_config *config)
 	g_link.last_rx_seq = 0U;
 	g_link.have_last_rx_seq = false;
 	memset(&g_link.prepared_tx_packet, 0, sizeof(g_link.prepared_tx_packet));
-
-	k_spin_unlock(&g_link.lock, key);
 }
 
 static bool pgfsk_link_abort_enable(void)
 {
-	k_spinlock_key_t key;
-
 	pgfsk_hw_stop();
 
-	key = k_spin_lock(&g_link.lock);
-	g_link.config.enabled = false;
-	g_link.service_state = PGFSK_LINK_STATE_NO_SERVICE;
+	g_link.service_state = PGFSK_LINK_STATE_STOPPED;
 	g_link.rx_deadline_tick = 0U;
-	k_spin_unlock(&g_link.lock, key);
 
 	return false;
 }
 
-static bool pgfsk_link_start_enabled(const struct pgfsk_link_config *config)
+static bool pgfsk_link_start_radio(void)
 {
-	k_spinlock_key_t key;
 	uint32_t now_tick;
 	uint32_t deadline_tick;
 
-	__ASSERT_NO_MSG(config != NULL);
-
-	pgfsk_hw_set_role(config->local_device_role);
 	pgfsk_hw_start();
 	pgfsk_hw_reset_stats();
 
 	now_tick = pgfsk_hw_get_tick();
 	deadline_tick = now_tick + PGFSK_LINK_FIXED_TICK_US + pgfsk_link_random_probe_jitter();
 
-	key = k_spin_lock(&g_link.lock);
 	g_link.rx_deadline_tick = deadline_tick;
-	k_spin_unlock(&g_link.lock, key);
 
 	if (!pgfsk_hw_start_listen()) {
 		return pgfsk_link_abort_enable();
@@ -182,40 +135,34 @@ static bool pgfsk_link_start_enabled(const struct pgfsk_link_config *config)
 	return true;
 }
 
-static void pgfsk_link_seed_probe_prng(void)
-{
-	uint8_t device_id[16];
-	uint32_t seed = 0x6d2b79f5U ^ k_cycle_get_32();
-	ssize_t len;
-
-	len = hwinfo_get_device_id(device_id, sizeof(device_id));
-	if (len > 0) {
-		for (size_t i = 0; i < (size_t)len; ++i) {
-			seed ^= device_id[i];
-			seed *= 16777619U;
-		}
-	}
-
-	if (seed == 0U) {
-		seed = 0x1b873593U;
-	}
-
-	g_pgfsk_probe_prng_state = seed;
-}
-
 static uint32_t pgfsk_link_random_probe_jitter(void)
 {
+	static uint32_t probe_prng_state;
 	uint32_t x;
 
 	if (PGFSK_LINK_RANDOM_TICKS_US == 0U) {
 		return 0U;
 	}
 
-	if (g_pgfsk_probe_prng_state == 0U) {
-		pgfsk_link_seed_probe_prng();
+	if (probe_prng_state == 0U) {
+		uint8_t device_id[16];
+		ssize_t len;
+
+		probe_prng_state = 0x6d2b79f5U ^ k_cycle_get_32();
+		len = hwinfo_get_device_id(device_id, sizeof(device_id));
+		if (len > 0) {
+			for (size_t i = 0; i < (size_t)len; ++i) {
+				probe_prng_state ^= device_id[i];
+				probe_prng_state *= 16777619U;
+			}
+		}
+
+		if (probe_prng_state == 0U) {
+			probe_prng_state = 0x1b873593U;
+		}
 	}
 
-	x = g_pgfsk_probe_prng_state;
+	x = probe_prng_state;
 	x ^= x << 13;
 	x ^= x >> 17;
 	x ^= x << 5;
@@ -223,7 +170,7 @@ static uint32_t pgfsk_link_random_probe_jitter(void)
 		x = 0x9e3779b9U;
 	}
 
-	g_pgfsk_probe_prng_state = x;
+	probe_prng_state = x;
 	return x % (PGFSK_LINK_RANDOM_TICKS_US + 1U);
 }
 
@@ -517,146 +464,54 @@ static void pgfsk_link_handle_radio_event(const struct pgfsk_hw_event *event)
 	}
 }
 
-static void pgfsk_link_print_banner(const struct pgfsk_link_config *config)
+static bool pgfsk_link_start_with_role(void (*set_role)(void))
 {
-	const char *role;
+	bool started;
 
-	if (config == NULL || !config->enabled) {
-		return;
-	}
-
-	role = (config->local_device_role == DEVICE_ROLE_DONGLE) ? "dongle" : "headset";
-	LOG_INF("=== FlexLink GFSK Link ===");
-	LOG_INF("Role: %s", role);
-	LOG_INF("Frequency: %u MHz", PGFSK_HW_FREQUENCY_MHZ);
-	LOG_INF("Rate: 4 Mbps");
-	LOG_INF("TX Power: +8 dBm");
-	LOG_INF("Max packet airtime: %u us", PGFSK_LINK_MAX_PACKET_AIRTIME_US);
-	LOG_INF("Sync loss turns: %u", PGFSK_LINK_SYNC_LOSS_TURNS);
-	LOG_INF("Probe delay: %u..%u us", 
-			PGFSK_LINK_FIXED_TICK_US, PGFSK_LINK_FIXED_TICK_US + 
-			PGFSK_LINK_RANDOM_TICKS_US);
-	LOG_INF("Dongle addr: 0x%08lX", PGFSK_HW_ADDR_DONGLE);
-	LOG_INF("Headset addr: 0x%08lX", PGFSK_HW_ADDR_HEADSET);
-}
-
-static bool pgfsk_link_apply_config_internal(const struct pgfsk_link_config *config)
-{
-	struct pgfsk_link_config prev_config;
-	bool changed;
-
-	if (config == NULL) {
-		return false;
-	}
-
-	if (config->local_device_role != DEVICE_ROLE_DONGLE &&
-	    config->local_device_role != DEVICE_ROLE_HEADSET) {
-		return false;
-	}
-
-	prev_config = pgfsk_link_get_config();
-
+	k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
 	pgfsk_hw_stop();
 	k_msgq_purge(&g_pgfsk_tx_queue);
 	k_msgq_purge(&g_pgfsk_rx_queue);
+	k_msgq_purge(pgfsk_hw_event_msgq());
+	pgfsk_link_reset_runtime(PGFSK_LINK_STATE_NO_SERVICE);
+	set_role();
+	started = pgfsk_link_start_radio();
+	k_mutex_unlock(&g_link.mutex_lock);
 
-	pgfsk_link_reset_runtime(config);
-
-	if (!config->enabled) {
-		return true;
-	}
-
-	if (!pgfsk_link_start_enabled(config)) {
-		return false;
-	}
-
-	changed = (!prev_config.enabled || prev_config.local_device_role != config->local_device_role);
-	if (changed) {
-		pgfsk_link_print_banner(config);
-	}
-
-	return true;
+	k_sem_give(&g_pgfsk_control_sem);
+	return started;
 }
 
-static bool pgfsk_link_process_config_request(k_timeout_t timeout)
+bool pgfsk_link_start_dongle(void)
 {
-	struct pgfsk_link_config_request request;
-
-	if (k_msgq_get(&g_pgfsk_config_queue, &request, timeout) != 0) {
-		return false;
-	}
-
-	g_pgfsk_config_completed_result = pgfsk_link_apply_config_internal(&request.config);
-	g_pgfsk_config_completed_seq = request.seq;
-	k_sem_give(&g_pgfsk_config_done_sem);
-	return true;
+	return pgfsk_link_start_with_role(pgfsk_hw_set_role_dongle);
 }
 
-bool pgfsk_link_set_config(const struct pgfsk_link_config *config)
+bool pgfsk_link_start_headset(void)
 {
-	struct pgfsk_link_config_request request;
-	int64_t deadline_ms;
-	bool result;
-
-	if (config == NULL) {
-		return false;
-	}
-
-	k_mutex_lock(&g_pgfsk_config_lock, K_FOREVER);
-	k_sem_reset(&g_pgfsk_config_done_sem);
-
-	request = (struct pgfsk_link_config_request){
-		.config = *config,
-		.seq = ++g_pgfsk_config_request_seq,
-	};
-
-	k_msgq_purge(&g_pgfsk_config_queue);
-	(void)k_msgq_put(&g_pgfsk_config_queue, &request, K_FOREVER);
-
-	deadline_ms = k_uptime_get() + PGFSK_LINK_CONFIG_SET_TIMEOUT_MS;
-	while (1) {
-		int64_t remaining_ms = deadline_ms - k_uptime_get();
-
-		if (remaining_ms <= 0) {
-			LOG_ERR("timed out waiting for link config apply");
-			k_mutex_unlock(&g_pgfsk_config_lock);
-			return false;
-		}
-
-		if (k_sem_take(&g_pgfsk_config_done_sem,
-			       K_MSEC((uint32_t)remaining_ms)) != 0) {
-			LOG_ERR("timed out waiting for link config apply");
-			k_mutex_unlock(&g_pgfsk_config_lock);
-			return false;
-		}
-
-		if (g_pgfsk_config_completed_seq == request.seq) {
-			result = g_pgfsk_config_completed_result;
-			k_mutex_unlock(&g_pgfsk_config_lock);
-			return result;
-		}
-	}
+	return pgfsk_link_start_with_role(pgfsk_hw_set_role_headset);
 }
 
-bool pgfsk_link_stop(void)
+void pgfsk_link_stop(void)
 {
-	return pgfsk_link_set_config(&(struct pgfsk_link_config){
-		.enabled = false,
-		.local_device_role = DEVICE_ROLE_HEADSET,
-	});
-}
+	k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
+	pgfsk_hw_stop();
+	k_msgq_purge(&g_pgfsk_tx_queue);
+	k_msgq_purge(&g_pgfsk_rx_queue);
+	k_msgq_purge(pgfsk_hw_event_msgq());
+	pgfsk_link_reset_runtime(PGFSK_LINK_STATE_STOPPED);
+	k_mutex_unlock(&g_link.mutex_lock);
 
-bool pgfsk_link_is_enabled(void)
-{
-	return pgfsk_link_get_config().enabled;
+	k_sem_give(&g_pgfsk_control_sem);
 }
 
 enum pgfsk_link_state pgfsk_link_get_state(void)
 {
-	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
-	enum pgfsk_link_state state = g_link.service_state;
+	enum pgfsk_link_state state;
 
-	k_spin_unlock(&g_link.lock, key);
+	k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
+	state = g_link.service_state;
+	k_mutex_unlock(&g_link.mutex_lock);
 	return state;
 }
 
@@ -674,11 +529,11 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 
 	pgfsk_hw_get_stats(&hw_stats);
 
-	k_spinlock_key_t key = k_spin_lock(&g_link.lock);
+	k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
 	stats = g_link.stats;
 	state = g_link.service_state;
 	in_service_since_cyc = g_link.in_service_since_cyc;
-	k_spin_unlock(&g_link.lock, key);
+	k_mutex_unlock(&g_link.mutex_lock);
 
 	if (state == PGFSK_LINK_STATE_IN_SERVICE && in_service_since_cyc != 0U) {
 		time_in_service_us = k_cyc_to_us_floor64(k_cycle_get_64() - in_service_since_cyc);
@@ -706,8 +561,12 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 
 bool pgfsk_link_tx_enqueue(const struct pgfsk_frame *frame, k_timeout_t timeout)
 {
-	if (frame == NULL || frame->len > PGFSK_PAYLOAD_MAX_LEN ||
-	    !pgfsk_link_is_enabled()) {
+	if (frame == NULL || frame->len > PGFSK_PAYLOAD_MAX_LEN) {
+		return false;
+	}
+
+	if (pgfsk_link_get_state() == PGFSK_LINK_STATE_STOPPED) {
+		LOG_WRN_ONCE("tx_enqueue on stopped link");
 		return false;
 	}
 
@@ -725,10 +584,10 @@ bool pgfsk_link_rx_dequeue(struct pgfsk_frame *frame, k_timeout_t timeout)
 
 static void pgfsk_link_thread(void *arg1, void *arg2, void *arg3)
 {
-	enum { POLL_RADIO = 0, POLL_CONFIG = 1 };
+	enum { POLL_RADIO = 0, POLL_CONTROL = 1 };
 	struct k_poll_event events[2] = {
 		[POLL_RADIO]  = K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, pgfsk_hw_event_msgq()),
-		[POLL_CONFIG] = K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &g_pgfsk_config_queue),
+		[POLL_CONTROL] = K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &g_pgfsk_control_sem),
 	};
 
 	ARG_UNUSED(arg1);
@@ -740,26 +599,27 @@ static void pgfsk_link_thread(void *arg1, void *arg2, void *arg3)
 	k_msgq_purge(&g_pgfsk_rx_queue);
 
 	while (1) {
-		struct pgfsk_link_config config = pgfsk_link_get_config();
-		if (!config.enabled) {
-			(void)pgfsk_link_process_config_request(K_FOREVER);
+		if (pgfsk_link_get_state() == PGFSK_LINK_STATE_STOPPED) {
+			(void)k_sem_take(&g_pgfsk_control_sem, K_FOREVER);
 			continue;
 		}
 
 		events[POLL_RADIO].state = K_POLL_STATE_NOT_READY;
-		events[POLL_CONFIG].state = K_POLL_STATE_NOT_READY;
+		events[POLL_CONTROL].state = K_POLL_STATE_NOT_READY;
 
 		(void)k_poll(events, ARRAY_SIZE(events), K_FOREVER);
 
-		if (events[POLL_CONFIG].state == K_POLL_STATE_MSGQ_DATA_AVAILABLE) {
-			while (pgfsk_link_process_config_request(K_NO_WAIT));
+		if (events[POLL_CONTROL].state == K_POLL_STATE_SEM_AVAILABLE) {
+			(void)k_sem_take(&g_pgfsk_control_sem, K_NO_WAIT);
 			continue;
 		}
 
 		if (events[POLL_RADIO].state == K_POLL_STATE_MSGQ_DATA_AVAILABLE) {
 			struct pgfsk_hw_event event;
 			while (pgfsk_hw_dequeue_event(&event, K_NO_WAIT)) {
+				k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
 				pgfsk_link_handle_radio_event(&event);
+				k_mutex_unlock(&g_link.mutex_lock);
 			}
 		}
 	}

@@ -23,7 +23,7 @@ In this context:
 - USB Audio refers to USB Audio Class device operation
 - BLE central device refers to a host such as a phone or laptop acting as the central
 
-All FlexAudioLink nodes use the same hardware and firmware base and are configured at runtime for the required role and mode.
+All FlexAudioLink nodes use the same hardware and firmware base and are configured at runtime for the required operating mode.
 
 ## Repository Layout
 
@@ -42,11 +42,9 @@ The current firmware direction is based on the nRF54LM20A and a proprietary 2.4 
 
 Implemented in the current nRF tree:
 
-- USB device bring-up
-- runtime USB profile switching between `CDC` and `UAC+CDC`
-- runtime role selection: `dongle` or `headset`
-- runtime mode selection: `proprietary`, `ble`, or `usb`
-- default role selection from device UID
+- USB device bring-up with composite descriptors (`UAC+CDC`)
+- runtime profile selection: `usb`, `pgfsk_dongle`, or `pgfsk_headset`
+- default PGFSK profile selection from device UID
 - USB CDC CLI
 - proprietary radio link test, including TX/RX traffic and status counters
 - initial audio I2S / codec integration scaffolding
@@ -60,9 +58,8 @@ Not complete in the current nRF tree:
 Important implementation notes:
 
 - [`nrf_firmware/src/main.c`](/home/gab/FlexAudioLink/nrf_firmware/src/main.c): `main()` is intentionally idle; subsystems self-start via `K_THREAD_DEFINE(...)`
-- [`nrf_firmware/src/app_control.c`](/home/gab/FlexAudioLink/nrf_firmware/src/app_control.c): owns runtime role/mode state
-- `dongle + usb` is rejected
-- proprietary mode currently enables the present radio/link-test path; it is not yet the final audio transport
+- [`nrf_firmware/src/app_control.c`](/home/gab/FlexAudioLink/nrf_firmware/src/app_control.c): owns runtime profile state
+- PGFSK profiles currently enable the present radio/link-test path; they are not yet the final audio transport
 
 ## CLI Interface
 
@@ -72,8 +69,7 @@ Current commands include:
 
 - `help`
 - `get`
-- `set role <dongle|headset>`
-- `set mode <proprietary|ble|usb>`
+- `set profile <usb|pgfsk_dongle|pgfsk_headset>`
 - `status`
 - `status on [ms]`
 - `status off`

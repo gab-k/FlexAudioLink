@@ -1,21 +1,13 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
 
-enum device_role {
-	DEVICE_ROLE_DONGLE,
-	DEVICE_ROLE_HEADSET,
+enum app_profile {
+	APP_PROFILE_USB,
+	APP_PROFILE_PGFSK_DONGLE,
+	APP_PROFILE_PGFSK_HEADSET,
 };
 
-enum operating_mode {
-	OPERATING_MODE_PROPRIETARY,
-	OPERATING_MODE_BLE,
-	OPERATING_MODE_USB,
-};
-
-enum device_role app_control_get_current_role(void);
-enum operating_mode app_control_get_current_operating_mode(void);
-bool app_control_set(enum device_role role, enum operating_mode mode);
-const char *app_control_get_role_name(enum device_role role);
-const char *app_control_get_operating_mode_name(enum operating_mode mode);
+enum app_profile app_control_get_current_profile(void);
+bool app_control_set_profile(enum app_profile profile);
+const char *app_control_get_profile_name(enum app_profile profile);

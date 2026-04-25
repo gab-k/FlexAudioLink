@@ -1,21 +1,21 @@
 [
     {
-        "name": "JLink RX",
+        "name": "JLink Dongle",
         "usb_serial": "1051811555",
         "baud": 115200
     },
     {
-        "name": "JLink TX",
+        "name": "JLink Headset",
         "usb_serial": "1051890941",
         "baud": 115200
     },
     {
-        "name": "CDC Headset",
+        "name": "CDC Dongle",
         "usb_serial": "188F46252A2CDCC5",
         "baud": 115200
     },
     {
-        "name": "CDC Dongle",
+        "name": "CDC Headset",
         "usb_serial": "C0E0F4E32FEC07B0",
         "baud": 115200
     }

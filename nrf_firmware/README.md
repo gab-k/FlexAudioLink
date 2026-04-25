@@ -8,8 +8,8 @@ Implemented in the current tree:
 
 - USB device bring-up
 - USB CDC CLI
-- runtime role and mode control
-- USB profile switching between `CDC` and `UAC+CDC`
+- runtime switching between dongle, headset and usb mode
+- fixed USB composite descriptors (`UAC+CDC`)
 - proprietary radio link test
 - initial codec / I2S integration scaffolding
 

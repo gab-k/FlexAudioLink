@@ -3,8 +3,12 @@
 #include <string.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
+#include "app_control.h"
 #include "prop_gfsk/link.h"
+
+LOG_MODULE_REGISTER(pgfsk_test_mode, CONFIG_LOG_DEFAULT_LEVEL);
 
 #define PGFSK_TEST_MODE_PAYLOAD_LEN        180U
 #define PGFSK_TEST_TX_THREAD_STACK_SIZE    1536
@@ -51,31 +55,18 @@ static void pgfsk_test_start_traffic(size_t payload_len)
 bool pgfsk_test_mode_stop(void)
 {
 	pgfsk_test_stop_traffic();
-	if (!pgfsk_link_stop()) {
-		return false;
-	}
-
 	g_test_mode_running = false;
 	return true;
 }
 
-bool pgfsk_test_mode_start(enum device_role local_device_role)
+bool pgfsk_test_mode_start(void)
 {
-	struct pgfsk_link_config config = {
-		.enabled = true,
-		.local_device_role = local_device_role,
-	};
-
-	if (local_device_role != DEVICE_ROLE_DONGLE &&
-	    local_device_role != DEVICE_ROLE_HEADSET) {
-		return false;
-	}
-
-	if (app_control_get_current_operating_mode() != OPERATING_MODE_PROPRIETARY) {
-		return false;
-	}
-
-	if (!pgfsk_link_set_config(&config)) {
+	switch (app_control_get_current_profile()) {
+	case APP_PROFILE_PGFSK_DONGLE:
+	case APP_PROFILE_PGFSK_HEADSET:
+		break;
+	default:
+		LOG_WRN("linktest requires a PGFSK profile");
 		return false;
 	}
 

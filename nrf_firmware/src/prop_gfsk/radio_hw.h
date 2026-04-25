@@ -8,8 +8,6 @@
 #include <hal/nrf_timer.h>
 #include <zephyr/kernel.h>
 
-#include "app_control.h"
-
 /* Radio config */
 #define PGFSK_HW_FREQUENCY_MHZ       2480
 #define PGFSK_HW_TXPOWER             NRF_RADIO_TXPOWER_POS8DBM
@@ -82,7 +80,8 @@ struct pgfsk_hw_stats {
 
 void pgfsk_hw_init(void);
 void pgfsk_hw_start(void);
-void pgfsk_hw_set_role(enum device_role role);
+void pgfsk_hw_set_role_dongle(void);
+void pgfsk_hw_set_role_headset(void);
 void pgfsk_hw_stop(void);
 void pgfsk_hw_get_stats(struct pgfsk_hw_stats *stats);
 void pgfsk_hw_reset_stats(void);
