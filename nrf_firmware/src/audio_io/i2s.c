@@ -23,8 +23,7 @@
 #error "Only NAU88L21 codec-master I2S clocking is supported"
 #endif
 
-K_MEM_SLAB_DEFINE_STATIC(audio_i2s_tx_slab, AUDIO_I2S_BLOCK_BYTES, AUDIO_I2S_DMA_BLOCK_COUNT, 4);
-K_MEM_SLAB_DEFINE_STATIC(audio_i2s_rx_slab, AUDIO_I2S_BLOCK_BYTES, AUDIO_I2S_DMA_BLOCK_COUNT, 4);
+K_MEM_SLAB_DEFINE_STATIC(audio_i2s_slab, AUDIO_I2S_BLOCK_BYTES, AUDIO_I2S_DMA_BLOCK_COUNT, 4);
 
 static const struct device *const i2s_dev = DEVICE_DT_GET(DT_NODELABEL(tdm));
 static const struct device *const codec_i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c23));
@@ -68,12 +67,17 @@ static int audio_i2s_configure(void)
 {
 	int ret;
 
-	ret = audio_i2s_configure_direction(I2S_DIR_TX, &audio_i2s_tx_slab, 0);
+	ret = audio_i2s_configure_direction(I2S_DIR_TX, &audio_i2s_slab, 0);
 	if (ret < 0) {
 		return ret;
 	}
 
-	return audio_i2s_configure_direction(I2S_DIR_RX, &audio_i2s_rx_slab, 0);
+	ret = audio_i2s_configure_direction(I2S_DIR_RX, &audio_i2s_slab, 0);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return 0;
 }
 
 static void audio_i2s_tx_on_block_completed(void)
@@ -89,7 +93,6 @@ static int audio_i2s_submit_tx_block(void)
 {
 	tu_fifo_t *fifo;
 	void *dma_block = NULL;
-	bool credit_pending = false;
 	int ret;
 
 	fifo = audio_i2s_tx_fifo;
@@ -102,29 +105,19 @@ static int audio_i2s_submit_tx_block(void)
 		return -EAGAIN;
 	}
 
-	ret = k_mem_slab_alloc(&audio_i2s_tx_slab, &dma_block, K_NO_WAIT);
+	ret = k_mem_slab_alloc(&audio_i2s_slab, &dma_block, K_NO_WAIT);
 	if (ret < 0) {
 		return -EAGAIN;
 	}
-
-	uint16_t got = tu_fifo_read_n(fifo, dma_block,
-				      AUDIO_I2S_BLOCK_BYTES);
-	if (got == AUDIO_I2S_BLOCK_BYTES) {
-		credit_pending = true;
-	} else {
-		memset((uint8_t *)dma_block + got, 0,
-		       AUDIO_I2S_BLOCK_BYTES - got);
-	}
+	tu_fifo_read_n(fifo, dma_block, AUDIO_I2S_BLOCK_BYTES);
 
 	ret = i2s_write(i2s_dev, dma_block, AUDIO_I2S_BLOCK_BYTES);
 	if (ret < 0) {
-		k_mem_slab_free(&audio_i2s_tx_slab, dma_block);
+		k_mem_slab_free(&audio_i2s_slab, dma_block);
 		return ret;
 	}
 
-	if (credit_pending) {
-		audio_i2s_tx_pending_bytes += AUDIO_I2S_BLOCK_BYTES;
-	}
+	audio_i2s_tx_pending_bytes += AUDIO_I2S_BLOCK_BYTES;
 
 	return 0;
 }
@@ -151,11 +144,10 @@ static int audio_i2s_collect_rx_block(void)
 
 	/* Write the stereo block into the path's mic FIFO (if set). */
 	if (audio_i2s_rx_fifo != NULL) {
-		tu_fifo_write_n(audio_i2s_rx_fifo, dst.bytes,
-				AUDIO_I2S_BLOCK_BYTES);
+		tu_fifo_write_n(audio_i2s_rx_fifo, dst.bytes, AUDIO_I2S_BLOCK_BYTES);
 	}
 
-	k_mem_slab_free(&audio_i2s_rx_slab, dma_block);
+	k_mem_slab_free(&audio_i2s_slab, dma_block);
 	return 0;
 }
 
