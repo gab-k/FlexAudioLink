@@ -88,7 +88,7 @@ extern "C" {
 	TU_MAX(4 * CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT,         \
 	       32 * CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT)
 
-#define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP                             1
+#define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP                             0
 
 #define CFG_TUD_CDC_NOTIFY        1
 #define CFG_TUD_CDC_RX_BUFSIZE    (TUD_OPT_HIGH_SPEED ? 512 : 64)

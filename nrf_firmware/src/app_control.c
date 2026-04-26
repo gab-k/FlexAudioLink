@@ -1,7 +1,8 @@
 #include "app_control.h"
 
 #include "audio_io/audio_path_wired.h"
-#include "audio_io/audio_path_wireless.h"
+#include "audio_io/audio_path_wireless_dongle.h"
+#include "audio_io/audio_path_wireless_headset.h"
 #include "prop_gfsk/link.h"
 #include "cli.h"
 #include "prop_gfsk/test_mode.h"
@@ -16,7 +17,7 @@
 #define APP_CONTROL_THREAD_PRIORITY 9
 #define APP_CONTROL_MSGQ_DEPTH 1
 
-#define APP_CONTROL_DEFAULT_PROFILE APP_PROFILE_PGFSK_HEADSET
+#define APP_CONTROL_DEFAULT_PROFILE APP_PROFILE_USB //APP_PROFILE_PGFSK_HEADSET
 #define APP_CONTROL_DONGLE_DEVICE_UID 0xc5dc2c2a25468f18ULL
 
 struct app_profile_set_request {
@@ -61,12 +62,15 @@ static bool app_control_apply(enum app_profile profile)
 	g_current_profile = profile;
 
 	audio_path_wired_deactivate();
-	audio_path_wireless_deactivate();
+	audio_path_wireless_dongle_deactivate();
+	audio_path_wireless_headset_deactivate();
 
 	if (profile == APP_PROFILE_USB) {
 		audio_path_wired_activate();
+	} else if (profile == APP_PROFILE_PGFSK_DONGLE) {
+		audio_path_wireless_dongle_activate();
 	} else {
-		audio_path_wireless_activate();
+		audio_path_wireless_headset_activate();
 	}
 
 	return true;

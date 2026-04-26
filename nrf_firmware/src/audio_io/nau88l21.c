@@ -1,5 +1,8 @@
 #include "audio_io/nau88l21.h"
 
+#include "audio_io/i2s.h"
+
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -44,6 +47,60 @@
 BUILD_ASSERT(NAU88L21_I2S_CODEC_CLOCK_MASTER,
 	     "NAU88L21 register table expects codec-master I2S clocking");
 
+/*
+ * --- Adaptive codec clock (FLL) tuning constants ---------------------------------
+ *
+ * The FLL is driven from the 32 MHz MCLKI reference.
+ *   FREF_eff  = 32 MHz / 4 (FLL4 pre-scale)        = 8 MHz
+ *   FLL_RATIO = 1
+ *   FLL_INT   = 12
+ *   FLL_FRAC  = 24-bit (FLL7[7:0] | FLL8[15:0])
+ *
+ * FDCO  = FREF_eff * (INT + FRAC / 2^24)
+ * MCLK  = FDCO / 8        (SYSCLK=/2, MCLK_SRC=/4)
+ * Fs    = MCLK / 256 = FDCO / 2048
+ *
+ * At nominal 48 kHz:
+ *   FDCO_nom  = 48e3 * 2048 = 98,304,000 Hz
+ *   MCLK_nom  = 12,288,000 Hz
+ *   FRAC_nom  = 0x49BA5E  (4,831,838)
+ *
+ * Each FRAC LSB changes FDCO by ~0.477 Hz -> Fs by ~0.233 mHz.
+ * A ±100 Hz adjustment needs a ±~429,200 FRAC delta.
+ * FDCO must stay within 90-100 MHz; ±100 Hz at 48 kHz keeps it well within bounds.
+ */
+#define NAU88L21_FREF_EFF_HZ                       8000000U
+#define NAU88L21_FLL_INT                           12U
+#define NAU88L21_FLL_FRAC_BITS                     24U
+#define NAU88L21_FLL_FRAC_SCALE                    (1ULL << NAU88L21_FLL_FRAC_BITS)
+#define NAU88L21_FDCO_DIV_FROM_FS                  2048U
+#define NAU88L21_FLL_FRAC_NOMINAL                  0x0049BA5EULL
+
+#define NAU88L21_FLL_MIN_FDCO_HZ                   90000000U
+#define NAU88L21_FLL_MAX_FDCO_HZ                   100000000U
+
+/*
+ * Widenable on-the-fly adjustment (Hz at Fs).
+ * INT=12 with 0 ≤ FRAC ≤ 8,388,608 keeps FDCO in 90-100 MHz,
+ * giving Fs from 46875 Hz to 48828 Hz, i.e. -1125 Hz to +828 Hz.
+ */
+#define NAU88L21_FLL_MAX_RATE_ADJUST_HZ            800
+
+static const struct device *g_nau88l21_i2c_dev;
+
+static uint32_t nau88l21_compute_fll_frac(int32_t target_rate_hz)
+{
+	uint64_t fdco_hz;
+	uint64_t frac;
+
+	fdco_hz = (uint64_t)target_rate_hz * NAU88L21_FDCO_DIV_FROM_FS;
+
+	frac = fdco_hz * NAU88L21_FLL_FRAC_SCALE / NAU88L21_FREF_EFF_HZ;
+	frac -= (uint64_t)NAU88L21_FLL_INT * NAU88L21_FLL_FRAC_SCALE;
+
+	return (uint32_t)frac;
+}
+
 /* Playback bring-up for NAU88L21:
  * - standard I2S
  * - 16-bit stereo
@@ -61,10 +118,14 @@ BUILD_ASSERT(NAU88L21_I2S_CODEC_CLOCK_MASTER,
  */
 #define NAU88L21_FLL1_RATIO_1_ICTRL_6              0x1801
 #define NAU88L21_FLL3_INTEGER_12                   0x000C
-#define NAU88L21_FLL4_REFDIV_1_4                   0x8810
+#define NAU88L21_FLL4_REFDIV_1_4                   0x8860
 #define NAU88L21_FLL5_LOOP_FILTER_FRACTIONAL       0xC000
 #define NAU88L21_FLL6_FRACTIONAL_SDM_CUTOFF500     0x6000
 #define NAU88L21_CLK_DIVIDER_MCLK_48K_SETUP        0x0053
+/* Nominal 48 kHz FLL fractional (assuming 32 MHz MCLKI).
+ * FRAC = 0x49BA5E → FDCO = 98,304,000 Hz → Fs = 48,000 Hz.
+ * Per-board crystal tolerance means actual Fs may be ±300 Hz off;
+ * the P-controller compensates automatically. */
 #define NAU88L21_FLL7_FRAC_H_32M                   0x0049
 #define NAU88L21_FLL8_FRAC_L_32M                   0xBA5E
 /* REG0x03: SYSCLK from 1/2 DCO, MCLK_SRC = 1/4 (12.288 MHz from FLL DCO). */
@@ -167,6 +228,8 @@ int nau88l21_init(const struct device *i2c_dev)
 		return -EINVAL;
 	}
 
+	g_nau88l21_i2c_dev = i2c_dev;
+
 	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_RESET, 0x0001);
 	if (ret < 0) {
 		return ret;
@@ -201,22 +264,31 @@ int nau88l21_init(const struct device *i2c_dev)
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL5, NAU88L21_FLL5_LOOP_FILTER_FRACTIONAL);
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL6, NAU88L21_FLL6_FRACTIONAL_SDM_CUTOFF500);
-	if (ret < 0) {
-		return ret;
-	}
-
+	/*
+	 * Write fractional FIRST, then FLL5/FLL6 LAST.
+	 * Nuvoton FLLs latch the divider registers on the trailing
+	 * control-register writes — matching the NAU8821/NAU88L21
+	 * reference driver sequence.  Writing FLL5/FLL6 *before*
+	 * FLL7/FLL8 (as the prior code did) leaves the fractional
+	 * divider at its POR default (~47850 Hz) regardless of what
+	 * I2C readback shows.
+	 */
 	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL7, NAU88L21_FLL7_FRAC_H_32M);
 	if (ret < 0) {
 		return ret;
 	}
 
 	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL8, NAU88L21_FLL8_FRAC_L_32M);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL5, NAU88L21_FLL5_LOOP_FILTER_FRACTIONAL);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_FLL6, NAU88L21_FLL6_FRACTIONAL_SDM_CUTOFF500);
 	if (ret < 0) {
 		return ret;
 	}
@@ -405,6 +477,53 @@ int nau88l21_init(const struct device *i2c_dev)
 	}
 
 	k_sleep(K_MSEC(20));
+
+	return 0;
+}
+
+int nau88l21_set_fll_target_rate_hz(int32_t target_rate_hz)
+{
+	uint32_t frac;
+	uint16_t frac_high;
+	uint16_t frac_low;
+	uint64_t fdco_check;
+	int ret;
+
+	if (g_nau88l21_i2c_dev == NULL) {
+		return -ENODEV;
+	}
+
+	if (target_rate_hz < (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - NAU88L21_FLL_MAX_RATE_ADJUST_HZ) ||
+	    target_rate_hz > (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + NAU88L21_FLL_MAX_RATE_ADJUST_HZ)) {
+		return -EINVAL;
+	}
+
+	frac = nau88l21_compute_fll_frac(target_rate_hz);
+
+	fdco_check = (uint64_t)target_rate_hz * NAU88L21_FDCO_DIV_FROM_FS;
+	if (fdco_check < NAU88L21_FLL_MIN_FDCO_HZ || fdco_check > NAU88L21_FLL_MAX_FDCO_HZ) {
+		printk("nau88l21: FLL target rate %d Hz -> FDCO %llu Hz out of range\n",
+		       target_rate_hz, (unsigned long long)fdco_check);
+		return -ERANGE;
+	}
+
+	frac_high = (uint16_t)((frac >> 16) & 0xFFU);
+	frac_low  = (uint16_t)(frac & 0xFFFFU);
+
+	/*
+	 * On-the-fly fractional update: write the new FLL7/FLL8 and
+	 * let the FLL servo to the new target through its loop filter.
+	 * No clock-domain switch, no control-register toggling.
+	 */
+	ret = nau88l21_write_reg(g_nau88l21_i2c_dev, NAU88L21_REG_FLL7, frac_high);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = nau88l21_write_reg(g_nau88l21_i2c_dev, NAU88L21_REG_FLL8, frac_low);
+	if (ret < 0) {
+		return ret;
+	}
 
 	return 0;
 }

@@ -11,13 +11,11 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/devicetree.h>
 
-#define AUDIO_I2S_DMA_BLOCK_COUNT          4U
-#define AUDIO_I2S_TX_QUEUE_DEPTH           12U
-#define AUDIO_I2S_RX_QUEUE_DEPTH           12U
+#define AUDIO_I2S_DMA_BLOCK_COUNT          32U
 #define AUDIO_I2S_THREAD_STACK_SIZE        3072
 #define AUDIO_I2S_THREAD_PRIORITY          8
 #define AUDIO_I2S_RESTART_BACKOFF_MS       50
-#define AUDIO_I2S_RX_TIMEOUT_MS            1
+#define AUDIO_I2S_RETRY_SLEEP_US           100
 
 #if NAU88L21_I2S_CODEC_CLOCK_MASTER
 #define AUDIO_I2S_CLOCK_OPTIONS (I2S_OPT_BIT_CLK_SLAVE | I2S_OPT_FRAME_CLK_SLAVE)
@@ -28,27 +26,22 @@
 K_MEM_SLAB_DEFINE_STATIC(audio_i2s_tx_slab, AUDIO_I2S_BLOCK_BYTES, AUDIO_I2S_DMA_BLOCK_COUNT, 4);
 K_MEM_SLAB_DEFINE_STATIC(audio_i2s_rx_slab, AUDIO_I2S_BLOCK_BYTES, AUDIO_I2S_DMA_BLOCK_COUNT, 4);
 
-struct audio_i2s_tx_item {
-	struct audio_i2s_block block;
-	uint16_t payload_bytes; /* non-zero = real audio; 0 = silence (no pending accounting) */
-};
-
-K_MSGQ_DEFINE(audio_i2s_tx_msgq, sizeof(struct audio_i2s_tx_item), AUDIO_I2S_TX_QUEUE_DEPTH, 4);
-/* Each submitted TX block pushes its payload_bytes here; RX-complete pops one
- * entry and subtracts from the pending counter. */
-K_MSGQ_DEFINE(audio_i2s_tx_inflight_msgq, sizeof(uint16_t), AUDIO_I2S_TX_QUEUE_DEPTH, 4);
-K_MSGQ_DEFINE(audio_i2s_rx_msgq, sizeof(struct audio_i2s_block), AUDIO_I2S_RX_QUEUE_DEPTH, 4);
-K_MUTEX_DEFINE(audio_i2s_tx_state_lock);
-
 static const struct device *const i2s_dev = DEVICE_DT_GET(DT_NODELABEL(tdm));
 static const struct device *const codec_i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c23));
 
-static volatile bool audio_i2s_ready;
 static bool audio_i2s_running;
+static tu_fifo_t *audio_i2s_tx_fifo;
 /* Bytes copied out of upstream FIFOs but not yet clocked out of I2S TX.
  * Lives strictly in the I2S domain — upstream read pointers have already
  * advanced at enqueue time. */
 static uint32_t audio_i2s_tx_pending_bytes;
+/* Mic FIFO set by the active audio path — I2S writes completed RX blocks
+ * here.  NULL means drop mic data. */
+static tu_fifo_t *audio_i2s_rx_fifo;
+
+static K_SEM_DEFINE(audio_i2s_resume_sem, 0, 1);
+/* k_uptime_get() of the last successful TX submit; 0 = never or stopped. */
+static int64_t audio_i2s_last_tx_ms;
 
 BUILD_ASSERT((AUDIO_I2S_SAMPLE_RATE_HZ % 1000U) == 0U,
 	     "AUDIO_I2S_SAMPLE_RATE_HZ must be divisible by 1000");
@@ -75,54 +68,52 @@ static int audio_i2s_configure(void)
 {
 	int ret;
 
-	ret = audio_i2s_configure_direction(I2S_DIR_TX, &audio_i2s_tx_slab, 20);
+	ret = audio_i2s_configure_direction(I2S_DIR_TX, &audio_i2s_tx_slab, 0);
 	if (ret < 0) {
 		return ret;
 	}
 
-	/* tdm_nrf maps K_NO_WAIT RX underflow to -EIO. Use a short timeout so
-	 * no-data is surfaced as -EAGAIN and handled as transient. */
-	return audio_i2s_configure_direction(I2S_DIR_RX, &audio_i2s_rx_slab, AUDIO_I2S_RX_TIMEOUT_MS);
+	return audio_i2s_configure_direction(I2S_DIR_RX, &audio_i2s_rx_slab, 0);
 }
 
 static void audio_i2s_tx_on_block_completed(void)
 {
-	uint16_t payload_bytes;
-
-	if (k_msgq_get(&audio_i2s_tx_inflight_msgq, &payload_bytes, K_NO_WAIT) != 0) {
-		return;
-	}
-	if (payload_bytes == 0U) {
-		return;
-	}
-
-	k_mutex_lock(&audio_i2s_tx_state_lock, K_FOREVER);
-	if (audio_i2s_tx_pending_bytes >= payload_bytes) {
-		audio_i2s_tx_pending_bytes -= payload_bytes;
+	if (audio_i2s_tx_pending_bytes >= AUDIO_I2S_BLOCK_BYTES) {
+		audio_i2s_tx_pending_bytes -= AUDIO_I2S_BLOCK_BYTES;
 	} else {
 		audio_i2s_tx_pending_bytes = 0U;
 	}
-	k_mutex_unlock(&audio_i2s_tx_state_lock);
 }
 
 static int audio_i2s_submit_tx_block(void)
 {
-	struct audio_i2s_tx_item item;
+	tu_fifo_t *fifo;
 	void *dma_block = NULL;
-	uint16_t payload_bytes = 0U;
+	bool credit_pending = false;
 	int ret;
 
-	ret = k_mem_slab_alloc(&audio_i2s_tx_slab, &dma_block, K_MSEC(20));
-	if (ret < 0) {
-		return ret;
+	fifo = audio_i2s_tx_fifo;
+
+	if (fifo == NULL) {
+		return -EAGAIN;
 	}
 
-	ret = k_msgq_get(&audio_i2s_tx_msgq, &item, K_NO_WAIT);
+	if (tu_fifo_count(fifo) < AUDIO_I2S_BLOCK_BYTES) {
+		return -EAGAIN;
+	}
+
+	ret = k_mem_slab_alloc(&audio_i2s_tx_slab, &dma_block, K_NO_WAIT);
 	if (ret < 0) {
-		memset(dma_block, 0, AUDIO_I2S_BLOCK_BYTES);
+		return -EAGAIN;
+	}
+
+	uint16_t got = tu_fifo_read_n(fifo, dma_block,
+				      AUDIO_I2S_BLOCK_BYTES);
+	if (got == AUDIO_I2S_BLOCK_BYTES) {
+		credit_pending = true;
 	} else {
-		memcpy(dma_block, &item.block, sizeof(item.block));
-		payload_bytes = item.payload_bytes;
+		memset((uint8_t *)dma_block + got, 0,
+		       AUDIO_I2S_BLOCK_BYTES - got);
 	}
 
 	ret = i2s_write(i2s_dev, dma_block, AUDIO_I2S_BLOCK_BYTES);
@@ -131,22 +122,11 @@ static int audio_i2s_submit_tx_block(void)
 		return ret;
 	}
 
-	(void)k_msgq_put(&audio_i2s_tx_inflight_msgq, &payload_bytes, K_NO_WAIT);
-	return 0;
-}
-
-static int audio_i2s_publish_rx_block(const struct audio_i2s_block *block)
-{
-	struct audio_i2s_block dropped;
-
-	if (k_msgq_put(&audio_i2s_rx_msgq, block, K_NO_WAIT) == 0) {
-		return 0;
+	if (credit_pending) {
+		audio_i2s_tx_pending_bytes += AUDIO_I2S_BLOCK_BYTES;
 	}
 
-	/* Drop oldest block so readers receive the newest captured data. */
-	(void)k_msgq_get(&audio_i2s_rx_msgq, &dropped, K_NO_WAIT);
-	(void)k_msgq_put(&audio_i2s_rx_msgq, block, K_NO_WAIT);
-	return 1;
+	return 0;
 }
 
 static int audio_i2s_collect_rx_block(void)
@@ -154,12 +134,10 @@ static int audio_i2s_collect_rx_block(void)
 	struct audio_i2s_block dst;
 	void *dma_block = NULL;
 	size_t size = 0U;
-	size_t copy_size;
 	int ret;
 
 	ret = i2s_read(i2s_dev, &dma_block, &size);
 	if (ret == -EIO) {
-		/* RX underflow/no-data can surface as -EIO on some tdm_nrf paths. */
 		return -EAGAIN;
 	}
 	if (ret < 0) {
@@ -167,15 +145,18 @@ static int audio_i2s_collect_rx_block(void)
 	}
 
 	memset(&dst, 0, sizeof(dst));
-	copy_size = MIN(size, sizeof(dst));
-	memcpy(&dst, dma_block, copy_size);
-	/* Codec-master full-duplex: one RX block completing means one TX block
-	 * finished clocking out simultaneously. Use as TX-complete signal. */
+	memcpy(&dst, dma_block, MIN(size, sizeof(dst)));
+
 	audio_i2s_tx_on_block_completed();
-	ret = audio_i2s_publish_rx_block(&dst);
+
+	/* Write the stereo block into the path's mic FIFO (if set). */
+	if (audio_i2s_rx_fifo != NULL) {
+		tu_fifo_write_n(audio_i2s_rx_fifo, dst.bytes,
+				AUDIO_I2S_BLOCK_BYTES);
+	}
 
 	k_mem_slab_free(&audio_i2s_rx_slab, dma_block);
-	return ret;
+	return 0;
 }
 
 static int audio_i2s_start(void)
@@ -184,11 +165,6 @@ static int audio_i2s_start(void)
 
 	if (audio_i2s_running) {
 		return 0;
-	}
-
-	ret = audio_i2s_submit_tx_block();
-	if (ret < 0) {
-		return ret;
 	}
 
 	ret = audio_i2s_submit_tx_block();
@@ -248,141 +224,103 @@ static void audio_i2s_thread(void *arg1, void *arg2, void *arg3)
 		return;
 	}
 
-	audio_i2s_ready = true;
-
 	while (1) {
 		if (!audio_i2s_running) {
 			ret = audio_i2s_start();
+			if (ret == -EAGAIN) {
+				/* No data available yet — park on the resume
+				 * semaphore.  The wired path gives it when it
+				 * transitions BUFFERING -> PLAYING. */
+				(void)k_sem_take(&audio_i2s_resume_sem, K_NO_WAIT);
+				k_sem_take(&audio_i2s_resume_sem, K_FOREVER);
+				continue;
+			}
 			if (ret < 0) {
 				printk("audio_i2s: start failed (%d: %s)\n", ret, strerror(-ret));
 				k_sleep(K_MSEC(AUDIO_I2S_RESTART_BACKOFF_MS));
 				continue;
 			}
+			audio_i2s_last_tx_ms = k_uptime_get();
 		}
 
-		ret = audio_i2s_submit_tx_block();
-		if (ret == -EAGAIN || ret == -EBUSY) {
-			/* TX queue backpressure: keep stream running and retry. */
-			k_sleep(K_MSEC(1));
+		int tx_ret = audio_i2s_submit_tx_block();
+		int rx_ret = audio_i2s_collect_rx_block();
+
+		if (tx_ret < 0 && tx_ret != -EAGAIN && tx_ret != -EBUSY) {
+			printk("audio_i2s: write failed (%d: %s)\n",
+			       tx_ret, strerror(-tx_ret));
+			audio_i2s_stop();
+			audio_i2s_configure();
+			k_sleep(K_MSEC(AUDIO_I2S_RESTART_BACKOFF_MS));
 			continue;
 		}
-		if (ret < 0) {
-			printk("audio_i2s: write failed (%d: %s)\n", ret, strerror(-ret));
+		if (rx_ret < 0 && rx_ret != -EAGAIN && rx_ret != -EBUSY) {
+			printk("audio_i2s: read failed (%d: %s)\n",
+			       rx_ret, strerror(-rx_ret));
 			audio_i2s_stop();
+			audio_i2s_configure();
 			k_sleep(K_MSEC(AUDIO_I2S_RESTART_BACKOFF_MS));
 			continue;
 		}
 
-		ret = audio_i2s_collect_rx_block();
-		if (ret < 0 && ret != -EAGAIN && ret != -EBUSY) {
-			printk("audio_i2s: read failed (%d: %s)\n", ret, strerror(-ret));
-			audio_i2s_stop();
-			k_sleep(K_MSEC(AUDIO_I2S_RESTART_BACKOFF_MS));
+		if (tx_ret == 0) {
+			audio_i2s_last_tx_ms = k_uptime_get();
+		}
+
+		/* Starvation: TX FIFO is dry, pipeline empty,
+		 * and no successful TX for > 2 ms.  Notify the upper layer,
+		 * stop the peripheral, and park until audio_i2s_resume(). */
+		if (tx_ret == -EAGAIN && audio_i2s_running) {
+			bool starved = false;
+			tu_fifo_t *ff = audio_i2s_tx_fifo;
+			if (ff != NULL &&
+			    tu_fifo_count(ff) < AUDIO_I2S_BLOCK_BYTES &&
+			    audio_i2s_tx_pending_bytes == 0U &&
+			    audio_i2s_last_tx_ms != 0 &&
+			    k_uptime_get() - audio_i2s_last_tx_ms > 2) {
+				starved = true;
+			}
+
+			if (starved) {
+				audio_i2s_stop();
+				audio_i2s_configure();
+				audio_i2s_tx_flush();
+				audio_i2s_last_tx_ms = 0;
+				(void)k_sem_take(&audio_i2s_resume_sem, K_NO_WAIT);
+				k_sem_take(&audio_i2s_resume_sem, K_FOREVER);
+				continue;
+			}
+		}
+
+		if (tx_ret != 0 && rx_ret < 0) {
+			k_sleep(K_USEC(AUDIO_I2S_RETRY_SLEEP_US));
 		}
 	}
 }
 
-bool audio_i2s_is_ready(void)
+void audio_i2s_tx_set_fifo(tu_fifo_t *src)
 {
-	return audio_i2s_ready;
-}
-
-int audio_i2s_tx_enqueue_block(const struct audio_i2s_block *block, k_timeout_t timeout)
-{
-	struct audio_i2s_tx_item item;
-	int ret;
-
-	if (block == NULL) {
-		return -EINVAL;
-	}
-
-	if (!audio_i2s_ready) {
-		return -EAGAIN;
-	}
-
-	item = (struct audio_i2s_tx_item){
-		.block = *block,
-		.payload_bytes = AUDIO_I2S_BLOCK_BYTES,
-	};
-
-	ret = k_msgq_put(&audio_i2s_tx_msgq, &item, timeout);
-	if (ret == 0) {
-		k_mutex_lock(&audio_i2s_tx_state_lock, K_FOREVER);
-		audio_i2s_tx_pending_bytes += AUDIO_I2S_BLOCK_BYTES;
-		k_mutex_unlock(&audio_i2s_tx_state_lock);
-	}
-	return ret;
-}
-
-int audio_i2s_tx_enqueue_fifo(tu_fifo_t *source)
-{
-	struct audio_i2s_tx_item item;
-	uint16_t got;
-
-	if (source == NULL) {
-		return -EINVAL;
-	}
-
-	if (!audio_i2s_ready) {
-		return -EAGAIN;
-	}
-
-	if (tu_fifo_count(source) < AUDIO_I2S_BLOCK_BYTES) {
-		return -EAGAIN;
-	}
-
-	memset(&item, 0, sizeof(item));
-	got = tu_fifo_read_n(source, item.block.bytes, AUDIO_I2S_BLOCK_BYTES);
-	if (got < AUDIO_I2S_BLOCK_BYTES) {
-		memset(item.block.bytes + got, 0, AUDIO_I2S_BLOCK_BYTES - got);
-	}
-	item.payload_bytes = AUDIO_I2S_BLOCK_BYTES;
-
-	if (k_msgq_put(&audio_i2s_tx_msgq, &item, K_NO_WAIT) != 0) {
-		return -EAGAIN;
-	}
-
-	k_mutex_lock(&audio_i2s_tx_state_lock, K_FOREVER);
-	audio_i2s_tx_pending_bytes += AUDIO_I2S_BLOCK_BYTES;
-	k_mutex_unlock(&audio_i2s_tx_state_lock);
-	return 0;
+	audio_i2s_tx_fifo = src;
 }
 
 uint32_t audio_i2s_tx_get_pending_bytes(void)
 {
-	uint32_t pending;
-
-	k_mutex_lock(&audio_i2s_tx_state_lock, K_FOREVER);
-	pending = audio_i2s_tx_pending_bytes;
-	k_mutex_unlock(&audio_i2s_tx_state_lock);
-	return pending;
-}
-
-int audio_i2s_rx_dequeue_block(struct audio_i2s_block *block, k_timeout_t timeout)
-{
-	if (block == NULL) {
-		return -EINVAL;
-	}
-
-	if (!audio_i2s_ready) {
-		return -EAGAIN;
-	}
-
-	return k_msgq_get(&audio_i2s_rx_msgq, block, timeout);
+	return audio_i2s_tx_pending_bytes;
 }
 
 void audio_i2s_tx_flush(void)
 {
-	k_mutex_lock(&audio_i2s_tx_state_lock, K_FOREVER);
-	k_msgq_purge(&audio_i2s_tx_msgq);
-	k_msgq_purge(&audio_i2s_tx_inflight_msgq);
 	audio_i2s_tx_pending_bytes = 0U;
-	k_mutex_unlock(&audio_i2s_tx_state_lock);
 }
 
-void audio_i2s_rx_flush(void)
+void audio_i2s_rx_set_fifo(tu_fifo_t *dest)
 {
-	k_msgq_purge(&audio_i2s_rx_msgq);
+	audio_i2s_rx_fifo = dest;
+}
+
+void audio_i2s_resume(void)
+{
+	k_sem_give(&audio_i2s_resume_sem);
 }
 
 K_THREAD_DEFINE(audio_i2s_thread_id, AUDIO_I2S_THREAD_STACK_SIZE, audio_i2s_thread,

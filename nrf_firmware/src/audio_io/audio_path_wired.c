@@ -3,45 +3,71 @@
 #include <string.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
 #include "audio_io/audio_path_common.h"
 #include "audio_io/i2s.h"
+#include "audio_io/nau88l21.h"
 #include "tusb.h"
 #include "usb/usb_audio.h"
 
-#define WIRED_THREAD_STACK_SIZE  3072
-#define WIRED_THREAD_PRIORITY    7
-#define WIRED_LOOP_SLEEP_MS      1
-#define WIRED_FEEDBACK_GAIN_DIV  20
+#define WIRED_THREAD_STACK_SIZE        3072
+#define WIRED_THREAD_PRIORITY          7
+#define WIRED_LOOP_SLEEP_MS            1
+
+#define WIRED_WARN_LOW_BYTES \
+	((AUDIO_TARGET_BYTES / 50U) * 10U)   /*  96 bytes */
+#define WIRED_WARN_HIGH_BYTES \
+	((AUDIO_TARGET_BYTES / 50U) * 90U)  /* 864 bytes */
+#define WIRED_WARN_COOLDOWN_MS          2000
+
+/* Uncomment to print speaker buffer-level warnings every WARN_COOLDOWN_MS. */
+/* #define WIRED_SPK_LEVEL_WARN */
 
 /* Wakes the parked wired worker on (re)activation. */
 static K_SEM_DEFINE(g_wired_start_sem, 0, 1);
 /* Acknowledges deactivate() after worker teardown. */
 static K_SEM_DEFINE(g_wired_stop_sem, 0, 1);
 static struct audio_path_wired_status g_wired_status;
+static bool g_wired_fll_fixed;
+static int32_t g_wired_fll_fixed_rate_hz;
+
+/* Mic FIFO: I2S writes stereo blocks here; the wired thread reads,
+ * extracts left-mono, and forwards to USB. */
+#define WIRED_RX_FIFO_SIZE  4096
+static uint8_t g_wired_rx_fifo_buf[WIRED_RX_FIFO_SIZE];
+static tu_fifo_t g_wired_rx_fifo;
+static OSAL_MUTEX_DEF(g_wired_rx_mutex_wr);
+static OSAL_MUTEX_DEF(g_wired_rx_mutex_rd);
 
 static void wired_reset_state(void)
 {
 	memset(&g_wired_status, 0, sizeof(g_wired_status));
 	g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+	g_wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
+	audio_i2s_tx_set_fifo(NULL);
 	audio_i2s_tx_flush();
-	audio_i2s_rx_flush();
+	audio_i2s_rx_set_fifo(NULL);
+	tu_fifo_clear(&g_wired_rx_fifo);
 	usb_audio_reset();
 }
 
 static void wired_send_i2s_to_mic_ep(void)
 {
 	while (1) {
-		struct audio_i2s_block block;
+		uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
 		uint8_t mono[AUDIO_I2S_BLOCK_BYTES / 2U];
 		size_t mono_bytes;
 		size_t pushed;
 
-		if (audio_i2s_rx_dequeue_block(&block, K_NO_WAIT) != 0) {
+		if (tu_fifo_read_n(&g_wired_rx_fifo, stereo,
+				   AUDIO_I2S_BLOCK_BYTES) <
+		    AUDIO_I2S_BLOCK_BYTES) {
 			break;
 		}
 
-		mono_bytes = audio_extract_left_to_mono(block.bytes, AUDIO_I2S_BLOCK_BYTES, mono, sizeof(mono));
+		mono_bytes = audio_extract_left_to_mono(stereo,
+			AUDIO_I2S_BLOCK_BYTES, mono, sizeof(mono));
 		if (mono_bytes == 0U) {
 			g_wired_status.mic_overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
 			continue;
@@ -56,42 +82,40 @@ static void wired_send_i2s_to_mic_ep(void)
 
 static void wired_send_spk_ep_to_i2s(tu_fifo_t *spk_ff)
 {
-	/* Rate-limit per-tick so a BUFFERING->PLAYING transition can't drain
-	 * the whole tu_fifo into tx_msgq in one burst. I2S consumes 1 block/ms;
-	 * allow up to 2 to let us catch up on a missed tick but no more. */
-	const unsigned int max_per_tick = 2U;
-
-	if (g_wired_status.stream_state != AUDIO_PATH_STATE_PLAYING || spk_ff == NULL) {
-		return;
-	}
-
-	/* Gate on pending: once we're ahead of target there's no reason
-	 * to keep enqueuing — let the feedback loop close the gap via the host. */
-	for (unsigned int i = 0; i < max_per_tick; i++) {
-		if (audio_i2s_tx_get_pending_bytes() >= AUDIO_TARGET_BYTES) {
-			break;
-		}
-		if (audio_i2s_tx_enqueue_fifo(spk_ff) != 0) {
-			break;
-		}
-	}
+	audio_i2s_tx_set_fifo((g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) ? spk_ff : NULL);
 }
 
-static void wired_update_feedback(void)
+static void wired_update_codec_clock(uint32_t level)
 {
-	int32_t adjust_hz = g_wired_status.spk_error_bytes / WIRED_FEEDBACK_GAIN_DIV;
-	int32_t rate_hz;
+	static uint32_t last_update_uptime_ms;
+	static float filter = -1.0f;
+	static float i_sum;
+	uint32_t now_ms;
 
-	if (adjust_hz > AUDIO_P_ADJUST_MAX_HZ) {
-		adjust_hz = AUDIO_P_ADJUST_MAX_HZ;
-	} else if (adjust_hz < -AUDIO_P_ADJUST_MAX_HZ) {
-		adjust_hz = -AUDIO_P_ADJUST_MAX_HZ;
+	now_ms = k_uptime_get();
+	if (now_ms - last_update_uptime_ms < AUDIO_FLL_UPDATE_INTERVAL_MS) {
+		return;
 	}
+	last_update_uptime_ms = now_ms;
 
-	rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ + adjust_hz;
+	int32_t adjust_hz = audio_codec_clock_controller(level, AUDIO_TARGET_BYTES,
+							  &filter, &i_sum,
+							  AUDIO_P_GAIN, AUDIO_P_KI);
 
+	g_wired_status.spk_filtered_level_bytes = (uint32_t)filter;
+	g_wired_status.spk_error_bytes = (int32_t)AUDIO_TARGET_BYTES - (int32_t)g_wired_status.spk_filtered_level_bytes;
 	g_wired_status.spk_p_adjust_hz = adjust_hz;
-	(void)tud_audio_fb_set((uint32_t)(((uint64_t)rate_hz << 16) / 8000ULL));
+
+	{
+		int32_t target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
+		int ret = nau88l21_set_fll_target_rate_hz(target_rate);
+
+		if (ret == 0) {
+			g_wired_status.spk_fll_target_rate_hz = target_rate;
+		} else {
+			g_wired_status.spk_fll_fails++;
+		}
+	}
 }
 
 void audio_path_wired_activate(void)
@@ -101,6 +125,11 @@ void audio_path_wired_activate(void)
 	}
 
 	wired_reset_state();
+	tu_fifo_config(&g_wired_rx_fifo, g_wired_rx_fifo_buf,
+		       WIRED_RX_FIFO_SIZE, 1);
+	tu_fifo_config_mutex(&g_wired_rx_fifo,
+			     &g_wired_rx_mutex_wr, &g_wired_rx_mutex_rd);
+	audio_i2s_rx_set_fifo(&g_wired_rx_fifo);
 	g_wired_status.active = true;
 	k_sem_give(&g_wired_start_sem);
 }
@@ -112,6 +141,8 @@ void audio_path_wired_deactivate(void)
 	}
 
 	g_wired_status.active = false;
+	audio_i2s_tx_set_fifo(NULL);
+	audio_i2s_rx_set_fifo(NULL);
 	(void)k_sem_take(&g_wired_stop_sem, K_FOREVER);
 }
 
@@ -124,6 +155,26 @@ void audio_path_wired_get_status(struct audio_path_wired_status *out)
 	*out = g_wired_status;
 }
 
+void audio_path_wired_fll_set_fixed(int32_t rate_hz)
+{
+	if (nau88l21_set_fll_target_rate_hz(rate_hz) == 0) {
+		g_wired_status.spk_fll_target_rate_hz = rate_hz;
+		g_wired_fll_fixed = true;
+		g_wired_fll_fixed_rate_hz = rate_hz;
+	}
+}
+
+void audio_path_wired_fll_set_auto(void)
+{
+	g_wired_fll_fixed = false;
+	g_wired_fll_fixed_rate_hz = 0;
+}
+
+int32_t audio_path_wired_fll_get_fixed_rate(void)
+{
+	return g_wired_fll_fixed ? g_wired_fll_fixed_rate_hz : 0;
+}
+
 static void wired_thread(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a);
@@ -134,44 +185,60 @@ static void wired_thread(void *a, void *b, void *c)
 		/* Park until activate() selects the wired path. */
 		(void)k_sem_take(&g_wired_start_sem, K_FOREVER);
 
-		/* EMA filter state; negative means uninitialized (first sample seeds). */
-		float filter = -1.0f;
-
 		while (g_wired_status.active) {
 			tu_fifo_t *spk_ff = tud_audio_get_ep_out_ff();
 			uint32_t fifo_bytes = (spk_ff != NULL) ? tu_fifo_count(spk_ff) : 0U;
 			uint32_t pending = audio_i2s_tx_get_pending_bytes();
 			uint32_t level = fifo_bytes + pending;
-			const uint32_t target = AUDIO_TARGET_BYTES;
-
-			if (filter < 0.0f) {
-				filter = (float)level;
-			} else {
-				const float alpha = (float)AUDIO_FILTER_ALPHA_NUM /
-						    (float)AUDIO_FILTER_ALPHA_DEN;
-
-				filter = alpha * (float)level + (1.0f - alpha) * filter;
-			}
 
 			g_wired_status.spk_level_bytes = level;
 			g_wired_status.spk_fifo_bytes = fifo_bytes;
 			g_wired_status.spk_pending_bytes = pending;
-			g_wired_status.spk_filtered_level_bytes = (uint32_t)filter;
-			g_wired_status.spk_error_bytes =
-				(int32_t)target - (int32_t)g_wired_status.spk_filtered_level_bytes;
 
-			/* BUFFERING -> PLAYING at AUDIO_START_BYTES,
-			 * PLAYING -> BUFFERING on empty. */
 			if (g_wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
-				if (spk_ff != NULL && level >= AUDIO_START_BYTES) {
+				if (level >= AUDIO_START_BYTES) {
 					g_wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
+					audio_i2s_resume();
 				}
 			} else if (level == 0U) {
 				g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+				g_wired_status.spk_underrun_events++;
 			}
 
-			wired_send_spk_ep_to_i2s(spk_ff);
-			wired_update_feedback();
+			static enum audio_path_state last_spk_state = AUDIO_PATH_STATE_BUFFERING;
+			if (g_wired_status.stream_state != last_spk_state) {
+				last_spk_state = g_wired_status.stream_state;
+				wired_send_spk_ep_to_i2s(spk_ff);
+			}
+			
+#ifdef WIRED_SPK_LEVEL_WARN
+			if (g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+				static uint32_t last_low_warn_ms;
+				static uint32_t last_high_warn_ms;
+
+				if (level <= WIRED_WARN_LOW_BYTES) {
+					uint32_t now = k_uptime_get();
+					if (now - last_low_warn_ms >= WIRED_WARN_COOLDOWN_MS) {
+						printk("wired: speaker level LOW %u bytes "
+						       "(fifo=%u pending=%u)\n",
+						       level, fifo_bytes, pending);
+						last_low_warn_ms = now;
+					}
+				} else if (level >= WIRED_WARN_HIGH_BYTES) {
+					uint32_t now = k_uptime_get();
+					if (now - last_high_warn_ms >= WIRED_WARN_COOLDOWN_MS) {
+						printk("wired: speaker level HIGH %u bytes "
+						       "(fifo=%u pending=%u)\n",
+						       level, fifo_bytes, pending);
+						last_high_warn_ms = now;
+					}
+				}
+			}
+#endif
+			if (!g_wired_fll_fixed &&
+			    g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+				wired_update_codec_clock(level);
+			}
 
 			wired_send_i2s_to_mic_ep();
 			g_wired_status.mic_level_bytes = usb_audio_microphone_level_bytes();

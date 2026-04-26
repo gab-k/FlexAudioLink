@@ -41,7 +41,6 @@
     + TUD_AUDIO20_DESC_TYPE_I_FORMAT_LEN\
     + TUD_AUDIO20_DESC_STD_AS_ISO_EP_LEN\
     + TUD_AUDIO20_DESC_CS_AS_ISO_EP_LEN\
-    + TUD_AUDIO20_DESC_STD_AS_ISO_FB_EP_LEN\
     /* Interface 2, Alternate 0 (Microphone) */\
     + TUD_AUDIO20_DESC_STD_AS_LEN\
     /* Interface 2, Alternate 1 (Microphone) */\
@@ -51,7 +50,7 @@
     + TUD_AUDIO20_DESC_STD_AS_ISO_EP_LEN\
     + TUD_AUDIO20_DESC_CS_AS_ISO_EP_LEN)
 
-#define TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(_stridx, _epout, _epin, _epint, _epfb) \
+#define TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(_stridx, _epout, _epin, _epint) \
     /* Standard Interface Association Descriptor (IAD) */\
     TUD_AUDIO20_DESC_IAD(/*_firstitf*/ ITF_NUM_AUDIO_CONTROL, /*_nitfs*/ 3, /*_stridx*/ 0x00),\
     /* Standard AC Interface Descriptor(4.7.1) */\
@@ -80,17 +79,15 @@
     TUD_AUDIO20_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_STREAMING_SPK, /*_altset*/ 0x00, /*_nEPs*/ 0x00, /*_stridx*/ _stridx),\
     /* Standard AS Interface Descriptor(4.9.1) */\
     /* Interface 1, Alternate 1 - alternate interface for data streaming */\
-    TUD_AUDIO20_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_STREAMING_SPK, /*_altset*/ 0x01, /*_nEPs*/ 0x02, /*_stridx*/ _stridx),\
+    TUD_AUDIO20_DESC_STD_AS_INT(/*_itfnum*/ ITF_NUM_AUDIO_STREAMING_SPK, /*_altset*/ 0x01, /*_nEPs*/ 0x01, /*_stridx*/ _stridx),\
     /* Class-Specific AS Interface Descriptor(4.9.2) */\
     TUD_AUDIO20_DESC_CS_AS_INT(/*_termid*/ UAC2_ENTITY_SPK_INPUT_TERMINAL, /*_ctrl*/ AUDIO20_CTRL_NONE, /*_formattype*/ AUDIO20_FORMAT_TYPE_I, /*_formats*/ AUDIO20_DATA_FORMAT_TYPE_I_PCM, /*_nchannelsphysical*/ CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX, /*_channelcfg*/ AUDIO20_CHANNEL_CONFIG_NON_PREDEFINED, /*_stridx*/ 0x00),\
     /* Type I Format Type Descriptor(2.3.1.6 - Audio Formats) */\
     TUD_AUDIO20_DESC_TYPE_I_FORMAT(CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX),\
     /* Standard AS Isochronous Audio Data Endpoint Descriptor(4.10.1.1) */\
-    TUD_AUDIO20_DESC_STD_AS_ISO_EP(/*_ep*/ _epout, /*_attr*/ (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS | TUSB_ISO_EP_ATT_DATA), /*_maxEPsize*/ TUD_AUDIO_EP_SIZE(TUD_OPT_HIGH_SPEED, CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX), /*_interval*/ 0x01),\
+    TUD_AUDIO20_DESC_STD_AS_ISO_EP(/*_ep*/ _epout, /*_attr*/ (TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ADAPTIVE | TUSB_ISO_EP_ATT_DATA), /*_maxEPsize*/ TUD_AUDIO_EP_SIZE(TUD_OPT_HIGH_SPEED, CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX), /*_interval*/ 0x01),\
     /* Class-Specific AS Isochronous Audio Data Endpoint Descriptor(4.10.1.2) */\
     TUD_AUDIO20_DESC_CS_AS_ISO_EP(/*_attr*/ AUDIO20_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK, /*_ctrl*/ AUDIO20_CTRL_NONE, /*_lockdelayunit*/ AUDIO20_CS_AS_ISO_DATA_EP_LOCK_DELAY_UNIT_MILLISEC, /*_lockdelay*/ 0x0001),\
-    /* Standard AS Isochronous Feedback Endpoint Descriptor(4.10.2.1) */\
-    TUD_AUDIO20_DESC_STD_AS_ISO_FB_EP(/*_ep*/ _epfb, /*_epsize*/ 4, /*_interval*/ 4),\
     /******************************************************************/\
     /*                Microphone Interface Descriptors                */\
     /******************************************************************/\
@@ -211,12 +208,11 @@ uint8_t const *tud_descriptor_device_cb(void)
 #define EPNUM_AUDIO_SPK_OUT     0x01
 #define EPNUM_AUDIO_MIC_IN      0x81
 #define EPNUM_AUDIO_INT_IN      0x82
-#define EPNUM_AUDIO_SPK_FB_IN   0x83
 
 // CDC Endpoints
-#define EPNUM_CDC_NOTIF         0x84
+#define EPNUM_CDC_NOTIF         0x83
 #define EPNUM_CDC_OUT           0x02
-#define EPNUM_CDC_IN            0x85
+#define EPNUM_CDC_IN            0x84
 
 // ==========================================
 // CONFIG A: UAC + CDC
@@ -226,7 +222,7 @@ uint8_t const *tud_descriptor_device_cb(void)
 uint8_t const desc_hs_configuration_uac_cdc[] =
 {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_UAC2_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-    TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(/*_stridx*/ STRID_UAC2, EPNUM_AUDIO_SPK_OUT, EPNUM_AUDIO_MIC_IN, EPNUM_AUDIO_INT_IN, EPNUM_AUDIO_SPK_FB_IN),
+    TUD_AUDIO20_HEADSET_STEREO_DESCRIPTOR(/*_stridx*/ STRID_UAC2, EPNUM_AUDIO_SPK_OUT, EPNUM_AUDIO_MIC_IN, EPNUM_AUDIO_INT_IN),
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
 };
 TU_VERIFY_STATIC(sizeof(desc_hs_configuration_uac_cdc) == CONFIG_UAC2_TOTAL_LEN, "Incorrect UAC2 size");

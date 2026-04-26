@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/printk.h>
 
 const char *audio_path_get_state_name(enum audio_path_state state)
 {
@@ -13,31 +13,6 @@ const char *audio_path_get_state_name(enum audio_path_state state)
 	default:
 		return "buffering";
 	}
-}
-
-uint32_t audio_ring_push(tu_fifo_t *ff, const uint8_t *data, uint32_t bytes)
-{
-	uint32_t evicted = 0U;
-	uint32_t written = 0U;
-
-	if (ff == NULL || data == NULL || bytes == 0U) {
-		return 0U;
-	}
-
-	__ASSERT(ff->overwritable, "audio_ring_push requires overwritable FIFO");
-
-	while (written < bytes) {
-		uint16_t chunk = (bytes - written) > UINT16_MAX ? UINT16_MAX : (uint16_t)(bytes - written);
-		uint32_t before = tu_fifo_count(ff);
-
-		(void)tu_fifo_write_n(ff, data + written, chunk);
-
-		uint32_t after = tu_fifo_count(ff);
-		evicted += (before + chunk) - after;
-		written += chunk;
-	}
-
-	return evicted;
 }
 
 uint32_t audio_filter_update(float *filtered, uint32_t level_bytes)
@@ -59,25 +34,16 @@ uint32_t audio_filter_update(float *filtered, uint32_t level_bytes)
 
 int32_t audio_p_controller_step(int32_t error_bytes, uint32_t level_bytes)
 {
-	int32_t adjust_hz;
+	(void)level_bytes;
 
-	if (level_bytes <= AUDIO_PANIC_LOW_BYTES) {
+	if (error_bytes > AUDIO_P_ADJUST_MAX_HZ) {
 		return AUDIO_P_ADJUST_MAX_HZ;
 	}
-	if (level_bytes >= AUDIO_PANIC_HIGH_BYTES) {
+	if (error_bytes < -AUDIO_P_ADJUST_MAX_HZ) {
 		return -AUDIO_P_ADJUST_MAX_HZ;
 	}
 
-	adjust_hz = error_bytes / AUDIO_P_GAIN_DIV;
-
-	if (adjust_hz > AUDIO_P_ADJUST_MAX_HZ) {
-		adjust_hz = AUDIO_P_ADJUST_MAX_HZ;
-	}
-	if (adjust_hz < -AUDIO_P_ADJUST_MAX_HZ) {
-		adjust_hz = -AUDIO_P_ADJUST_MAX_HZ;
-	}
-
-	return adjust_hz;
+	return error_bytes;
 }
 
 enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_t level_bytes)
@@ -117,4 +83,67 @@ size_t audio_extract_left_to_mono(const uint8_t *stereo, size_t stereo_bytes, ui
 	}
 
 	return stereo_samples * sizeof(int16_t);
+}
+
+int32_t audio_codec_clock_controller(uint32_t level, uint32_t target,
+				     float *filter, float *i_sum,
+				     float gain_mult, float ki)
+{
+	uint32_t filtered;
+	int32_t error_bytes;
+	int32_t p_out;
+	int32_t output;
+
+	if (filter == NULL || i_sum == NULL) {
+		return 0;
+	}
+
+	filtered = audio_filter_update(filter, level);
+	error_bytes = (int32_t)target - (int32_t)filtered;
+
+	p_out = (int32_t)((float)audio_p_controller_step(error_bytes, filtered) * gain_mult);
+	if (p_out > AUDIO_P_TERM_MAX_HZ) {
+		p_out = AUDIO_P_TERM_MAX_HZ;
+	} else if (p_out < -AUDIO_P_TERM_MAX_HZ) {
+		p_out = -AUDIO_P_TERM_MAX_HZ;
+	}
+
+	*i_sum += (float)error_bytes * ki;
+
+	if (*i_sum > (float)AUDIO_I_MAX_HZ) {
+		*i_sum = (float)AUDIO_I_MAX_HZ;
+	} else if (*i_sum < -(float)AUDIO_I_MAX_HZ) {
+		*i_sum = -(float)AUDIO_I_MAX_HZ;
+	}
+
+	output = p_out + (int32_t)*i_sum;
+
+	if (output > AUDIO_P_ADJUST_MAX_HZ) {
+		output = AUDIO_P_ADJUST_MAX_HZ;
+		if (error_bytes < 0) {
+			*i_sum = (float)output - (float)p_out;
+		}
+	} else if (output < -AUDIO_P_ADJUST_MAX_HZ) {
+		output = -AUDIO_P_ADJUST_MAX_HZ;
+		if (error_bytes > 0) {
+			*i_sum = (float)output - (float)p_out;
+		}
+	}
+
+	{
+		static uint32_t log_cnt = 0;
+
+		#ifdef AUDIO_CTRL_DEBUG_LOG 
+		if (++log_cnt % 10 == 0) {
+			int32_t rate = 48000 - output;
+			printk("[CTRL] rate=%d lvl=%u filt=%u err=%d "
+			       "P=%d I=%d out=%d\n",
+			       rate, level, filtered,
+			       error_bytes, p_out,
+			       (int32_t)*i_sum, output);
+		}
+		#endif
+	}
+
+	return output;
 }

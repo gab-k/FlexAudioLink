@@ -2,10 +2,10 @@
 
 #include <stdbool.h>
 
+#include "app_control.h"
 #include "tusb.h"
 #include "usb/usb_descriptors.h"
 
-#define USB_AUDIO_FEEDBACK_FP_SHIFT        16U
 #define USB_AUDIO_SPK_CHANNEL_COUNT        3U /* master + L + R */
 #define USB_AUDIO_VOLUME_MIN_256DB         ((int16_t)(-50 * 256))
 #define USB_AUDIO_VOLUME_MAX_256DB         ((int16_t)(0))
@@ -14,12 +14,11 @@
 static int8_t g_usb_audio_speaker_mute[USB_AUDIO_SPK_CHANNEL_COUNT];
 static int16_t g_usb_audio_speaker_volume[USB_AUDIO_SPK_CHANNEL_COUNT];
 
-static void usb_audio_set_nominal_feedback(void)
-{
-	(void)tud_audio_fb_set(
-		(uint32_t)(((uint64_t)CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE
-			    << USB_AUDIO_FEEDBACK_FP_SHIFT) / 8000ULL));
-}
+static OSAL_MUTEX_DEF(g_usb_audio_ep_out_mutex_wr);
+static OSAL_MUTEX_DEF(g_usb_audio_ep_out_mutex_rd);
+static OSAL_MUTEX_DEF(g_usb_audio_ep_in_mutex_wr);
+static OSAL_MUTEX_DEF(g_usb_audio_ep_in_mutex_rd);
+static bool g_usb_audio_mutexes_configured;
 
 static bool usb_audio_uac2_get_clock_req(uint8_t rhport, audio20_control_request_t const *request)
 {
@@ -178,6 +177,29 @@ static bool usb_audio_uac2_set_feature_req(audio20_control_request_t const *requ
 	return false;
 }
 
+bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request)
+{
+	(void)rhport;
+
+	if (!g_usb_audio_mutexes_configured) {
+		tu_fifo_config_mutex(tud_audio_get_ep_out_ff(),
+				     &g_usb_audio_ep_out_mutex_wr,
+				     &g_usb_audio_ep_out_mutex_rd);
+		tu_fifo_config_mutex(tud_audio_get_ep_in_ff(),
+				     &g_usb_audio_ep_in_mutex_wr,
+				     &g_usb_audio_ep_in_mutex_rd);
+		g_usb_audio_mutexes_configured = true;
+	}
+
+	uint8_t alt = tu_u16_low(tu_le16toh(p_request->wValue));
+
+	if (alt != 0U && app_control_get_current_profile() != APP_PROFILE_USB) {
+		return false;
+	}
+
+	return true;
+}
+
 void usb_audio_reset(void)
 {
 	tu_fifo_t *ep_out_ff;
@@ -187,8 +209,6 @@ void usb_audio_reset(void)
 		g_usb_audio_speaker_mute[channel] = 0;
 		g_usb_audio_speaker_volume[channel] = USB_AUDIO_VOLUME_MAX_256DB;
 	}
-
-	usb_audio_set_nominal_feedback();
 
 	ep_out_ff = tud_audio_get_ep_out_ff();
 	ep_in_ff = tud_audio_get_ep_in_ff();
@@ -283,56 +303,4 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 	}
 }
 
-bool tud_audio_set_itf_close_ep_cb(uint8_t rhport, tusb_control_request_t const *p_request)
-{
-	tu_fifo_t *ff;
-	uint8_t itf;
-	uint8_t alt;
 
-	(void)rhport;
-
-	if (p_request == NULL) {
-		return true;
-	}
-
-	itf = tu_u16_low(tu_le16toh(p_request->wIndex));
-	alt = tu_u16_low(tu_le16toh(p_request->wValue));
-
-	if (itf == ITF_NUM_AUDIO_STREAMING_SPK && alt == 0U) {
-		usb_audio_set_nominal_feedback();
-		ff = tud_audio_get_ep_out_ff();
-		if (ff != NULL) {
-			tu_fifo_clear(ff);
-		}
-	}
-
-	if (itf == ITF_NUM_AUDIO_STREAMING_MIC && alt == 0U) {
-		ff = tud_audio_get_ep_in_ff();
-		if (ff != NULL) {
-			tu_fifo_clear(ff);
-		}
-	}
-
-	return true;
-}
-
-bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request)
-{
-	uint8_t itf;
-	uint8_t alt;
-
-	(void)rhport;
-
-	if (p_request == NULL) {
-		return true;
-	}
-
-	itf = tu_u16_low(tu_le16toh(p_request->wIndex));
-	alt = tu_u16_low(tu_le16toh(p_request->wValue));
-
-	if (itf == ITF_NUM_AUDIO_STREAMING_SPK && alt != 0U) {
-		usb_audio_set_nominal_feedback();
-	}
-
-	return true;
-}

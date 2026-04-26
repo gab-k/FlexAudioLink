@@ -2,10 +2,12 @@
 
 #include "app_control.h"
 #include "audio_io/i2s.h"
-#include "audio_io/i2s_tone.h"
 #include "audio_io/audio_path_common.h"
 #include "audio_io/audio_path_wired.h"
 #include "audio_io/audio_path_wireless.h"
+#include "audio_io/audio_path_wireless_dongle.h"
+#include "audio_io/audio_path_wireless_headset.h"
+#include "audio_io/nau88l21.h"
 #include "prop_gfsk/link.h"
 #include "prop_gfsk/test_mode.h"
 
@@ -149,6 +151,7 @@ static void cli_emit_status_audio_push(void)
 		cli_print("#A active=%s state=%s spk_level_bytes=%u "
 			  "spk_fifo_bytes=%u spk_pending_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
+			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u spk_underruns=%u "
 			  "mic_level_bytes=%u mic_overruns=%u\n",
 			  "wired",
 			  audio_path_get_state_name(s.stream_state),
@@ -158,6 +161,9 @@ static void cli_emit_status_audio_push(void)
 			  s.spk_filtered_level_bytes,
 			  s.spk_error_bytes,
 			  s.spk_p_adjust_hz,
+			  s.spk_fll_target_rate_hz,
+			  s.spk_fll_fails,
+			  s.spk_underrun_events,
 			  s.mic_level_bytes,
 			  s.mic_overflow_bytes);
 		return;
@@ -165,40 +171,41 @@ static void cli_emit_status_audio_push(void)
 	case APP_PROFILE_PGFSK_DONGLE: {
 		struct audio_path_wireless_status s;
 
-		audio_path_wireless_get_status(&s);
+		audio_path_wireless_dongle_get_status(&s);
 		cli_print("#A active=%s state=%s spk_level_bytes=%u "
-			  "peer_adjust_hz=%d spk_underruns=%u overruns=%u spk_silence_bytes=%u "
-			  "spk_dropped_oldest_bytes=%u spk_usb_level_bytes=%u mic_usb_level_bytes=%u "
-			  "rx_malformed_frames=%u\n",
+			  "spk_underruns=%u overruns=%u spk_silence_bytes=%u "
+			  "spk_dropped_oldest_bytes=%u spk_usb_level_bytes=%u mic_usb_level_bytes=%u\n",
 			  "wireless",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
-			  s.peer_adjust_hz,
 			  s.spk_underrun_bytes,
 			  s.overflow_bytes,
 			  s.spk_silence_inserted_bytes,
 			  s.spk_dropped_oldest_bytes,
 			  s.spk_usb_level_bytes,
-			  s.mic_usb_level_bytes,
-			  s.rx_malformed_frames);
+			  s.mic_usb_level_bytes);
 		return;
 	}
 	case APP_PROFILE_PGFSK_HEADSET: {
 		struct audio_path_wireless_status s;
 
-		audio_path_wireless_get_status(&s);
+		audio_path_wireless_headset_get_status(&s);
 		cli_print("#A active=%s state=%s spk_level_bytes=%u "
-			  "spk_p_adjust_hz=%d spk_underruns=%u overruns=%u spk_silence_bytes=%u "
-			  "spk_dropped_oldest_bytes=%u rx_malformed_frames=%u\n",
+			  "spk_filtered_level_bytes=%u spk_p_adjust_hz=%d "
+			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u "
+			  "spk_underruns=%u overruns=%u spk_silence_bytes=%u "
+			  "spk_dropped_oldest_bytes=%u\n",
 			  "wireless",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
+			  s.spk_filtered_level_bytes,
 			  s.spk_p_adjust_hz,
+			  s.spk_fll_target_rate_hz,
+			  s.spk_fll_fails,
 			  s.spk_underrun_bytes,
 			  s.overflow_bytes,
 			  s.spk_silence_inserted_bytes,
-			  s.spk_dropped_oldest_bytes,
-			  s.rx_malformed_frames);
+			  s.spk_dropped_oldest_bytes);
 		return;
 	}
 	default:
@@ -307,6 +314,7 @@ static void cli_print_help(void)
 	cli_print("  linktest on|off|status\n");
 	cli_print("  status_link on [ms]|off\n");
 	cli_print("  status_audio on [ms]|off\n");
+	cli_print("  fll auto|status|<rate_hz>\n");
 	cli_print("  reset\n");
 	cli_print("  scan\n");
 }
@@ -393,57 +401,6 @@ static void cli_cmd_set(char *args)
 	cli_print("ERR %s unsupported\n", param);
 }
 
-static void cli_cmd_i2s(char *args)
-{
-	char *subcmd;
-	char *value;
-
-	if (args == NULL) {
-		cli_print("ERR i2s invalid_args\n");
-		return;
-	}
-
-	subcmd = strtok(args, " \t");
-	value = strtok(NULL, " \t");
-
-	if (subcmd == NULL) {
-		cli_print("ERR i2s invalid_args\n");
-		return;
-	}
-
-	if (strcasecmp(subcmd, "tone") != 0) {
-		cli_print("ERR i2s unsupported\n");
-		return;
-	}
-
-	if (value == NULL || strcasecmp(value, "status") == 0) {
-		cli_print("i2s ready=%s tone=%s tone_blocks=%u\n",
-			  audio_i2s_is_ready() ? "yes" : "no",
-			  audio_i2s_tone_is_enabled() ? "on" : "off",
-			  audio_i2s_tone_get_enqueued_blocks());
-		return;
-	}
-
-	if (strcasecmp(value, "on") == 0) {
-		if (!audio_i2s_is_ready()) {
-			cli_print("ERR i2s not_ready\n");
-			return;
-		}
-
-		audio_i2s_tone_set_enabled(true);
-		cli_print("OK i2s tone=on\n");
-		return;
-	}
-
-	if (strcasecmp(value, "off") == 0) {
-		audio_i2s_tone_set_enabled(false);
-		cli_print("OK i2s tone=off\n");
-		return;
-	}
-
-	cli_print("ERR i2s invalid_value\n");
-}
-
 static void cli_cmd_linktest(char *args)
 {
 	if (args == NULL || *args == '\0' || strcasecmp(args, "status") == 0) {
@@ -522,6 +479,72 @@ static void cli_cmd_status_audio(char *args)
 	cli_print("ERR status_audio invalid_value\n");
 }
 
+static void cli_cmd_fll(char *args)
+{
+	long rate;
+	int32_t lo, hi;
+	enum app_profile profile = app_control_get_current_profile();
+
+	if (args == NULL || *args == '\0' || strcasecmp(args, "auto") == 0) {
+		switch (profile) {
+		case APP_PROFILE_USB:
+			audio_path_wired_fll_set_auto();
+			break;
+		case APP_PROFILE_PGFSK_HEADSET:
+			audio_path_wireless_headset_fll_set_auto();
+			break;
+		default:
+			cli_print("ERR fll not available for current profile\n");
+			return;
+		}
+		cli_print("OK fll=auto (P-controller running)\n");
+		return;
+	}
+
+	if (strcasecmp(args, "status") == 0) {
+		int32_t fixed = (profile == APP_PROFILE_PGFSK_HEADSET)
+			? audio_path_wireless_headset_fll_get_fixed_rate()
+			: audio_path_wired_fll_get_fixed_rate();
+
+		if (fixed != 0) {
+			cli_print("OK fll=fixed target_rate=%d\n", fixed);
+		} else {
+			cli_print("OK fll=auto\n");
+		}
+		return;
+	}
+
+	if (profile == APP_PROFILE_PGFSK_DONGLE) {
+		cli_print("ERR fll not available for dongle profile\n");
+		return;
+	}
+
+	lo = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - AUDIO_P_ADJUST_MAX_HZ);
+	hi = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + AUDIO_P_ADJUST_MAX_HZ);
+
+	rate = strtol(args, NULL, 10);
+	if (rate < lo || rate > hi) {
+		cli_print("ERR fll rate %ld out of range (%d-%d)\n", rate, lo, hi);
+		return;
+	}
+
+	if (profile == APP_PROFILE_PGFSK_HEADSET) {
+		audio_path_wireless_headset_fll_set_fixed((int32_t)rate);
+		if (audio_path_wireless_headset_fll_get_fixed_rate() == 0) {
+			cli_print("ERR fll driver rejected rate %ld\n", rate);
+		} else {
+			cli_print("OK fll=fixed target_rate=%ld (P-controller paused)\n", rate);
+		}
+	} else {
+		audio_path_wired_fll_set_fixed((int32_t)rate);
+		if (audio_path_wired_fll_get_fixed_rate() == 0) {
+			cli_print("ERR fll driver rejected rate %ld\n", rate);
+		} else {
+			cli_print("OK fll=fixed target_rate=%ld (P-controller paused)\n", rate);
+		}
+	}
+}
+
 static void cli_process_line(char *line)
 {
 	char *cmd;
@@ -584,11 +607,6 @@ static void cli_process_line(char *line)
 		return;
 	}
 
-	if (strcasecmp(cmd, "i2s") == 0) {
-		cli_cmd_i2s(args);
-		return;
-	}
-
 	if (strcasecmp(cmd, "linktest") == 0) {
 		cli_cmd_linktest(args);
 		return;
@@ -602,6 +620,11 @@ static void cli_process_line(char *line)
 	if (strcasecmp(cmd, "reset") == 0) {
 		cli_print("OK reset\n");
 		sys_reboot(SYS_REBOOT_COLD);
+		return;
+	}
+
+	if (strcasecmp(cmd, "fll") == 0) {
+		cli_cmd_fll(args);
 		return;
 	}
 
