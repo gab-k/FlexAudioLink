@@ -32,7 +32,6 @@ static void headset_reset_state(void)
 	g_headset_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 	g_headset_status.spk_fll_target_rate_hz =
 		(int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
-	audio_i2s_tx_flush();
 	tu_fifo_clear(tud_audio_get_ep_in_ff());
 }
 
@@ -133,29 +132,23 @@ static void headset_thread(void *a, void *b, void *c)
 			while (1) {
 				struct pgfsk_frame frame;
 
-				if (!pgfsk_link_rx_dequeue(&frame,
-							   K_NO_WAIT)) {
+				if (!pgfsk_link_rx_dequeue(&frame, K_NO_WAIT)) {
 					break;
 				}
 
 				if (frame.len < AUDIO_I2S_BLOCK_BYTES) {
-					g_headset_status.spk_silence_inserted_bytes +=
-						AUDIO_I2S_BLOCK_BYTES - frame.len;
+					g_headset_status.spk_silence_inserted_bytes += AUDIO_I2S_BLOCK_BYTES - frame.len;
 					continue;
 				}
 
-				uint32_t written = tu_fifo_write_n(
-					tud_audio_get_ep_out_ff(), frame.payload,
-					AUDIO_I2S_BLOCK_BYTES);
+				uint32_t written = tu_fifo_write_n( tud_audio_get_ep_out_ff(), frame.payload, AUDIO_I2S_BLOCK_BYTES);
 				if (written < AUDIO_I2S_BLOCK_BYTES) {
-					g_headset_status.overflow_bytes +=
-						AUDIO_I2S_BLOCK_BYTES - written;
+					g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES - written;
 				}
 			}
 
 			/* 2. I2S RX → PGFSK TX (if link in service) */
-			if (pgfsk_link_get_state() ==
-			    PGFSK_LINK_STATE_IN_SERVICE) {
+			if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
 				while (1) {
 					uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
 					struct pgfsk_frame frame;
@@ -176,19 +169,15 @@ static void headset_thread(void *a, void *b, void *c)
 						frame.payload,
 						PGFSK_PAYLOAD_MAX_LEN);
 					if (mono_bytes == 0U) {
-						g_headset_status.overflow_bytes +=
-							AUDIO_I2S_BLOCK_BYTES;
+						g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
 						continue;
 					}
 
 					frame.len = mono_bytes;
 
-					if (!pgfsk_link_tx_enqueue(
-						    &frame, K_NO_WAIT)) {
-						if (pgfsk_link_get_state() ==
-						    PGFSK_LINK_STATE_IN_SERVICE) {
-							g_headset_status.overflow_bytes +=
-								mono_bytes;
+					if (!pgfsk_link_tx_enqueue(&frame, K_NO_WAIT)) {
+						if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
+							g_headset_status.overflow_bytes += mono_bytes;
 						}
 					}
 				}
@@ -197,8 +186,6 @@ static void headset_thread(void *a, void *b, void *c)
 			}
 
 			/* 3. State machine & FIFO management */
-			static enum audio_path_state last_spk_state =
-				AUDIO_PATH_STATE_BUFFERING;
 			{
 				uint32_t fifo_bytes = tu_fifo_count(
 					tud_audio_get_ep_out_ff());
@@ -207,25 +194,20 @@ static void headset_thread(void *a, void *b, void *c)
 				uint32_t level = fifo_bytes + pending;
 
 				g_headset_status.spk_level_bytes = level;
-				g_headset_status.stream_state =
-					audio_state_advance(
-						g_headset_status.stream_state,
-						level);
+				enum audio_path_state prev = g_headset_status.stream_state;
+				g_headset_status.stream_state = audio_state_advance( g_headset_status.stream_state, level);
 
-				if (g_headset_status.stream_state !=
-				    last_spk_state) {
-					last_spk_state =
-						g_headset_status.stream_state;
-					audio_i2s_tx_set_fifo(
-						(g_headset_status.stream_state
-						 == AUDIO_PATH_STATE_PLAYING)
-							? tud_audio_get_ep_out_ff()
-							: NULL);
-					if (g_headset_status.stream_state ==
-					    AUDIO_PATH_STATE_PLAYING) {
-						audio_i2s_resume();
-					}
+				if (prev != g_headset_status.stream_state) {
+					printk("headset: %s\n",
+					       g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING
+						       ? "PLAYING" : "BUFFERING");
 				}
+
+				audio_i2s_tx_set_fifo(
+					(g_headset_status.stream_state
+					 == AUDIO_PATH_STATE_PLAYING)
+						? tud_audio_get_ep_out_ff()
+						: NULL);
 			}
 
 			/* 4. FLL controller */

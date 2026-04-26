@@ -22,7 +22,7 @@
 #define WIRED_WARN_COOLDOWN_MS          2000
 
 /* Uncomment to print speaker buffer-level warnings every WARN_COOLDOWN_MS. */
-/* #define WIRED_SPK_LEVEL_WARN */
+#define WIRED_SPK_LEVEL_WARN
 
 /* Wakes the parked wired worker on (re)activation. */
 static K_SEM_DEFINE(g_wired_start_sem, 0, 1);
@@ -46,7 +46,6 @@ static void wired_reset_state(void)
 	g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 	g_wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
 	audio_i2s_tx_set_fifo(NULL);
-	audio_i2s_tx_flush();
 	audio_i2s_rx_set_fifo(NULL);
 	tu_fifo_clear(&g_wired_rx_fifo);
 	usb_audio_reset();
@@ -78,11 +77,6 @@ static void wired_send_i2s_to_mic_ep(void)
 			g_wired_status.mic_overflow_bytes += mono_bytes - pushed;
 		}
 	}
-}
-
-static void wired_send_spk_ep_to_i2s(tu_fifo_t *spk_ff)
-{
-	audio_i2s_tx_set_fifo((g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) ? spk_ff : NULL);
 }
 
 static void wired_update_codec_clock(uint32_t level)
@@ -198,20 +192,17 @@ static void wired_thread(void *a, void *b, void *c)
 			if (g_wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
 				if (level >= AUDIO_START_BYTES) {
 					g_wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
-					audio_i2s_resume();
+					printk("wired: PLAYING\n");
+					audio_i2s_tx_set_fifo(spk_ff);
 				}
 			} else if (level == 0U) {
 				g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+				printk("wired: BUFFERING\n");
+				audio_i2s_tx_set_fifo(NULL);
 				g_wired_status.spk_underrun_events++;
 			}
-
-			static enum audio_path_state last_spk_state = AUDIO_PATH_STATE_BUFFERING;
-			if (g_wired_status.stream_state != last_spk_state) {
-				last_spk_state = g_wired_status.stream_state;
-				wired_send_spk_ep_to_i2s(spk_ff);
-			}
-			
-#ifdef WIRED_SPK_LEVEL_WARN
+		
+			#ifdef WIRED_SPK_LEVEL_WARN
 			if (g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
 				static uint32_t last_low_warn_ms;
 				static uint32_t last_high_warn_ms;
@@ -219,22 +210,19 @@ static void wired_thread(void *a, void *b, void *c)
 				if (level <= WIRED_WARN_LOW_BYTES) {
 					uint32_t now = k_uptime_get();
 					if (now - last_low_warn_ms >= WIRED_WARN_COOLDOWN_MS) {
-						printk("wired: speaker level LOW %u bytes "
-						       "(fifo=%u pending=%u)\n",
-						       level, fifo_bytes, pending);
+						printk("wired: speaker level LOW %u B (fifo=%u pending=%u)\n", level, fifo_bytes, pending);
 						last_low_warn_ms = now;
 					}
 				} else if (level >= WIRED_WARN_HIGH_BYTES) {
 					uint32_t now = k_uptime_get();
 					if (now - last_high_warn_ms >= WIRED_WARN_COOLDOWN_MS) {
-						printk("wired: speaker level HIGH %u bytes "
-						       "(fifo=%u pending=%u)\n",
-						       level, fifo_bytes, pending);
+						printk("wired: speaker level HIGH %u B (fifo=%u pending=%u)\n", level, fifo_bytes, pending);
 						last_high_warn_ms = now;
 					}
 				}
 			}
-#endif
+			#endif
+
 			if (!g_wired_fll_fixed &&
 			    g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
 				wired_update_codec_clock(level);

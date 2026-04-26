@@ -38,8 +38,6 @@ static uint32_t audio_i2s_tx_pending_bytes;
  * here.  NULL means drop mic data. */
 static tu_fifo_t *audio_i2s_rx_fifo;
 
-static K_SEM_DEFINE(audio_i2s_resume_sem, 0, 1);
-
 BUILD_ASSERT((AUDIO_I2S_SAMPLE_RATE_HZ % 1000U) == 0U,
 	     "AUDIO_I2S_SAMPLE_RATE_HZ must be divisible by 1000");
 BUILD_ASSERT((AUDIO_I2S_BLOCK_BYTES % AUDIO_I2S_BYTES_PER_STEREO_SAMPLE) == 0U,
@@ -179,6 +177,7 @@ static void audio_i2s_stop(void)
 
 	(void)i2s_trigger(i2s_dev, I2S_DIR_BOTH, I2S_TRIGGER_DROP);
 	audio_i2s_running = false;
+	audio_i2s_tx_pending_bytes = 0U;
 }
 
 static void audio_i2s_thread(void *a, void *b, void *c)
@@ -200,9 +199,6 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 	printk("audio_i2s: ready\n");
 
 	while (1) {
-		(void)k_sem_take(&audio_i2s_resume_sem, K_NO_WAIT);
-		k_sem_take(&audio_i2s_resume_sem, K_FOREVER);
-
 		int ret = audio_i2s_start();
 		if (ret < 0) {
 			printk("audio_i2s: start failed (%d: %s)\n", ret, strerror(-ret));
@@ -210,28 +206,20 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 			continue;
 		}
 
-		int64_t last_tx_ms = k_uptime_get();
-
 		while (1) {
+			if(audio_i2s_tx_fifo == NULL) {
+				break;
+			}
+
 			int tx_ret = audio_i2s_submit_tx_block();
 			int rx_ret = audio_i2s_collect_rx_block();
 
-			if (tx_ret == 0) {
-				last_tx_ms = k_uptime_get();
-			} else if (tx_ret < 0 && tx_ret != -EAGAIN && tx_ret != -EBUSY && tx_ret != -ENOMSG) {
-				printk("audio_i2s: write failed (%d: %s)\n",
-				       tx_ret, strerror(-tx_ret));
+			if (tx_ret < 0 && tx_ret != -EAGAIN) {
+				printk("audio_i2s: write failed (%d: %s)\n", tx_ret, strerror(-tx_ret));
 				break;
 			}
-			if (rx_ret < 0 && rx_ret != -EAGAIN && rx_ret != -EBUSY) {
-				printk("audio_i2s: read failed (%d: %s)\n",
-				       rx_ret, strerror(-rx_ret));
-				break;
-			}
-
-			if (audio_i2s_tx_pending_bytes == 0U &&
-			    k_uptime_get() - last_tx_ms > 2) {
-				printk("audio_i2s: starved\n");
+			if (rx_ret < 0 && rx_ret != -EAGAIN) {
+				printk("audio_i2s: read failed (%d: %s)\n", rx_ret, strerror(-rx_ret));
 				break;
 			}
 
@@ -240,7 +228,6 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 
 		audio_i2s_stop();
 		audio_i2s_configure();
-		audio_i2s_tx_flush();
 	}
 }
 
@@ -254,19 +241,9 @@ uint32_t audio_i2s_tx_get_pending_bytes(void)
 	return audio_i2s_tx_pending_bytes;
 }
 
-void audio_i2s_tx_flush(void)
-{
-	audio_i2s_tx_pending_bytes = 0U;
-}
-
 void audio_i2s_rx_set_fifo(tu_fifo_t *dest)
 {
 	audio_i2s_rx_fifo = dest;
-}
-
-void audio_i2s_resume(void)
-{
-	k_sem_give(&audio_i2s_resume_sem);
 }
 
 K_THREAD_DEFINE(audio_i2s_thread_id, AUDIO_I2S_THREAD_STACK_SIZE, audio_i2s_thread,

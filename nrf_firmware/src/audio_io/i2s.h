@@ -26,9 +26,7 @@ struct audio_i2s_block {
 
 void audio_i2s_tx_set_fifo(tu_fifo_t *src);
 uint32_t audio_i2s_tx_get_pending_bytes(void);
-void audio_i2s_tx_flush(void);
-
 /* Mic (RX) direction: set a FIFO that the I2S thread fills with stereo blocks. */
 void audio_i2s_rx_set_fifo(tu_fifo_t *dest);
 
-void audio_i2s_resume(void);
+

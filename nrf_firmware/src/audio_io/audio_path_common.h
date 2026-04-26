@@ -19,7 +19,7 @@
 #define AUDIO_P_GAIN                       (0.25f)
 #define AUDIO_P_TERM_MAX_HZ                200
 #define AUDIO_P_ADJUST_MAX_HZ              800
-#define AUDIO_P_KI                         (0.0005f)
+#define AUDIO_P_KI                         (0.005f)
 #define AUDIO_I_MAX_HZ                     400
 
 /* Uncomment to enable controller debug log every ~1 second. */
