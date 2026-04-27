@@ -6,6 +6,7 @@ enum app_profile {
 	APP_PROFILE_USB,
 	APP_PROFILE_PGFSK_DONGLE,
 	APP_PROFILE_PGFSK_HEADSET,
+	APP_PROFILE_COUNT,
 };
 
 enum app_profile app_control_get_current_profile(void);

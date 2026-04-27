@@ -9,16 +9,13 @@
 
 #include <string.h>
 
-#include <zephyr/drivers/hwinfo.h>
 #include <zephyr/kernel.h>
+#include <zephyr/settings/settings.h>
 #include <zephyr/sys/printk.h>
 
 #define APP_CONTROL_THREAD_STACK_SIZE 2048
 #define APP_CONTROL_THREAD_PRIORITY 9
 #define APP_CONTROL_MSGQ_DEPTH 1
-
-#define APP_CONTROL_DEFAULT_PROFILE APP_PROFILE_USB //APP_PROFILE_PGFSK_HEADSET
-#define APP_CONTROL_DONGLE_DEVICE_UID 0xc5dc2c2a25468f18ULL
 
 struct app_profile_set_request {
 	enum app_profile profile;
@@ -26,7 +23,7 @@ struct app_profile_set_request {
 	bool *result;
 };
 
-static enum app_profile g_current_profile = APP_CONTROL_DEFAULT_PROFILE;
+static enum app_profile g_current_profile = APP_PROFILE_USB;
 
 K_MSGQ_DEFINE(g_app_profile_queue, sizeof(struct app_profile_set_request), APP_CONTROL_MSGQ_DEPTH, 4);
 
@@ -76,55 +73,43 @@ static bool app_control_apply(enum app_profile profile)
 	return true;
 }
 
-static enum app_profile app_control_detect_default_profile(void)
-{
-	uint8_t id[16];
-	ssize_t len;
-	uint64_t uid = 0;
-	int copy_len;
-
-	len = hwinfo_get_device_id(id, sizeof(id));
-	if (len < 0) {
-		printk("hwinfo_get_device_id failed: %zd\n", len);
-		return APP_CONTROL_DEFAULT_PROFILE;
-	}
-
-	printk("Device UID (%zd bytes):", len);
-	for (int i = 0; i < len; i++) {
-		printk(" %02x", id[i]);
-	}
-	printk("\n");
-
-	copy_len = (len < 8) ? len : 8;
-	memcpy(&uid, id, copy_len);
-	printk("Device UID (u64): 0x%016llx\n", uid);
-
-	if (APP_CONTROL_DONGLE_DEVICE_UID != 0 && uid == APP_CONTROL_DONGLE_DEVICE_UID) {
-		return APP_PROFILE_PGFSK_DONGLE;
-	}
-
-	return APP_CONTROL_DEFAULT_PROFILE;
-}
-
 static void app_control_thread(void *arg1, void *arg2, void *arg3)
 {
 	struct app_profile_set_request request;
-	enum app_profile default_profile;
 
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	default_profile = app_control_detect_default_profile();
-	if (!app_control_apply(default_profile)) {
-		printk("app_control: failed to apply default profile\n");
+	if (settings_subsys_init()) {
+		printk("app_control: settings_subsys_init failed\n");
 	}
 
-	printk("Default profile: %s\n", app_control_get_profile_name(g_current_profile));
+	uint8_t saved;
+	ssize_t rc = settings_load_one("profile/active", &saved, sizeof(saved));
+	if (rc == sizeof(saved) && saved < APP_PROFILE_COUNT) {
+		g_current_profile = (enum app_profile)saved;
+		printk("app_control: loaded saved profile %s\n", app_control_get_profile_name(g_current_profile));
+	} else {
+		g_current_profile = APP_PROFILE_USB;
+	}
+
+	if (!app_control_apply(g_current_profile)) {
+		printk("app_control: failed to apply boot profile\n");
+	}
+
+	printk("Boot profile: %s\n", app_control_get_profile_name(g_current_profile));
 
 	while (1) {
 		(void)k_msgq_get(&g_app_profile_queue, &request, K_FOREVER);
 		*request.result = app_control_apply(request.profile);
+		if (*request.result) {
+			uint8_t val = (uint8_t)g_current_profile;
+			int ret = settings_save_one("profile/active", &val, sizeof(val));
+			if (ret) {
+				printk("app_control: failed to persist profile (err %d)\n", ret);
+			}
+		}
 		k_sem_give(request.done);
 	}
 }
