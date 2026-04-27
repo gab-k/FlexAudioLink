@@ -30,9 +30,7 @@ static void headset_reset_state(void)
 {
 	memset(&g_headset_status, 0, sizeof(g_headset_status));
 	g_headset_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
-	g_headset_status.spk_fll_target_rate_hz =
-		(int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
-	tu_fifo_clear(tud_audio_get_ep_in_ff());
+	g_headset_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
 }
 
 void audio_path_wireless_headset_activate(void)
