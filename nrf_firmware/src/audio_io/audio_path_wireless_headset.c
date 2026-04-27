@@ -181,16 +181,12 @@ static void headset_thread(void *a, void *b, void *c)
 						}
 					}
 				}
-			} else {
-				tu_fifo_clear(tud_audio_get_ep_in_ff());
 			}
-
+			
 			/* 3. State machine & FIFO management */
 			{
-				uint32_t fifo_bytes = tu_fifo_count(
-					tud_audio_get_ep_out_ff());
-				uint32_t pending =
-					audio_i2s_tx_get_pending_bytes();
+				uint32_t fifo_bytes = tu_fifo_count(tud_audio_get_ep_out_ff());
+				uint32_t pending = audio_i2s_tx_get_pending_bytes();
 				uint32_t level = fifo_bytes + pending;
 
 				g_headset_status.spk_level_bytes = level;
@@ -198,9 +194,7 @@ static void headset_thread(void *a, void *b, void *c)
 				g_headset_status.stream_state = audio_state_advance( g_headset_status.stream_state, level);
 
 				if (prev != g_headset_status.stream_state) {
-					printk("headset: %s\n",
-					       g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING
-						       ? "PLAYING" : "BUFFERING");
+					printk("headset: %s\n", g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING ? "PLAYING" : "BUFFERING");
 				}
 
 				audio_i2s_tx_set_fifo(
@@ -211,10 +205,8 @@ static void headset_thread(void *a, void *b, void *c)
 			}
 
 			/* 4. FLL controller */
-			if (g_headset_status.stream_state ==
-			    AUDIO_PATH_STATE_PLAYING) {
-				headset_update_codec_clock(
-					g_headset_status.spk_level_bytes);
+			if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+				headset_update_codec_clock( g_headset_status.spk_level_bytes);
 			}
 
 			/* 5. No USB mic on headset */
