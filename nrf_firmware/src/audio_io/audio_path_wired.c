@@ -45,8 +45,7 @@ static void wired_reset_state(void)
 	memset(&g_wired_status, 0, sizeof(g_wired_status));
 	g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 	g_wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
-	audio_i2s_tx_set_fifo(NULL);
-	audio_i2s_rx_set_fifo(NULL);
+	audio_i2s_deactivate();
 	tu_fifo_clear(&g_wired_rx_fifo);
 	usb_audio_reset();
 }
@@ -123,7 +122,6 @@ void audio_path_wired_activate(void)
 		       WIRED_RX_FIFO_SIZE, 1);
 	tu_fifo_config_mutex(&g_wired_rx_fifo,
 			     &g_wired_rx_mutex_wr, &g_wired_rx_mutex_rd);
-	audio_i2s_rx_set_fifo(&g_wired_rx_fifo);
 	g_wired_status.active = true;
 	k_sem_give(&g_wired_start_sem);
 }
@@ -135,8 +133,7 @@ void audio_path_wired_deactivate(void)
 	}
 
 	g_wired_status.active = false;
-	audio_i2s_tx_set_fifo(NULL);
-	audio_i2s_rx_set_fifo(NULL);
+	audio_i2s_deactivate();
 	(void)k_sem_take(&g_wired_stop_sem, K_FOREVER);
 }
 
@@ -192,13 +189,13 @@ static void wired_thread(void *a, void *b, void *c)
 			if (g_wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
 				if (level >= AUDIO_START_BYTES) {
 					g_wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
-					printk("wired: PLAYING\n");
-					audio_i2s_tx_set_fifo(spk_ff);
+					printk("wired: switching to PLAYING, notifying i2s thread...\n");
+					audio_i2s_activate(spk_ff, &g_wired_rx_fifo);
 				}
 			} else if (level == 0U) {
 				g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
-				printk("wired: BUFFERING\n");
-				audio_i2s_tx_set_fifo(NULL);
+				printk("wired: switching to BUFFERING, notifying i2s thread...\n");
+				audio_i2s_deactivate();
 				g_wired_status.spk_underrun_events++;
 			}
 		

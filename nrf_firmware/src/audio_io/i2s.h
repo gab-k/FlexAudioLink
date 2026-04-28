@@ -24,9 +24,12 @@ struct audio_i2s_block {
 	};
 };
 
-void audio_i2s_tx_set_fifo(tu_fifo_t *src);
+/* Start I2S playback/mic capture. Blocks until TDM is running.
+ * tx_fifo: speaker data source (NULL disallowed).
+ * rx_fifo: mic data sink (NULL to discard mic). */
+void audio_i2s_activate(tu_fifo_t *tx_fifo, tu_fifo_t *rx_fifo);
+
+/* Stop I2S. Blocks until TDM is stopped and reconfigured. */
+void audio_i2s_deactivate(void);
+
 uint32_t audio_i2s_tx_get_pending_bytes(void);
-/* Mic (RX) direction: set a FIFO that the I2S thread fills with stereo blocks. */
-void audio_i2s_rx_set_fifo(tu_fifo_t *dest);
-
-

@@ -17,7 +17,7 @@
 #define AUDIO_FILTER_ALPHA_NUM             1
 #define AUDIO_FILTER_ALPHA_DEN             5
 #define AUDIO_P_GAIN                       (0.25f)
-#define AUDIO_P_TERM_MAX_HZ                200
+#define AUDIO_P_TERM_MAX_HZ                400
 #define AUDIO_P_ADJUST_MAX_HZ              800
 #define AUDIO_P_KI                         (0.005f)
 #define AUDIO_I_MAX_HZ                     400

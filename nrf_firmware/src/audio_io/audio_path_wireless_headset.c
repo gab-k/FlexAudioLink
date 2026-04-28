@@ -40,7 +40,6 @@ void audio_path_wireless_headset_activate(void)
 	}
 
 	headset_reset_state();
-	audio_i2s_rx_set_fifo(tud_audio_get_ep_in_ff());
 	g_headset_status.active = true;
 	k_sem_give(&g_headset_start_sem);
 }
@@ -52,6 +51,7 @@ void audio_path_wireless_headset_deactivate(void)
 	}
 
 	g_headset_status.active = false;
+	audio_i2s_deactivate();
 	(void)k_sem_take(&g_headset_stop_sem, K_FOREVER);
 }
 
@@ -182,24 +182,24 @@ static void headset_thread(void *a, void *b, void *c)
 			}
 			
 			/* 3. State machine & FIFO management */
-			{
-				uint32_t fifo_bytes = tu_fifo_count(tud_audio_get_ep_out_ff());
-				uint32_t pending = audio_i2s_tx_get_pending_bytes();
-				uint32_t level = fifo_bytes + pending;
+			uint32_t fifo_bytes = tu_fifo_count(tud_audio_get_ep_out_ff());
+			uint32_t pending = audio_i2s_tx_get_pending_bytes();
+			uint32_t level = fifo_bytes + pending;
 
-				g_headset_status.spk_level_bytes = level;
-				enum audio_path_state prev = g_headset_status.stream_state;
-				g_headset_status.stream_state = audio_state_advance( g_headset_status.stream_state, level);
+			g_headset_status.spk_level_bytes = level;
+			enum audio_path_state prev = g_headset_status.stream_state;
+			g_headset_status.stream_state = audio_state_advance( g_headset_status.stream_state, level);
 
-				if (prev != g_headset_status.stream_state) {
-					printk("headset: %s\n", g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING ? "PLAYING" : "BUFFERING");
+			if (prev != g_headset_status.stream_state) {
+				printk("headset: %s\n",
+						g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING
+							? "PLAYING" : "BUFFERING");
+
+				if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+					audio_i2s_activate(tud_audio_get_ep_out_ff(), tud_audio_get_ep_in_ff());
+				} else {
+					audio_i2s_deactivate();
 				}
-
-				audio_i2s_tx_set_fifo(
-					(g_headset_status.stream_state
-					 == AUDIO_PATH_STATE_PLAYING)
-						? tud_audio_get_ep_out_ff()
-						: NULL);
 			}
 
 			/* 4. FLL controller */
