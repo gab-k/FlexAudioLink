@@ -73,11 +73,12 @@ Special case: changing between PGFSK profiles resets the wireless path so role-s
 
 ## Audio Units and Constants
 
-From `audio_path_common.h`:
+From `audio_path_common.h` and `i2s.h`:
 
 - `AUDIO_BYTES_PER_STEREO_SAMPLE = 4`
-- `AUDIO_BYTES_PER_MS = 192` (48 kHz, 16-bit stereo)
-- `AUDIO_STEP_BYTES = 96` (0.5 ms stereo or 1 ms mono 16-bit)
+- `AUDIO_I2S_BYTES_PER_MS = 192` (48 kHz, 16-bit stereo)
+- `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / 2 = 96` (0.5 ms stereo)
+- `AUDIO_STEP_BYTES = 192` (1 ms stereo)
 - `AUDIO_DMA_MAX_BYTES = 384`
 
 Watermarks:
@@ -120,7 +121,7 @@ P-control (`audio_p_controller_step`):
 Stereo-to-mono extraction (`audio_extract_left_to_mono`):
 
 - capture uses left channel only
-- `192` stereo bytes -> `96` mono bytes
+- one `AUDIO_I2S_BLOCK_BYTES` stereo block (`96` bytes) -> `48` mono bytes
 
 ## Wired Path (`audio_path_wired.c`)
 
@@ -139,7 +140,7 @@ Loop (1 ms period):
 
 1. Drain I2S RX blocks -> left-channel mono -> USB mic endpoint FIFO.
 2. Read USB speaker FIFO level and update filter/error/stream-state.
-3. If `PLAYING`, move `192-byte` chunks USB speaker FIFO -> I2S TX queue.
+3. If `PLAYING`, move `AUDIO_I2S_BLOCK_BYTES` (`96-byte`) chunks USB speaker FIFO -> I2S TX queue.
 4. Apply USB feedback (`48kHz + spk_p_adjust_hz`) in 16.16 samples/microframe.
 5. Publish USB mic FIFO level into status.
 
@@ -209,7 +210,7 @@ so the receiver uses the value directly with no further smoothing.
 
 - parse received playback frames, push audio to local ring (inbound `peer_meta` is currently unused)
 - send I2S capture to PGFSK as mono; outbound `peer_meta` carries the headset's filtered ring level
-- once `PLAYING`, send playback from ring to I2S in `192-byte` blocks
+- once `PLAYING`, send playback from ring to I2S in `AUDIO_I2S_BLOCK_BYTES` (`96-byte`) blocks
 - if low panic, inject one silence I2S block and count underrun/silence bytes
 - no USB feedback update path in this role
 
@@ -258,7 +259,7 @@ Descriptor/channel configuration (`tusb_config.h` + descriptors):
 
 - `AUDIO_I2S_SAMPLE_RATE_HZ = 48000`
 - `AUDIO_I2S_CHANNELS = 2`
-- `AUDIO_I2S_BLOCK_BYTES = 192` (1 ms)
+- `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / 2 = 96` (0.5 ms)
 - TX/RX msg queues depth: `12`
 
 Runtime behavior:
