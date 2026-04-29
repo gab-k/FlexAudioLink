@@ -20,39 +20,24 @@
  * The USB audio class configures these statically; we add mutex protection
  * in usb_device_start() after tusb_init(). */
 
-static K_SEM_DEFINE(g_headset_start_sem, 0, 1);
-static K_SEM_DEFINE(g_headset_stop_sem, 0, 1);
 static struct audio_path_wireless_status g_headset_status;
 static bool g_headset_fll_fixed;
 static int32_t g_headset_fll_fixed_rate_hz;
 
-static void headset_reset_state(void)
+static K_THREAD_STACK_DEFINE(g_headset_thread_stack, HEADSET_THREAD_STACK_SIZE);
+static struct k_thread g_headset_thread;
+
+static void headset_thread(void *a, void *b, void *c);
+
+void audio_path_wireless_headset_init(void)
 {
-	memset(&g_headset_status, 0, sizeof(g_headset_status));
 	g_headset_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 	g_headset_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
-}
 
-void audio_path_wireless_headset_activate(void)
-{
-	if (g_headset_status.active) {
-		return;
-	}
-
-	headset_reset_state();
-	g_headset_status.active = true;
-	k_sem_give(&g_headset_start_sem);
-}
-
-void audio_path_wireless_headset_deactivate(void)
-{
-	if (!g_headset_status.active) {
-		return;
-	}
-
-	g_headset_status.active = false;
-	audio_i2s_deactivate();
-	(void)k_sem_take(&g_headset_stop_sem, K_FOREVER);
+	k_thread_create(&g_headset_thread, g_headset_thread_stack,
+			K_THREAD_STACK_SIZEOF(g_headset_thread_stack),
+			headset_thread, NULL, NULL, NULL,
+			HEADSET_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
 void audio_path_wireless_headset_get_status(struct audio_path_wireless_status *out)
@@ -124,100 +109,88 @@ static void headset_thread(void *a, void *b, void *c)
 	ARG_UNUSED(c);
 
 	while (1) {
-		(void)k_sem_take(&g_headset_start_sem, K_FOREVER);
+		/* 1. PGFSK RX → speaker FIFO */
+		while (1) {
+			struct pgfsk_frame frame;
 
-		while (g_headset_status.active) {
-			/* 1. PGFSK RX → speaker FIFO */
+			if (!pgfsk_link_rx_dequeue(&frame, K_NO_WAIT)) {
+				break;
+			}
+
+			if (frame.len < AUDIO_I2S_BLOCK_BYTES) {
+				g_headset_status.spk_silence_inserted_bytes += AUDIO_I2S_BLOCK_BYTES - frame.len;
+				continue;
+			}
+
+			uint32_t written = tu_fifo_write_n( tud_audio_get_ep_out_ff(), frame.payload, AUDIO_I2S_BLOCK_BYTES);
+			if (written < AUDIO_I2S_BLOCK_BYTES) {
+				g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES - written;
+			}
+		}
+
+		/* 2. I2S RX → PGFSK TX (if link in service) */
+		if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
 			while (1) {
+				uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
 				struct pgfsk_frame frame;
+				size_t mono_bytes;
 
-				if (!pgfsk_link_rx_dequeue(&frame, K_NO_WAIT)) {
+				if (tu_fifo_read_n(
+					    tud_audio_get_ep_in_ff(),
+					    stereo,
+					    AUDIO_I2S_BLOCK_BYTES) <
+				    AUDIO_I2S_BLOCK_BYTES) {
 					break;
 				}
 
-				if (frame.len < AUDIO_I2S_BLOCK_BYTES) {
-					g_headset_status.spk_silence_inserted_bytes += AUDIO_I2S_BLOCK_BYTES - frame.len;
+				memset(&frame, 0, sizeof(frame));
+				mono_bytes = audio_extract_left_to_mono(
+					stereo,
+					AUDIO_I2S_BLOCK_BYTES,
+					frame.payload,
+					PGFSK_PAYLOAD_MAX_LEN);
+				if (mono_bytes == 0U) {
+					g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
 					continue;
 				}
 
-				uint32_t written = tu_fifo_write_n( tud_audio_get_ep_out_ff(), frame.payload, AUDIO_I2S_BLOCK_BYTES);
-				if (written < AUDIO_I2S_BLOCK_BYTES) {
-					g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES - written;
-				}
-			}
+				frame.len = mono_bytes;
 
-			/* 2. I2S RX → PGFSK TX (if link in service) */
-			if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
-				while (1) {
-					uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
-					struct pgfsk_frame frame;
-					size_t mono_bytes;
-
-					if (tu_fifo_read_n(
-						    tud_audio_get_ep_in_ff(),
-						    stereo,
-						    AUDIO_I2S_BLOCK_BYTES) <
-					    AUDIO_I2S_BLOCK_BYTES) {
-						break;
-					}
-
-					memset(&frame, 0, sizeof(frame));
-					mono_bytes = audio_extract_left_to_mono(
-						stereo,
-						AUDIO_I2S_BLOCK_BYTES,
-						frame.payload,
-						PGFSK_PAYLOAD_MAX_LEN);
-					if (mono_bytes == 0U) {
-						g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
-						continue;
-					}
-
-					frame.len = mono_bytes;
-
-					if (!pgfsk_link_tx_enqueue(&frame, K_NO_WAIT)) {
-						if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
-							g_headset_status.overflow_bytes += mono_bytes;
-						}
+				if (!pgfsk_link_tx_enqueue(&frame, K_NO_WAIT)) {
+					if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
+						g_headset_status.overflow_bytes += mono_bytes;
 					}
 				}
 			}
-			
-			/* 3. State machine & FIFO management */
-			uint32_t fifo_bytes = tu_fifo_count(tud_audio_get_ep_out_ff());
-			uint32_t pending = audio_i2s_tx_get_pending_bytes();
-			uint32_t level = fifo_bytes + pending;
-
-			g_headset_status.spk_level_bytes = level;
-			enum audio_path_state prev = g_headset_status.stream_state;
-			g_headset_status.stream_state = audio_state_advance( g_headset_status.stream_state, level);
-
-			if (prev != g_headset_status.stream_state) {
-				printk("headset: %s\n",
-						g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING
-							? "PLAYING" : "BUFFERING");
-
-				if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
-					audio_i2s_activate(tud_audio_get_ep_out_ff(), tud_audio_get_ep_in_ff());
-				} else {
-					audio_i2s_deactivate();
-				}
-			}
-
-			/* 4. FLL controller */
-			if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
-				headset_update_codec_clock(fifo_bytes, pending);
-			}
-
-			/* 5. No USB mic on headset */
-			g_headset_status.mic_usb_level_bytes = 0U;
-
-			k_sleep(K_MSEC(HEADSET_LOOP_SLEEP_MS));
 		}
 
-		k_sem_give(&g_headset_stop_sem);
+		/* 3. State machine & FIFO management */
+		uint32_t fifo_bytes = tu_fifo_count(tud_audio_get_ep_out_ff());
+		uint32_t pending = audio_i2s_tx_get_pending_bytes();
+		uint32_t level = fifo_bytes + pending;
+
+		g_headset_status.spk_level_bytes = level;
+		enum audio_path_state prev = g_headset_status.stream_state;
+		g_headset_status.stream_state = audio_state_advance( g_headset_status.stream_state, level);
+
+		if (prev != g_headset_status.stream_state) {
+			printk("headset: %s\n", g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING ? "PLAYING" : "BUFFERING");
+
+			if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+				audio_i2s_activate(tud_audio_get_ep_out_ff(), tud_audio_get_ep_in_ff());
+			} else {
+				audio_i2s_deactivate();
+			}
+		}
+
+		/* 4. FLL controller */
+		if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+			headset_update_codec_clock(fifo_bytes, pending);
+		}
+
+		/* 5. No USB mic on headset */
+		g_headset_status.mic_usb_level_bytes = 0U;
+
+		k_sleep(K_MSEC(HEADSET_LOOP_SLEEP_MS));
 	}
 }
-
-K_THREAD_DEFINE(wireless_headset_thread_id, HEADSET_THREAD_STACK_SIZE,
-		headset_thread, NULL, NULL, NULL,
-		HEADSET_THREAD_PRIORITY, 0, 0);

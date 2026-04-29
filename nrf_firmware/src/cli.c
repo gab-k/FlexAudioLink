@@ -373,7 +373,6 @@ static void cli_cmd_set(char *args)
 	}
 
 	if (strcasecmp(param, "profile") == 0) {
-		bool ok;
 		enum app_profile profile;
 
 		if (strcasecmp(value, "usb") == 0) {
@@ -387,14 +386,17 @@ static void cli_cmd_set(char *args)
 			return;
 		}
 
-		ok = app_control_set_profile(profile);
-
-		if (!ok) {
-			cli_print("ERR profile rejected\n");
+		if (profile == app_control_get_current_profile()) {
+			cli_print("OK profile=%s\n", app_control_get_profile_name(profile));
 			return;
 		}
 
-		cli_print("OK profile=%s\n", app_control_get_profile_name(profile));
+		cli_print("OK profile=%s\nrebooting...\n", app_control_get_profile_name(profile));
+		tud_cdc_write_flush();
+		k_sleep(K_MSEC(50));
+		app_control_set_profile(profile);
+		/* sys_reboot does not return; surface error if it does. */
+		cli_print("ERR profile reboot_failed\n");
 		return;
 	}
 

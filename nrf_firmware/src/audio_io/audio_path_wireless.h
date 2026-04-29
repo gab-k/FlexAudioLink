@@ -1,12 +1,10 @@
 #pragma once
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "audio_io/audio_path_common.h"
 
 struct audio_path_wireless_status {
-	bool active;
 	enum audio_path_state stream_state;
 	uint32_t spk_level_bytes;
 	uint32_t spk_filtered_level_bytes;

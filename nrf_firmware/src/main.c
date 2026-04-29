@@ -1,10 +1,14 @@
 /*
  * FlexAudioLink nRF54 firmware
  *
- * Subsystems self-initialize via K_THREAD_DEFINE; main remains idle.
+ * Subsystems self-initialize via K_THREAD_DEFINE; main runs the boot
+ * profile selection that starts the audio path for the persisted profile.
  */
+
+#include "app_control.h"
 
 int main(void)
 {
+	app_control_boot();
 	return 0;
 }

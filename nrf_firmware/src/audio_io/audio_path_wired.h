@@ -1,12 +1,10 @@
 #pragma once
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "audio_io/audio_path_common.h"
 
 struct audio_path_wired_status {
-	bool active;
 	enum audio_path_state stream_state;
 	uint32_t spk_level_bytes;            /* combined: tu_fifo_count + i2s pending */
 	uint32_t spk_fifo_bytes;             /* tu_fifo_count alone (USB ingress backlog) */
@@ -21,8 +19,7 @@ struct audio_path_wired_status {
 	uint32_t mic_overflow_bytes;
 };
 
-void audio_path_wired_activate(void);
-void audio_path_wired_deactivate(void);
+void audio_path_wired_init(void);
 void audio_path_wired_get_status(struct audio_path_wired_status *out);
 
 void audio_path_wired_fll_set_fixed(int32_t rate_hz);

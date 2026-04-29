@@ -59,7 +59,11 @@ static void pgfsk_link_compose_packet(struct pgfsk_packet *packet, uint16_t seq)
 
 K_MSGQ_DEFINE(g_pgfsk_tx_queue, sizeof(struct pgfsk_frame),PGFSK_LINK_QUEUE_DEPTH, 4);
 K_MSGQ_DEFINE(g_pgfsk_rx_queue, sizeof(struct pgfsk_frame),PGFSK_LINK_QUEUE_DEPTH, 4);
-K_SEM_DEFINE(g_pgfsk_control_sem, 0, 1);
+
+static K_THREAD_STACK_DEFINE(g_pgfsk_link_thread_stack, PGFSK_LINK_THREAD_STACK_SIZE);
+static struct k_thread g_pgfsk_link_thread;
+
+static void pgfsk_link_thread(void *arg1, void *arg2, void *arg3);
 
 static bool pgfsk_link_seq_gap_from_expected(uint16_t expected, uint16_t seq, uint16_t *gap)
 {
@@ -468,17 +472,19 @@ static bool pgfsk_link_start_with_role(void (*set_role)(void))
 {
 	bool started;
 
+	pgfsk_hw_init();
+
 	k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
-	pgfsk_hw_stop();
-	k_msgq_purge(&g_pgfsk_tx_queue);
-	k_msgq_purge(&g_pgfsk_rx_queue);
-	k_msgq_purge(pgfsk_hw_event_msgq());
 	pgfsk_link_reset_runtime(PGFSK_LINK_STATE_NO_SERVICE);
 	set_role();
 	started = pgfsk_link_start_radio();
 	k_mutex_unlock(&g_link.mutex_lock);
 
-	k_sem_give(&g_pgfsk_control_sem);
+	k_thread_create(&g_pgfsk_link_thread, g_pgfsk_link_thread_stack,
+			K_THREAD_STACK_SIZEOF(g_pgfsk_link_thread_stack),
+			pgfsk_link_thread, NULL, NULL, NULL,
+			PGFSK_LINK_THREAD_PRIORITY, 0, K_NO_WAIT);
+
 	return started;
 }
 
@@ -490,19 +496,6 @@ bool pgfsk_link_start_dongle(void)
 bool pgfsk_link_start_headset(void)
 {
 	return pgfsk_link_start_with_role(pgfsk_hw_set_role_headset);
-}
-
-void pgfsk_link_stop(void)
-{
-	k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
-	pgfsk_hw_stop();
-	k_msgq_purge(&g_pgfsk_tx_queue);
-	k_msgq_purge(&g_pgfsk_rx_queue);
-	k_msgq_purge(pgfsk_hw_event_msgq());
-	pgfsk_link_reset_runtime(PGFSK_LINK_STATE_STOPPED);
-	k_mutex_unlock(&g_link.mutex_lock);
-
-	k_sem_give(&g_pgfsk_control_sem);
 }
 
 enum pgfsk_link_state pgfsk_link_get_state(void)
@@ -584,49 +577,19 @@ bool pgfsk_link_rx_dequeue(struct pgfsk_frame *frame, k_timeout_t timeout)
 
 static void pgfsk_link_thread(void *arg1, void *arg2, void *arg3)
 {
-	enum { POLL_RADIO = 0, POLL_CONTROL = 1 };
-	struct k_poll_event events[2] = {
-		[POLL_RADIO]  = K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, pgfsk_hw_event_msgq()),
-		[POLL_CONTROL] = K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &g_pgfsk_control_sem),
-	};
+	struct pgfsk_hw_event event;
 
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	pgfsk_hw_init();
-	k_msgq_purge(&g_pgfsk_tx_queue);
-	k_msgq_purge(&g_pgfsk_rx_queue);
-
 	while (1) {
-		if (pgfsk_link_get_state() == PGFSK_LINK_STATE_STOPPED) {
-			(void)k_sem_take(&g_pgfsk_control_sem, K_FOREVER);
+		if (!pgfsk_hw_dequeue_event(&event, K_FOREVER)) {
 			continue;
 		}
 
-		events[POLL_RADIO].state = K_POLL_STATE_NOT_READY;
-		events[POLL_CONTROL].state = K_POLL_STATE_NOT_READY;
-
-		(void)k_poll(events, ARRAY_SIZE(events), K_FOREVER);
-
-		if (events[POLL_CONTROL].state == K_POLL_STATE_SEM_AVAILABLE) {
-			(void)k_sem_take(&g_pgfsk_control_sem, K_NO_WAIT);
-			continue;
-		}
-
-		if (events[POLL_RADIO].state == K_POLL_STATE_MSGQ_DATA_AVAILABLE) {
-			struct pgfsk_hw_event event;
-			while (pgfsk_hw_dequeue_event(&event, K_NO_WAIT)) {
-				k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
-				pgfsk_link_handle_radio_event(&event);
-				k_mutex_unlock(&g_link.mutex_lock);
-			}
-		}
+		k_mutex_lock(&g_link.mutex_lock, K_FOREVER);
+		pgfsk_link_handle_radio_event(&event);
+		k_mutex_unlock(&g_link.mutex_lock);
 	}
 }
-
-K_THREAD_DEFINE(pgfsk_link_thread_id,
-		PGFSK_LINK_THREAD_STACK_SIZE,
-		pgfsk_link_thread,
-		NULL, NULL, NULL,
-		PGFSK_LINK_THREAD_PRIORITY, 0, 0);
