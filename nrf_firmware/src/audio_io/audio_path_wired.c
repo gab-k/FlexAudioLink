@@ -3,7 +3,8 @@
 #include <string.h>
 
 #include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(audio_path_wired, LOG_LEVEL_INF);
 
 #include "audio_io/audio_path_common.h"
 #include "audio_io/i2s.h"
@@ -189,12 +190,12 @@ static void wired_thread(void *a, void *b, void *c)
 			if (g_wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
 				if (level >= AUDIO_START_BYTES) {
 					g_wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
-					printk("wired: switching to PLAYING, notifying i2s thread...\n");
+					LOG_INF("switching to PLAYING, notifying i2s thread...");
 					audio_i2s_activate(spk_ff, &g_wired_rx_fifo);
 				}
 			} else if (level == 0U) {
 				g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
-				printk("wired: switching to BUFFERING, notifying i2s thread...\n");
+				LOG_INF("switching to BUFFERING, notifying i2s thread...");
 				audio_i2s_deactivate();
 				g_wired_status.spk_underrun_events++;
 			}
@@ -207,13 +208,13 @@ static void wired_thread(void *a, void *b, void *c)
 				if (level <= WIRED_WARN_LOW_BYTES) {
 					uint32_t now = k_uptime_get();
 					if (now - last_low_warn_ms >= WIRED_WARN_COOLDOWN_MS) {
-						printk("wired: speaker level LOW %u B (fifo=%u pending=%u)\n", level, fifo_bytes, pending);
+						LOG_WRN("speaker level LOW %u B (fifo=%u pending=%u)", level, fifo_bytes, pending);
 						last_low_warn_ms = now;
 					}
 				} else if (level >= WIRED_WARN_HIGH_BYTES) {
 					uint32_t now = k_uptime_get();
 					if (now - last_high_warn_ms >= WIRED_WARN_COOLDOWN_MS) {
-						printk("wired: speaker level HIGH %u B (fifo=%u pending=%u)\n", level, fifo_bytes, pending);
+						LOG_WRN("speaker level HIGH %u B (fifo=%u pending=%u)", level, fifo_bytes, pending);
 						last_high_warn_ms = now;
 					}
 				}

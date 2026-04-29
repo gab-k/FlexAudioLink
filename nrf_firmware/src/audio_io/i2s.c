@@ -8,7 +8,8 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(i2s, LOG_LEVEL_INF);
 #include <zephyr/sys/util.h>
 #include <zephyr/devicetree.h>
 
@@ -94,7 +95,7 @@ static int audio_i2s_tx_block(tu_fifo_t *tx_fifo)
 		return ret;
 	}
 	else if (ret < 0) {
-		printk("Couldnt get mem slab! (%d: %s)\n", ret, strerror(-ret));
+		LOG_ERR("Couldnt get mem slab! (%d: %s)", ret, strerror(-ret));
 		return ret;
 	}
 
@@ -102,7 +103,7 @@ static int audio_i2s_tx_block(tu_fifo_t *tx_fifo)
 
 	ret = i2s_write(i2s_dev, slab_block, AUDIO_I2S_BLOCK_BYTES);
 	if (ret < 0) {
-		printk("audio_i2s: i2s_write failed (%d: %s)\n", ret, strerror(-ret));
+		LOG_ERR("i2s_write failed (%d: %s)", ret, strerror(-ret));
 		k_mem_slab_free(&audio_i2s_tx_slab, slab_block);
 	}
 	else {
@@ -119,7 +120,7 @@ static int audio_i2s_rx_block(tu_fifo_t *rx_fifo)
 
 	ret = i2s_read(i2s_dev, &slab_block, &read_size);
 	if (ret < 0) {
-		printk("audio_i2s: i2s_read failed (%d: %s)\n", ret, strerror(-ret));
+		LOG_ERR("i2s_read failed (%d: %s)", ret, strerror(-ret));
 		return ret;
 	}
 
@@ -174,18 +175,18 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 	struct i2s_cmd cmd = {I2S_CMD_DEACTIVATE, NULL, NULL};
 
 	if (!device_is_ready(i2s_dev) || !device_is_ready(codec_i2c_dev)) {
-		printk("audio_i2s: device not ready\n");
+		LOG_ERR("device not ready");
 		return;
 	}
 	if (nau88l21_init(codec_i2c_dev) < 0) {
-		printk("audio_i2s: codec init failed\n");
+		LOG_ERR("codec init failed");
 		return;
 	}
 	if (audio_i2s_configure() < 0) {
-		printk("audio_i2s: configure failed\n");
+		LOG_ERR("configure failed");
 		return;
 	}
-	printk("audio_i2s: ready\n");
+	LOG_INF("ready");
 
 	while (1) {
 		int ret;
@@ -202,7 +203,7 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 		tu_fifo_t *rx_fifo = cmd.rx;
 
 		if(tx_fifo == NULL || rx_fifo == NULL) {
-			printk("audio_i2s: invalid cmd with null fifo, going back to inactive state\n");
+			LOG_WRN("invalid cmd with null fifo, going back to inactive state");
 			continue;
 		}
 
@@ -213,7 +214,7 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 
 		ret = audio_i2s_start();
 		if (ret < 0) {
-			printk("audio_i2s: start failed (%d: %s)\n", ret, strerror(-ret));
+			LOG_ERR("start failed (%d: %s)", ret, strerror(-ret));
 			audio_i2s_stop();
 			continue;
 		}
