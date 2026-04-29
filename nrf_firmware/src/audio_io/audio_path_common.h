@@ -44,13 +44,17 @@ size_t audio_extract_left_to_mono(const uint8_t *stereo, size_t stereo_bytes, ui
  * Shared adaptive codec clock PI controller.
  * Runs EMA filter + proportional + integral control on the
  * given buffer level, returning the recommended FLL adjustment in Hz.
- *   level       current combined buffer-fill (fifo + pipeline)
  *   target      desired buffer level in bytes
  *   filter      EMA state pointer (set to -1.0f on reset)
  *   i_sum       integral accumulator pointer (set to 0.0f on reset)
  *   gain_mult   proportional gain multiplier (error_bytes * gain_mult → Hz)
  *   ki          integral gain (fraction of error added per update)
+ *   fifo        USB FIFO fill in bytes
+ *   pending     I2S pipeline bytes in flight
+ *
+ *   level = fifo + pending is computed internally.
  */
-int32_t audio_codec_clock_controller(uint32_t level, uint32_t target,
+int32_t audio_codec_clock_controller(uint32_t target,
 				     float *filter, float *i_sum,
-				     float gain_mult, float ki);
+				     float gain_mult, float ki,
+				     uint32_t fifo, uint32_t pending);

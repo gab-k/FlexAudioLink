@@ -79,7 +79,7 @@ static void wired_send_i2s_to_mic_ep(void)
 	}
 }
 
-static void wired_update_codec_clock(uint32_t level)
+static void wired_update_codec_clock(uint32_t fifo, uint32_t pending)
 {
 	static uint32_t last_update_uptime_ms;
 	static float filter = -1.0f;
@@ -92,9 +92,10 @@ static void wired_update_codec_clock(uint32_t level)
 	}
 	last_update_uptime_ms = now_ms;
 
-	int32_t adjust_hz = audio_codec_clock_controller(level, AUDIO_TARGET_BYTES,
+	int32_t adjust_hz = audio_codec_clock_controller(AUDIO_TARGET_BYTES,
 							  &filter, &i_sum,
-							  AUDIO_P_GAIN, AUDIO_P_KI);
+							  AUDIO_P_GAIN, AUDIO_P_KI,
+							  fifo, pending);
 
 	g_wired_status.spk_filtered_level_bytes = (uint32_t)filter;
 	g_wired_status.spk_error_bytes = (int32_t)AUDIO_TARGET_BYTES - (int32_t)g_wired_status.spk_filtered_level_bytes;
@@ -223,7 +224,7 @@ static void wired_thread(void *a, void *b, void *c)
 
 			if (!g_wired_fll_fixed &&
 			    g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
-				wired_update_codec_clock(level);
+				wired_update_codec_clock(fifo_bytes, pending);
 			}
 
 			wired_send_i2s_to_mic_ep();

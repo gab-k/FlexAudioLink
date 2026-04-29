@@ -82,7 +82,7 @@ int32_t audio_path_wireless_headset_fll_get_fixed_rate(void)
 	return g_headset_fll_fixed ? g_headset_fll_fixed_rate_hz : 0;
 }
 
-static void headset_update_codec_clock(uint32_t level)
+static void headset_update_codec_clock(uint32_t fifo, uint32_t pending)
 {
 	if (g_headset_fll_fixed) {
 		return;
@@ -99,9 +99,10 @@ static void headset_update_codec_clock(uint32_t level)
 	}
 	last_update_uptime_ms = now_ms;
 
-	int32_t adjust_hz = audio_codec_clock_controller(level,
+	int32_t adjust_hz = audio_codec_clock_controller(
 		AUDIO_TARGET_BYTES, &filter, &i_sum,
-		AUDIO_P_GAIN, AUDIO_P_KI);
+		AUDIO_P_GAIN, AUDIO_P_KI,
+		fifo, pending);
 
 	g_headset_status.spk_filtered_level_bytes = (uint32_t)filter;
 	g_headset_status.spk_p_adjust_hz = adjust_hz;
@@ -204,7 +205,7 @@ static void headset_thread(void *a, void *b, void *c)
 
 			/* 4. FLL controller */
 			if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
-				headset_update_codec_clock( g_headset_status.spk_level_bytes);
+				headset_update_codec_clock(fifo_bytes, pending);
 			}
 
 			/* 5. No USB mic on headset */

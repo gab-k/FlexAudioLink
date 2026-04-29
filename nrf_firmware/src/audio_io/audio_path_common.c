@@ -2,7 +2,8 @@
 
 #include <string.h>
 
-#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(audio_ctrl, LOG_LEVEL_INF);
 
 const char *audio_path_get_state_name(enum audio_path_state state)
 {
@@ -85,10 +86,12 @@ size_t audio_extract_left_to_mono(const uint8_t *stereo, size_t stereo_bytes, ui
 	return stereo_samples * sizeof(int16_t);
 }
 
-int32_t audio_codec_clock_controller(uint32_t level, uint32_t target,
+int32_t audio_codec_clock_controller(uint32_t target,
 				     float *filter, float *i_sum,
-				     float gain_mult, float ki)
+				     float gain_mult, float ki,
+				     uint32_t fifo, uint32_t pending)
 {
+	uint32_t level = fifo + pending;
 	uint32_t filtered;
 	int32_t error_bytes;
 	int32_t p_out;
@@ -136,9 +139,9 @@ int32_t audio_codec_clock_controller(uint32_t level, uint32_t target,
 		#ifdef AUDIO_CTRL_DEBUG_LOG 
 		if (++log_cnt % 10 == 0) {
 			int32_t rate = 48000 - output;
-			printk("[CTRL] rate=%d lvl=%u filt=%u err=%d "
-			       "P=%d I=%d out=%d\n",
-			       rate, level, filtered,
+			LOG_INF("[CTRL] rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d "
+			       "P=%d I=%d out=%d",
+			       rate, level, fifo, pending, filtered,
 			       error_bytes, p_out,
 			       (int32_t)*i_sum, output);
 		}
