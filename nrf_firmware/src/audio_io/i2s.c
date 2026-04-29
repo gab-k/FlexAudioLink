@@ -12,7 +12,8 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/devicetree.h>
 
-#define AUDIO_I2S_DMA_BLOCK_COUNT          32U
+#define AUDIO_I2S_TX_DMA_BLOCK_COUNT       CONFIG_I2S_NRF_TDM_TX_BLOCK_COUNT
+#define AUDIO_I2S_RX_DMA_BLOCK_COUNT       CONFIG_I2S_NRF_TDM_RX_BLOCK_COUNT
 #define AUDIO_I2S_THREAD_STACK_SIZE        3072
 #define AUDIO_I2S_THREAD_PRIORITY          8
 
@@ -33,7 +34,10 @@ struct i2s_cmd {
 #define I2S_CMD_Q_SIZE 1
 K_MSGQ_DEFINE(i2s_cmdq, sizeof(struct i2s_cmd), I2S_CMD_Q_SIZE, 4);
 
-K_MEM_SLAB_DEFINE_STATIC(audio_i2s_slab, AUDIO_I2S_BLOCK_BYTES, AUDIO_I2S_DMA_BLOCK_COUNT, 4);
+K_MEM_SLAB_DEFINE_STATIC(audio_i2s_tx_slab, AUDIO_I2S_BLOCK_BYTES,
+			 AUDIO_I2S_TX_DMA_BLOCK_COUNT, 4);
+K_MEM_SLAB_DEFINE_STATIC(audio_i2s_rx_slab, AUDIO_I2S_BLOCK_BYTES,
+			 AUDIO_I2S_RX_DMA_BLOCK_COUNT, 4);
 
 static const struct device *const i2s_dev = DEVICE_DT_GET(DT_NODELABEL(tdm));
 static const struct device *const codec_i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c23));
@@ -66,12 +70,12 @@ static int audio_i2s_configure(void)
 {
 	int ret;
 
-	ret = audio_i2s_configure_direction(I2S_DIR_TX, &audio_i2s_slab, 0);
+	ret = audio_i2s_configure_direction(I2S_DIR_TX, &audio_i2s_tx_slab, 0);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = audio_i2s_configure_direction(I2S_DIR_RX, &audio_i2s_slab, SYS_FOREVER_MS);
+	ret = audio_i2s_configure_direction(I2S_DIR_RX, &audio_i2s_rx_slab, SYS_FOREVER_MS);
 	if (ret < 0) {
 		return ret;
 	}
@@ -84,9 +88,13 @@ static int audio_i2s_tx_block(tu_fifo_t *tx_fifo)
 	void *slab_block;
 	int ret;
 
-	ret = k_mem_slab_alloc(&audio_i2s_slab, &slab_block, K_NO_WAIT);
-	if (ret < 0) {
-		printk("Couldnt get mem slab");
+	ret = k_mem_slab_alloc(&audio_i2s_tx_slab, &slab_block, K_NO_WAIT);
+	// ENOMEM, not a big deal. Will just get a free block next time. Early return.
+	if (ret == -ENOMEM) {
+		return ret;
+	}
+	else if (ret < 0) {
+		printk("Couldnt get mem slab! (%d: %s)\n", ret, strerror(-ret));
 		return ret;
 	}
 
@@ -95,7 +103,7 @@ static int audio_i2s_tx_block(tu_fifo_t *tx_fifo)
 	ret = i2s_write(i2s_dev, slab_block, AUDIO_I2S_BLOCK_BYTES);
 	if (ret < 0) {
 		printk("audio_i2s: i2s_write failed (%d: %s)\n", ret, strerror(-ret));
-		k_mem_slab_free(&audio_i2s_slab, slab_block);
+		k_mem_slab_free(&audio_i2s_tx_slab, slab_block);
 	}
 	else {
 		audio_i2s_tx_pending_bytes += AUDIO_I2S_BLOCK_BYTES;
@@ -121,7 +129,7 @@ static int audio_i2s_rx_block(tu_fifo_t *rx_fifo)
 
 	tu_fifo_write_n(rx_fifo, slab_block, AUDIO_I2S_BLOCK_BYTES);
 	
-	k_mem_slab_free(&audio_i2s_slab, slab_block);
+	k_mem_slab_free(&audio_i2s_rx_slab, slab_block);
 
 	return ret;
 }
@@ -135,12 +143,12 @@ static int audio_i2s_start(void)
 	}
 
 	for (int i = 0; i < 10; i++) {
-		(void)i2s_trigger(i2s_dev, I2S_DIR_BOTH, I2S_TRIGGER_PREPARE);
 		ret = i2s_trigger(i2s_dev, I2S_DIR_BOTH, I2S_TRIGGER_START);
 		if (ret == 0) {
 			audio_i2s_running = true;
 			return 0;
 		}
+		(void)i2s_trigger(i2s_dev, I2S_DIR_BOTH, I2S_TRIGGER_PREPARE);
 		k_sleep(K_USEC(50));
 	}
 
@@ -162,6 +170,8 @@ static void audio_i2s_stop(void)
 static void audio_i2s_thread(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
+	
+	struct i2s_cmd cmd = {I2S_CMD_DEACTIVATE, NULL, NULL};
 
 	if (!device_is_ready(i2s_dev) || !device_is_ready(codec_i2c_dev)) {
 		printk("audio_i2s: device not ready\n");
@@ -178,11 +188,10 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 	printk("audio_i2s: ready\n");
 
 	while (1) {
-		struct i2s_cmd cmd;
 		int ret;
 
 		/* Inactive loop: Wait for activation command, then enter active I/O loop until deactivation or error. */
-		while(1) {
+		while(cmd.type == I2S_CMD_DEACTIVATE) {
 			k_msgq_get(&i2s_cmdq, &cmd, K_FOREVER);
 			if (cmd.type == I2S_CMD_ACTIVATE)
 				break;
