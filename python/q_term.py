@@ -40,7 +40,12 @@ import re
 import queue
 import signal
 
-ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[([0-9;]*)m')
+ANSI_COLOR_TAGS = {
+    '31': 'err',
+    '32': 'rx',
+    '33': 'wrn',
+}
 
 class AutoSerialConsole(tk.LabelFrame):
     def __init__(self, parent, config, log_path, *args, **kwargs):
@@ -88,6 +93,7 @@ class AutoSerialConsole(tk.LabelFrame):
         
         self.console_text.tag_config('tx', foreground='#00ffff')
         self.console_text.tag_config('rx', foreground='#00ff00')
+        self.console_text.tag_config('wrn', foreground='#ffff55', font=("Consolas", 9, "bold"))
         self.console_text.tag_config('sys', foreground='#aaaaaa', font=("Consolas", 9, "italic"))
         self.console_text.tag_config('err', foreground='#ff5555', font=("Consolas", 9, "bold"))
 
@@ -126,6 +132,10 @@ class AutoSerialConsole(tk.LabelFrame):
         self.btn_ts.config(relief=tk.SUNKEN if self.show_timestamp else tk.RAISED)
 
     def log(self, message, tag='sys'):
+        display_tag = tag
+        for codes in ANSI_ESCAPE_RE.findall(message):
+            for code in codes.split(';'):
+                display_tag = ANSI_COLOR_TAGS.get(code, display_tag)
         message = ANSI_ESCAPE_RE.sub('', message)
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         with self._log_lock:
@@ -134,7 +144,7 @@ class AutoSerialConsole(tk.LabelFrame):
             except Exception:
                 pass
 
-        self._ui_log_queue.put((timestamp, message, tag))
+        self._ui_log_queue.put((timestamp, message, display_tag))
 
     def flush_ui_log_queue(self):
         pending = []
