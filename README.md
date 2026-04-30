@@ -43,8 +43,8 @@ The current firmware direction is based on the nRF54LM20A and a proprietary 2.4 
 Implemented in the current nRF tree:
 
 - USB device bring-up with composite descriptors (`UAC+CDC`)
-- runtime profile selection: `usb`, `pgfsk_dongle`, or `pgfsk_headset`
-- default PGFSK profile selection from device UID
+- persisted boot profile selection: `usb`, `pgfsk_dongle`, or `pgfsk_headset`
+- default `usb` profile when no saved profile exists
 - USB CDC CLI
 - proprietary radio link test, including TX/RX traffic and status counters
 - initial audio I2S / codec integration scaffolding
@@ -57,8 +57,8 @@ Not complete in the current nRF tree:
 
 Important implementation notes:
 
-- [`nrf_firmware/src/main.c`](/home/gab/FlexAudioLink/nrf_firmware/src/main.c): `main()` is intentionally idle; subsystems self-start via `K_THREAD_DEFINE(...)`
-- [`nrf_firmware/src/app_control.c`](/home/gab/FlexAudioLink/nrf_firmware/src/app_control.c): owns runtime profile state
+- [`nrf_firmware/src/main.c`](/home/gab/FlexAudioLink/nrf_firmware/src/main.c): loads the persisted boot profile and starts that profile's audio path
+- [`nrf_firmware/src/app_control.c`](/home/gab/FlexAudioLink/nrf_firmware/src/app_control.c): owns boot profile persistence and startup
 - PGFSK profiles currently enable the present radio/link-test path; they are not yet the final audio transport
 
 ## CLI Interface

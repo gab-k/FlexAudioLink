@@ -148,12 +148,11 @@ static void cli_emit_status_audio_push(void)
 		struct audio_path_wired_status s;
 
 		audio_path_wired_get_status(&s);
-		cli_print("#A active=%s state=%s spk_level_bytes=%u "
+		cli_print("#A state=%s spk_level_bytes=%u "
 			  "spk_fifo_bytes=%u spk_pending_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u spk_underruns=%u "
 			  "mic_level_bytes=%u mic_overruns=%u\n",
-			  "wired",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
 			  s.spk_fifo_bytes,
@@ -172,10 +171,9 @@ static void cli_emit_status_audio_push(void)
 		struct audio_path_wireless_status s;
 
 		audio_path_wireless_dongle_get_status(&s);
-		cli_print("#A active=%s state=%s spk_level_bytes=%u "
+		cli_print("#A state=%s spk_level_bytes=%u "
 			  "spk_underruns=%u overruns=%u spk_silence_bytes=%u "
 			  "spk_dropped_oldest_bytes=%u spk_usb_level_bytes=%u mic_usb_level_bytes=%u\n",
-			  "wireless",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
 			  s.spk_underrun_bytes,
@@ -190,12 +188,11 @@ static void cli_emit_status_audio_push(void)
 		struct audio_path_wireless_status s;
 
 		audio_path_wireless_headset_get_status(&s);
-		cli_print("#A active=%s state=%s spk_level_bytes=%u "
+		cli_print("#A state=%s spk_level_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_p_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u "
 			  "spk_underruns=%u overruns=%u spk_silence_bytes=%u "
 			  "spk_dropped_oldest_bytes=%u\n",
-			  "wireless",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
 			  s.spk_filtered_level_bytes,
@@ -209,7 +206,7 @@ static void cli_emit_status_audio_push(void)
 		return;
 	}
 	default:
-		cli_print("#A active=none\n");
+		cli_print("#A state=none\n");
 		return;
 	}
 }
@@ -391,10 +388,15 @@ static void cli_cmd_set(char *args)
 			return;
 		}
 
+		if (!app_control_save_boot_profile(profile)) {
+			cli_print("ERR profile persist_failed\n");
+			return;
+		}
+
 		cli_print("OK profile=%s\nrebooting...\n", app_control_get_profile_name(profile));
 		tud_cdc_write_flush();
 		k_sleep(K_MSEC(50));
-		app_control_set_profile(profile);
+		sys_reboot(SYS_REBOOT_COLD);
 		/* sys_reboot does not return; surface error if it does. */
 		cli_print("ERR profile reboot_failed\n");
 		return;

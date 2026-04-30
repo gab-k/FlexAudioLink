@@ -16,7 +16,7 @@ const char *audio_path_get_state_name(enum audio_path_state state)
 	}
 }
 
-uint32_t audio_filter_update(float *filtered, uint32_t level_bytes)
+static uint32_t audio_filter_update(float *filtered, uint32_t level_bytes)
 {
 	if (filtered == NULL) {
 		return 0U;
@@ -33,10 +33,8 @@ uint32_t audio_filter_update(float *filtered, uint32_t level_bytes)
 	return (uint32_t)*filtered;
 }
 
-int32_t audio_p_controller_step(int32_t error_bytes, uint32_t level_bytes)
+static int32_t audio_p_controller_step(int32_t error_bytes)
 {
-	(void)level_bytes;
-
 	if (error_bytes > AUDIO_P_ADJUST_MAX_HZ) {
 		return AUDIO_P_ADJUST_MAX_HZ;
 	}
@@ -104,7 +102,7 @@ int32_t audio_codec_clock_controller(uint32_t target,
 	filtered = audio_filter_update(filter, level);
 	error_bytes = (int32_t)target - (int32_t)filtered;
 
-	p_out = (int32_t)((float)audio_p_controller_step(error_bytes, filtered) * gain_mult);
+	p_out = (int32_t)((float)audio_p_controller_step(error_bytes) * gain_mult);
 	if (p_out > AUDIO_P_TERM_MAX_HZ) {
 		p_out = AUDIO_P_TERM_MAX_HZ;
 	} else if (p_out < -AUDIO_P_TERM_MAX_HZ) {

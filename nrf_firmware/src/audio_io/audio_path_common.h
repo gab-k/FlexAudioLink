@@ -35,8 +35,6 @@ enum audio_path_state {
 
 const char *audio_path_get_state_name(enum audio_path_state state);
 
-uint32_t audio_filter_update(float *filtered, uint32_t level_bytes);
-int32_t audio_p_controller_step(int32_t error_bytes, uint32_t level_bytes);
 enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_t level_bytes);
 size_t audio_extract_left_to_mono(const uint8_t *stereo, size_t stereo_bytes, uint8_t *mono, size_t mono_max_bytes);
 

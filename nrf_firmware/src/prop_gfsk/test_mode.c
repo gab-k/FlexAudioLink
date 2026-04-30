@@ -19,7 +19,32 @@ LOG_MODULE_REGISTER(pgfsk_test_mode, CONFIG_LOG_DEFAULT_LEVEL);
 static uint16_t g_test_tx_seq;
 static size_t g_test_payload_len;
 static bool g_test_mode_running;
+static bool g_test_threads_started;
+static K_THREAD_STACK_DEFINE(g_test_tx_thread_stack, PGFSK_TEST_TX_THREAD_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(g_test_rx_thread_stack, PGFSK_TEST_RX_THREAD_STACK_SIZE);
+static struct k_thread g_test_tx_thread;
+static struct k_thread g_test_rx_thread;
 K_EVENT_DEFINE(g_test_events);
+
+static void pgfsk_test_tx_thread(void *arg1, void *arg2, void *arg3);
+static void pgfsk_test_rx_thread(void *arg1, void *arg2, void *arg3);
+
+static void pgfsk_test_mode_ensure_threads(void)
+{
+	if (g_test_threads_started) {
+		return;
+	}
+
+	k_thread_create(&g_test_tx_thread, g_test_tx_thread_stack,
+			K_THREAD_STACK_SIZEOF(g_test_tx_thread_stack),
+			pgfsk_test_tx_thread, NULL, NULL, NULL,
+			PGFSK_TEST_THREAD_PRIORITY, 0, K_NO_WAIT);
+	k_thread_create(&g_test_rx_thread, g_test_rx_thread_stack,
+			K_THREAD_STACK_SIZEOF(g_test_rx_thread_stack),
+			pgfsk_test_rx_thread, NULL, NULL, NULL,
+			PGFSK_TEST_THREAD_PRIORITY, 0, K_NO_WAIT);
+	g_test_threads_started = true;
+}
 
 static void pgfsk_test_prepare_tx_frame(struct pgfsk_frame *frame)
 {
@@ -70,6 +95,7 @@ bool pgfsk_test_mode_start(void)
 		return false;
 	}
 
+	pgfsk_test_mode_ensure_threads();
 	pgfsk_test_start_traffic(PGFSK_TEST_MODE_PAYLOAD_LEN);
 	g_test_mode_running = true;
 	return true;
@@ -110,10 +136,3 @@ static void pgfsk_test_rx_thread(void *arg1, void *arg2, void *arg3)
 		(void)pgfsk_link_rx_dequeue(&frame, K_MSEC(100));
 	}
 }
-
-K_THREAD_DEFINE(pgfsk_test_tx_thread_id, PGFSK_TEST_TX_THREAD_STACK_SIZE,
-				pgfsk_test_tx_thread, NULL, NULL, NULL,
-				PGFSK_TEST_THREAD_PRIORITY, 0, 0);
-K_THREAD_DEFINE(pgfsk_test_rx_thread_id, PGFSK_TEST_RX_THREAD_STACK_SIZE,
-				pgfsk_test_rx_thread, NULL, NULL, NULL,
-				PGFSK_TEST_THREAD_PRIORITY, 0, 0);

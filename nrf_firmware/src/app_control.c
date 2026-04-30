@@ -5,10 +5,11 @@
 #include "audio_io/audio_path_wireless_headset.h"
 #include "prop_gfsk/link.h"
 
+#include <stdint.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/printk.h>
-#include <zephyr/sys/reboot.h>
 
 #define APP_PROFILE_SETTINGS_KEY "profile/active"
 
@@ -33,24 +34,24 @@ const char *app_control_get_profile_name(enum app_profile profile)
 	}
 }
 
-void app_control_set_profile(enum app_profile profile)
+bool app_control_save_boot_profile(enum app_profile profile)
 {
 	if (profile >= APP_PROFILE_COUNT) {
-		return;
+		return false;
 	}
 
 	if (profile == g_current_profile) {
-		return;
+		return true;
 	}
 
 	uint8_t val = (uint8_t)profile;
 	int rc = settings_save_one(APP_PROFILE_SETTINGS_KEY, &val, sizeof(val));
 	if (rc) {
 		printk("app_control: failed to persist profile (err %d)\n", rc);
-		return;
+		return false;
 	}
 
-	sys_reboot(SYS_REBOOT_COLD);
+	return true;
 }
 
 void app_control_boot(void)
