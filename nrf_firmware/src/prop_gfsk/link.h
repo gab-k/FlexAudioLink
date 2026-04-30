@@ -8,8 +8,7 @@
 #include "prop_gfsk/radio_hw.h"
 
 enum pgfsk_link_state {
-	PGFSK_LINK_STATE_STOPPED = 0,
-	PGFSK_LINK_STATE_NO_SERVICE,
+	PGFSK_LINK_STATE_NO_SERVICE = 0,
 	PGFSK_LINK_STATE_IN_SERVICE,
 };
 

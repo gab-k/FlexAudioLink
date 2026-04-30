@@ -99,11 +99,6 @@ bool pgfsk_test_mode_start(void)
 		return false;
 	}
 
-	if (pgfsk_link_get_state() == PGFSK_LINK_STATE_STOPPED) {
-		LOG_WRN("linktest requires a running PGFSK link");
-		return false;
-	}
-
 	g_test_mode_running = true;
 	pgfsk_test_mode_ensure_threads();
 	pgfsk_test_start_traffic(PGFSK_TEST_MODE_PAYLOAD_LEN);

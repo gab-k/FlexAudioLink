@@ -49,7 +49,7 @@ struct pgfsk_link_runtime {
 };
 
 static struct pgfsk_link_runtime g_link = {
-	.service_state = PGFSK_LINK_STATE_STOPPED,
+	.service_state = PGFSK_LINK_STATE_NO_SERVICE,
 	.state = PGFSK_STATE_LISTEN,
 	.mutex_lock = Z_MUTEX_INITIALIZER(g_link.mutex_lock),
 };
@@ -100,7 +100,7 @@ static bool pgfsk_link_abort_enable(void)
 {
 	pgfsk_hw_stop();
 
-	g_link.service_state = PGFSK_LINK_STATE_STOPPED;
+	g_link.service_state = PGFSK_LINK_STATE_NO_SERVICE;
 	g_link.rx_deadline_tick = 0U;
 
 	return false;
@@ -555,11 +555,6 @@ void pgfsk_link_get_report(struct pgfsk_link_report *report)
 bool pgfsk_link_tx_enqueue(const struct pgfsk_frame *frame, k_timeout_t timeout)
 {
 	if (frame == NULL || frame->len > PGFSK_PAYLOAD_MAX_LEN) {
-		return false;
-	}
-
-	if (pgfsk_link_get_state() == PGFSK_LINK_STATE_STOPPED) {
-		LOG_WRN_ONCE("tx_enqueue on stopped link");
 		return false;
 	}
 
