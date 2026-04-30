@@ -2,6 +2,9 @@
 
 #include <stdbool.h>
 
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(usb_audio, LOG_LEVEL_INF);
+
 #include "app_control.h"
 #include "tusb.h"
 #include "usb/usb_descriptors.h"
@@ -182,12 +185,20 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 	(void)rhport;
 
 	if (!g_usb_audio_mutexes_configured) {
-		tu_fifo_config_mutex(tud_audio_get_ep_out_ff(),
-				     &g_usb_audio_ep_out_mutex_wr,
-				     &g_usb_audio_ep_out_mutex_rd);
-		tu_fifo_config_mutex(tud_audio_get_ep_in_ff(),
-				     &g_usb_audio_ep_in_mutex_wr,
-				     &g_usb_audio_ep_in_mutex_rd);
+		tu_fifo_t *ep_out_ff = tud_audio_get_ep_out_ff();
+		tu_fifo_t *ep_in_ff = tud_audio_get_ep_in_ff();
+
+		if (ep_out_ff == NULL || ep_in_ff == NULL) {
+			LOG_ERR("EP FIFOs not available (out=%p in=%p)", ep_out_ff, ep_in_ff);
+			return false;
+		}
+
+		tu_fifo_config_mutex(ep_out_ff,
+				     osal_mutex_create(&g_usb_audio_ep_out_mutex_wr),
+				     osal_mutex_create(&g_usb_audio_ep_out_mutex_rd));
+		tu_fifo_config_mutex(ep_in_ff,
+				     osal_mutex_create(&g_usb_audio_ep_in_mutex_wr),
+				     osal_mutex_create(&g_usb_audio_ep_in_mutex_rd));
 		g_usb_audio_mutexes_configured = true;
 	}
 
@@ -302,5 +313,4 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 		return false;
 	}
 }
-
 

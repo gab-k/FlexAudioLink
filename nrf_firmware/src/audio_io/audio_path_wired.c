@@ -110,7 +110,8 @@ void audio_path_wired_init(void)
 	tu_fifo_config(&g_wired_rx_fifo, g_wired_rx_fifo_buf,
 		       WIRED_RX_FIFO_SIZE, 1);
 	tu_fifo_config_mutex(&g_wired_rx_fifo,
-			     &g_wired_rx_mutex_wr, &g_wired_rx_mutex_rd);
+			     osal_mutex_create(&g_wired_rx_mutex_wr),
+			     osal_mutex_create(&g_wired_rx_mutex_rd));
 
 	k_thread_create(&g_wired_thread, g_wired_thread_stack,
 			K_THREAD_STACK_SIZEOF(g_wired_thread_stack),

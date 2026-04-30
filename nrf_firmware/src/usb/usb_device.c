@@ -110,8 +110,6 @@ static void usb_device_thread(void *arg1, void *arg2, void *arg3)
 		}
 
 		tud_task();
-
-		k_sleep(K_MSEC(1));
 	}
 }
 
