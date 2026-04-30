@@ -22,11 +22,11 @@
    Pass criteria:
    Link starts, headset reaches running state, lock is acquired within timeout, RX counters increase, RSSI is plausible, and rebooting into a different profile recovers cleanly.
 
-4. USB composite enumeration stability
+4. USB descriptor enumeration stability
    Coverage:
-   UAC+CDC descriptor set after booting each profile
+   UAC+CDC descriptor set after booting `usb` and `pgfsk_dongle`; CDC-only descriptor set after booting `pgfsk_headset`.
    Pass criteria:
-   Device always enumerates as UAC+CDC and retains functional CDC CLI after rebooting into each profile.
+   Device enumerates with the profile-appropriate descriptors and retains functional CDC CLI after rebooting into each profile.
 
 5. Soak test
    Duration:

@@ -9,7 +9,7 @@ Implemented in the current tree:
 - USB device bring-up
 - USB CDC CLI
 - persisted boot profile selection between dongle, headset and usb mode
-- fixed USB composite descriptors (`UAC+CDC`)
+- profile-selected USB descriptors (UAC+CDC for `usb`/`pgfsk_dongle`, CDC-only for `pgfsk_headset`)
 - proprietary radio link test
 - initial codec / I2S integration scaffolding
 

@@ -42,7 +42,7 @@ The current firmware direction is based on the nRF54LM20A and a proprietary 2.4 
 
 Implemented in the current nRF tree:
 
-- USB device bring-up with composite descriptors (`UAC+CDC`)
+- USB device bring-up with profile-selected descriptors (UAC+CDC or CDC-only)
 - persisted boot profile selection: `usb`, `pgfsk_dongle`, or `pgfsk_headset`
 - default `usb` profile when no saved profile exists
 - USB CDC CLI

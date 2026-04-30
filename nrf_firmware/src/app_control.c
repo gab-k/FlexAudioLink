@@ -14,10 +14,16 @@
 #define APP_PROFILE_SETTINGS_KEY "profile/active"
 
 static enum app_profile g_current_profile = APP_PROFILE_USB;
+static volatile bool g_boot_profile_ready;
 
 enum app_profile app_control_get_current_profile(void)
 {
 	return g_current_profile;
+}
+
+bool app_control_boot_profile_ready(void)
+{
+	return g_boot_profile_ready;
 }
 
 const char *app_control_get_profile_name(enum app_profile profile)
@@ -67,6 +73,7 @@ void app_control_boot(void)
 	} else {
 		g_current_profile = APP_PROFILE_USB;
 	}
+	g_boot_profile_ready = true;
 
 	printk("Boot profile: %s\n", app_control_get_profile_name(g_current_profile));
 

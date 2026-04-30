@@ -6,6 +6,7 @@
 #include <nrfx_glue.h>
 #include <zephyr/sys/sys_io.h>
 
+#include "app_control.h"
 #include "cli.h"
 #include "tusb.h"
 #include "usb/usb_cdc.h"
@@ -99,16 +100,17 @@ static void usb_device_thread(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
+	while (!app_control_boot_profile_ready()) {
+		k_sleep(K_MSEC(10));
+	}
+
+	while (!usb_device_low_level_init()) {
+		k_sleep(K_MSEC(100));
+	}
+
+	usb_device_start();
+
 	while (1) {
-		if (!usb_device_low_level_init()) {
-			k_sleep(K_MSEC(100));
-			continue;
-		}
-
-		if (!tusb_inited()) {
-			usb_device_start();
-		}
-
 		tud_task();
 	}
 }

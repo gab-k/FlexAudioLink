@@ -2,6 +2,7 @@
 
 #include <zephyr/drivers/hwinfo.h>
 
+#include "app_control.h"
 #include "usb/usb_descriptors.h"
 
 #include "tusb.h"
@@ -9,15 +10,20 @@
 //--------------------------------------------------------------------+
 // PID MAPPING
 //--------------------------------------------------------------------+
-// Fixed UAC+CDC composite profile.
+// USB and PGFSK dongle enumerate as UAC+CDC. PGFSK headset is CDC-only.
 #define PID_MAP(itf, n)  ((CFG_TUD_##itf) ? (1 << (n)) : 0)
 #define USB_VID          0xCafe
 #define USB_BCD          0x0200
 
-// PID for Composite Mode (UAC + CDC)
 #define USB_PID_UAC_CDC  (0x4000 | PID_MAP(CDC, 0) | PID_MAP(MSC, 1) | \
                           PID_MAP(HID, 2) | PID_MAP(MIDI, 3) | PID_MAP(AUDIO, 4) | \
                           PID_MAP(VENDOR, 5))
+#define USB_PID_CDC_ONLY (0x4000 | PID_MAP(CDC, 0))
+
+static bool usb_descriptors_cdc_only(void)
+{
+    return app_control_get_current_profile() == APP_PROFILE_PGFSK_HEADSET;
+}
 
 //--------------------------------------------------------------------+
 // UAC2 DESCRIPTOR TEMPLATES
@@ -178,7 +184,7 @@
 //--------------------------------------------------------------------+
 // Device Descriptors
 //--------------------------------------------------------------------+
-tusb_desc_device_t const desc_device_uac_cdc =
+static tusb_desc_device_t const desc_device_uac_cdc =
 {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
@@ -196,9 +202,27 @@ tusb_desc_device_t const desc_device_uac_cdc =
     .bNumConfigurations = 0x01
 };
 
+static tusb_desc_device_t const desc_device_cdc =
+{
+    .bLength            = sizeof(tusb_desc_device_t),
+    .bDescriptorType    = TUSB_DESC_DEVICE,
+    .bcdUSB             = USB_BCD,
+    .bDeviceClass       = TUSB_CLASS_MISC,
+    .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+    .bDeviceProtocol    = MISC_PROTOCOL_IAD,
+    .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor           = USB_VID,
+    .idProduct          = USB_PID_CDC_ONLY,
+    .bcdDevice          = 0x0100,
+    .iManufacturer      = STRID_MANUFACTURER,
+    .iProduct           = STRID_PRODUCT,
+    .iSerialNumber      = STRID_SERIAL,
+    .bNumConfigurations = 0x01
+};
+
 uint8_t const *tud_descriptor_device_cb(void)
 {
-    return (uint8_t const *) &desc_device_uac_cdc;
+    return (uint8_t const *)(usb_descriptors_cdc_only() ? &desc_device_cdc : &desc_device_uac_cdc);
 }
 
 //--------------------------------------------------------------------+
@@ -213,6 +237,12 @@ uint8_t const *tud_descriptor_device_cb(void)
 #define EPNUM_CDC_NOTIF         0x83
 #define EPNUM_CDC_OUT           0x02
 #define EPNUM_CDC_IN            0x84
+
+enum {
+    ITF_NUM_CDC_ONLY = 0,
+    ITF_NUM_CDC_ONLY_DATA,
+    ITF_NUM_CDC_ONLY_TOTAL,
+};
 
 // ==========================================
 // CONFIG A: UAC + CDC
@@ -246,14 +276,39 @@ uint8_t const desc_fs_configuration_uac_cdc[] =
 };
 TU_VERIFY_STATIC(sizeof(desc_fs_configuration_uac_cdc) == CONFIG_UAC1_TOTAL_LEN, "Incorrect UAC1 size");
 
+// ==========================================
+// CONFIG B: CDC only
+// ==========================================
+#define CONFIG_CDC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_CDC * TUD_CDC_DESC_LEN)
+
+#if TUD_OPT_HIGH_SPEED
+uint8_t const desc_hs_configuration_cdc[] =
+{
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_CDC_ONLY_TOTAL, 0, CONFIG_CDC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_ONLY, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
+};
+TU_VERIFY_STATIC(sizeof(desc_hs_configuration_cdc) == CONFIG_CDC_TOTAL_LEN, "Incorrect HS CDC size");
+#endif
+
+uint8_t const desc_fs_configuration_cdc[] =
+{
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_CDC_ONLY_TOTAL, 0, CONFIG_CDC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_ONLY, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE)
+};
+TU_VERIFY_STATIC(sizeof(desc_fs_configuration_cdc) == CONFIG_CDC_TOTAL_LEN, "Incorrect FS CDC size");
+
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
 {
     (void) index;
 
 #if TUD_OPT_HIGH_SPEED
+    if (usb_descriptors_cdc_only()) {
+        return (tud_speed_get() == TUSB_SPEED_HIGH) ? desc_hs_configuration_cdc : desc_fs_configuration_cdc;
+    }
+
     return (tud_speed_get() == TUSB_SPEED_HIGH) ? desc_hs_configuration_uac_cdc : desc_fs_configuration_uac_cdc;
 #else
-    return desc_fs_configuration_uac_cdc;
+    return usb_descriptors_cdc_only() ? desc_fs_configuration_cdc : desc_fs_configuration_uac_cdc;
 #endif
 }
 
@@ -280,6 +335,10 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index)
 {
     (void) index;
 
+    if (usb_descriptors_cdc_only()) {
+        return (tud_speed_get() == TUSB_SPEED_HIGH) ? desc_fs_configuration_cdc : desc_hs_configuration_cdc;
+    }
+
     return (tud_speed_get() == TUSB_SPEED_HIGH) ? desc_fs_configuration_uac_cdc : desc_hs_configuration_uac_cdc;
 }
 #endif
@@ -299,6 +358,20 @@ static char const *string_desc_arr[] =
 };
 
 static uint16_t desc_str[32 + 1];
+
+static const char *usb_product_string(void)
+{
+    switch (app_control_get_current_profile()) {
+    case APP_PROFILE_USB:
+        return "FlexAudioLink (Direct USB Audio)";
+    case APP_PROFILE_PGFSK_DONGLE:
+        return "FlexAudioLink (Dongle)";
+    case APP_PROFILE_PGFSK_HEADSET:
+        return "FlexAudioLink (Headset)";
+    default:
+        return "FlexAudioLink";
+    }
+}
 
 static size_t usb_get_serial_string(uint16_t *utf16_out, size_t max_chars)
 {
@@ -355,10 +428,14 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
         return desc_str;
     }
 
-    if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) {
-        return NULL;
+    if (index == STRID_PRODUCT) {
+        str = usb_product_string();
+    } else {
+        if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) {
+            return NULL;
+        }
+        str = string_desc_arr[index];
     }
-    str = string_desc_arr[index];
 
     chr_count = strlen(str);
     if (chr_count > 32) {
