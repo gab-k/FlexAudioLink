@@ -86,6 +86,10 @@ bool pgfsk_test_mode_stop(void)
 
 bool pgfsk_test_mode_start(void)
 {
+	if (pgfsk_test_mode_is_running()) {
+		return true;
+	}
+
 	switch (app_control_get_current_profile()) {
 	case APP_PROFILE_PGFSK_DONGLE:
 	case APP_PROFILE_PGFSK_HEADSET:
@@ -95,9 +99,14 @@ bool pgfsk_test_mode_start(void)
 		return false;
 	}
 
+	if (pgfsk_link_get_state() == PGFSK_LINK_STATE_STOPPED) {
+		LOG_WRN("linktest requires a running PGFSK link");
+		return false;
+	}
+
+	g_test_mode_running = true;
 	pgfsk_test_mode_ensure_threads();
 	pgfsk_test_start_traffic(PGFSK_TEST_MODE_PAYLOAD_LEN);
-	g_test_mode_running = true;
 	return true;
 }
 
@@ -118,7 +127,9 @@ static void pgfsk_test_tx_thread(void *arg1, void *arg2, void *arg3)
 		while ((k_event_wait(&g_test_events, PGFSK_TEST_EVENT_RUNNING, false, K_FOREVER) &
 				PGFSK_TEST_EVENT_RUNNING) == 0U) { }
 		pgfsk_test_prepare_tx_frame(&frame);
-		(void)pgfsk_link_tx_enqueue(&frame, K_FOREVER);
+		if (!pgfsk_link_tx_enqueue(&frame, K_MSEC(10))) {
+			k_sleep(K_MSEC(1));
+		}
 	}
 }
 
