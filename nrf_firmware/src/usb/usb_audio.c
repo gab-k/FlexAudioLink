@@ -184,6 +184,13 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 {
 	(void)rhport;
 
+	uint8_t alt = tu_u16_low(tu_le16toh(p_request->wValue));
+
+	if (alt != 0U && app_control_get_current_profile() == APP_PROFILE_PGFSK_HEADSET) {
+		LOG_WRN("rejecting active USB audio alt=%u in headset profile", alt);
+		return false;
+	}
+
 	if (!g_usb_audio_mutexes_configured) {
 		tu_fifo_t *ep_out_ff = tud_audio_get_ep_out_ff();
 		tu_fifo_t *ep_in_ff = tud_audio_get_ep_in_ff();
@@ -200,12 +207,6 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 				     osal_mutex_create(&g_usb_audio_ep_in_mutex_wr),
 				     osal_mutex_create(&g_usb_audio_ep_in_mutex_rd));
 		g_usb_audio_mutexes_configured = true;
-	}
-
-	uint8_t alt = tu_u16_low(tu_le16toh(p_request->wValue));
-
-	if (alt != 0U && app_control_get_current_profile() != APP_PROFILE_USB) {
-		return false;
 	}
 
 	return true;
@@ -313,4 +314,3 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p
 		return false;
 	}
 }
-
