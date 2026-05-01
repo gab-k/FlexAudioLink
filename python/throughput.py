@@ -1,5 +1,5 @@
 """
-Throughput calculator for FlexLink GFSK ping-pong link.
+Throughput calculator for FlexLink PFSK ping-pong link.
 
 Parses q_term session log files for #S status lines and computes
 packet rate and payload throughput between successive samples.
@@ -7,7 +7,7 @@ packet rate and payload throughput between successive samples.
 Usage:
     python throughput.py <logfile> [--payload-bytes N]
 
-Default payload size is 180 bytes (PROP_GFSK_TEST_MODE_PAYLOAD_LEN).
+Default payload size is 180 bytes (PFSK_TEST_MODE_PAYLOAD_LEN).
 """
 
 import argparse
@@ -106,7 +106,7 @@ def print_throughput(samples, payload_bytes):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FlexLink GFSK throughput calculator")
+    parser = argparse.ArgumentParser(description="FlexLink PFSK throughput calculator")
     parser.add_argument("logfile", help="q_term session log file")
     parser.add_argument("--payload-bytes", type=int, default=180,
                         help="payload size per packet (default: 180)")

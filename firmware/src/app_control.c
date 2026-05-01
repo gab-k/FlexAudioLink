@@ -3,7 +3,7 @@
 #include "audio_io/audio_path_wired.h"
 #include "audio_io/audio_path_wireless_dongle.h"
 #include "audio_io/audio_path_wireless_headset.h"
-#include "prop_gfsk/link.h"
+#include "prop_fsk/session.h"
 
 #include <stdint.h>
 
@@ -31,10 +31,10 @@ const char *app_control_get_profile_name(enum app_profile profile)
 	switch (profile) {
 	case APP_PROFILE_USB:
 		return "usb";
-	case APP_PROFILE_PGFSK_DONGLE:
-		return "pgfsk_dongle";
-	case APP_PROFILE_PGFSK_HEADSET:
-		return "pgfsk_headset";
+	case APP_PROFILE_PFSK_DONGLE:
+		return "pfsk_dongle";
+	case APP_PROFILE_PFSK_HEADSET:
+		return "pfsk_headset";
 	default:
 		return "unknown";
 	}
@@ -81,15 +81,15 @@ void app_control_boot(void)
 	case APP_PROFILE_USB:
 		audio_path_wired_init();
 		break;
-	case APP_PROFILE_PGFSK_DONGLE:
-		if (!pgfsk_link_start_dongle()) {
-			printk("app_control: failed to start pgfsk dongle link\n");
+	case APP_PROFILE_PFSK_DONGLE:
+		if (!pfsk_session_start_dongle()) {
+			printk("app_control: failed to start PFSK dongle session\n");
 		}
 		audio_path_wireless_dongle_init();
 		break;
-	case APP_PROFILE_PGFSK_HEADSET:
-		if (!pgfsk_link_start_headset()) {
-			printk("app_control: failed to start pgfsk headset link\n");
+	case APP_PROFILE_PFSK_HEADSET:
+		if (!pfsk_session_start_headset()) {
+			printk("app_control: failed to start PFSK headset session\n");
 		}
 		audio_path_wireless_headset_init();
 		break;

@@ -1,4 +1,4 @@
-#include "prop_gfsk/radio_hw.h"
+#include "prop_fsk/radio_core.h"
 
 #include <string.h>
 
@@ -8,139 +8,139 @@
 #include <hal/nrf_clock.h>
 #include <soc.h>
 
-#ifdef PGFSK_HW_DEBUG_PHYEND_GPIO
+#ifdef PFSK_RADIO_DEBUG_PHYEND_GPIO
 #include <hal/nrf_gpiote.h>
 #include <hal/nrf_gpio.h>
 #include <hal/nrf_ppib.h>
 #endif
 
-LOG_MODULE_REGISTER(pgfsk_radio_hw, CONFIG_LOG_DEFAULT_LEVEL);
+LOG_MODULE_REGISTER(pfsk_radio_core, CONFIG_LOG_DEFAULT_LEVEL);
 
-#define PGFSK_HW_EVENT_QUEUE_DEPTH 8
-#define PGFSK_HW_TX_RING_DEPTH     8U
-#define PGFSK_HW_RX_RING_DEPTH     8
-#define PGFSK_HW_LISTEN_TIMEOUT_BASE_US    1000U
-#define PGFSK_HW_LISTEN_TIMEOUT_JITTER_US  1000U
-#define PGFSK_RADIO_BASE_SHORTS \
+#define PFSK_RADIO_EVENT_QUEUE_DEPTH 8
+#define PFSK_RADIO_TX_RING_DEPTH     8U
+#define PFSK_RADIO_RX_RING_DEPTH     8
+#define PFSK_RADIO_LISTEN_TIMEOUT_BASE_US    1000U
+#define PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US  1000U
+#define PFSK_RADIO_BASE_SHORTS \
 		(NRF_RADIO_SHORT_READY_START_MASK | \
 	 	NRF_RADIO_SHORT_PHYEND_DISABLE_MASK | \
 	 	NRF_RADIO_SHORT_ADDRESS_RSSISTART_MASK)
 
-#ifdef PGFSK_HW_DEBUG_PHYEND_GPIO
-#define PGFSK_HW_DEBUG_PHYEND_HW_PIN     NRF_GPIO_PIN_MAP(0U, 0U)
-#define PGFSK_HW_DEBUG_PHYEND_ISR_PIN    NRF_GPIO_PIN_MAP(0U, 1U)
-#define PGFSK_HW_DEBUG_PHYEND_GPIOTE     NRF_GPIOTE30
-#define PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH  3U
+#ifdef PFSK_RADIO_DEBUG_PHYEND_GPIO
+#define PFSK_RADIO_DEBUG_PHYEND_DPPI_PIN     NRF_GPIO_PIN_MAP(0U, 0U)
+#define PFSK_RADIO_DEBUG_PHYEND_ISR_PIN    NRF_GPIO_PIN_MAP(0U, 1U)
+#define PFSK_RADIO_DEBUG_PHYEND_GPIOTE     NRF_GPIOTE30
+#define PFSK_RADIO_DEBUG_PHYEND_GPIOTE_CH  3U
 #endif
 
-BUILD_ASSERT(PGFSK_HW_TX_RING_DEPTH > 1U, "TX ring must leave one slot unused");
-BUILD_ASSERT(PGFSK_HW_RX_RING_DEPTH > 1U, "RX ring must leave one slot unused");
-BUILD_ASSERT(PGFSK_HW_TX_RING_DEPTH <= UINT8_MAX, "TX ring indices are uint8_t");
-BUILD_ASSERT(PGFSK_HW_RX_RING_DEPTH <= UINT8_MAX, "RX ring indices are uint8_t");
-BUILD_ASSERT(PGFSK_KEEPALIVE_PAYLOAD_LEN <= PGFSK_PAYLOAD_MAX_LEN, "keepalive doesn't fit packet");
-BUILD_ASSERT(PGFSK_KEEPALIVE_LEN <= UINT8_MAX, "keepalive length must fit LFLEN");
-BUILD_ASSERT(offsetof(struct pgfsk_packet, seq) == 1U, "seq must follow length byte");
-BUILD_ASSERT(offsetof(struct pgfsk_packet, data) == 1U + PGFSK_PACKET_METADATA_LEN,
+BUILD_ASSERT(PFSK_RADIO_TX_RING_DEPTH > 1U, "TX ring must leave one slot unused");
+BUILD_ASSERT(PFSK_RADIO_RX_RING_DEPTH > 1U, "RX ring must leave one slot unused");
+BUILD_ASSERT(PFSK_RADIO_TX_RING_DEPTH <= UINT8_MAX, "TX ring indices are uint8_t");
+BUILD_ASSERT(PFSK_RADIO_RX_RING_DEPTH <= UINT8_MAX, "RX ring indices are uint8_t");
+BUILD_ASSERT(PFSK_KEEPALIVE_PAYLOAD_LEN <= PFSK_PAYLOAD_MAX_LEN, "keepalive doesn't fit packet");
+BUILD_ASSERT(PFSK_KEEPALIVE_LEN <= UINT8_MAX, "keepalive length must fit LFLEN");
+BUILD_ASSERT(offsetof(struct pfsk_packet, seq) == 1U, "seq must follow length byte");
+BUILD_ASSERT(offsetof(struct pfsk_packet, data) == 1U + PFSK_PACKET_METADATA_LEN,
 	     "data offset inconsistent with METADATA_LEN");
 
-static struct pgfsk_packet g_tx_ring[PGFSK_HW_TX_RING_DEPTH];
-static struct pgfsk_packet g_rx_ring[PGFSK_HW_RX_RING_DEPTH];
-static struct pgfsk_packet g_keepalive_packet = {
-	.length = PGFSK_KEEPALIVE_LEN,
-	.seq = PGFSK_KEEPALIVE_SEQ,
+static struct pfsk_packet g_tx_ring[PFSK_RADIO_TX_RING_DEPTH];
+static struct pfsk_packet g_rx_ring[PFSK_RADIO_RX_RING_DEPTH];
+static struct pfsk_packet g_keepalive_packet = {
+	.length = PFSK_KEEPALIVE_LEN,
+	.seq = PFSK_KEEPALIVE_SEQ,
 };
 static volatile uint8_t g_tx_wr_idx;
 static volatile uint8_t g_tx_rd_idx;
 static volatile uint8_t g_rx_wr_idx;
 static volatile uint8_t g_rx_rd_idx;
 
-K_MSGQ_DEFINE(g_radio_event_queue, sizeof(struct pgfsk_hw_event), PGFSK_HW_EVENT_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(g_radio_event_queue, sizeof(struct pfsk_radio_event), PFSK_RADIO_EVENT_QUEUE_DEPTH, 4);
 
-enum pgfsk_hw_turn_state {
-	PGFSK_HW_TURN_DISABLED = 0,
-	PGFSK_HW_TURN_LISTEN,
-	PGFSK_HW_TURN_IN_RX,
-	PGFSK_HW_TURN_IN_TX,
+enum pfsk_radio_turn_state {
+	PFSK_RADIO_TURN_DISABLED = 0,
+	PFSK_RADIO_TURN_LISTEN,
+	PFSK_RADIO_TURN_IN_RX,
+	PFSK_RADIO_TURN_IN_TX,
 };
 
-struct radio_hw_state {
-	enum pgfsk_hw_turn_state turn_state;
+struct radio_core_state {
+	enum pfsk_radio_turn_state turn_state;
 	bool deadline_armed;
 	bool tx_packet_from_ring;
 };
 
-static volatile struct radio_hw_state g_hw;
-static struct pgfsk_hw_stats g_stats;
+static volatile struct radio_core_state g_radio;
+static struct pfsk_radio_stats g_stats;
 static struct k_spinlock g_lock;
 
-#define PGFSK_HW_DEADLINE_MIN_LEAD_US 20U
+#define PFSK_RADIO_DEADLINE_MIN_LEAD_US 20U
 
 static void reset_stats(void);
 
-#ifdef PGFSK_HW_DEBUG_PHYEND_GPIO
+#ifdef PFSK_RADIO_DEBUG_PHYEND_GPIO
 static void debug_phyend_gpio_route_init(void)
 {
 	/* DEBUG CODE: bridge RADIO-domain PHYEND DPPI to P0.00/GPIOTE30. */
 	nrf_ppib_subscribe_set(NRF_PPIB11,
-			       nrf_ppib_send_task_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
-			       PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+			       nrf_ppib_send_task_get(PFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			       PFSK_DPPI_CH_PHYEND_TIMESTAMP);
 	nrf_ppib_publish_set(NRF_PPIB21,
-			     nrf_ppib_receive_event_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
-			     PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+			     nrf_ppib_receive_event_get(PFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			     PFSK_DPPI_CH_PHYEND_TIMESTAMP);
 	nrf_ppib_subscribe_set(NRF_PPIB22,
-			       nrf_ppib_send_task_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
-			       PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+			       nrf_ppib_send_task_get(PFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			       PFSK_DPPI_CH_PHYEND_TIMESTAMP);
 	nrf_ppib_publish_set(NRF_PPIB30,
-			     nrf_ppib_receive_event_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
-			     PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+			     nrf_ppib_receive_event_get(PFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			     PFSK_DPPI_CH_PHYEND_TIMESTAMP);
 }
 
 static void debug_phyend_gpio_route_enable(void)
 {
-	nrf_dppi_channels_enable(NRF_DPPIC20, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
-	nrf_dppi_channels_enable(NRF_DPPIC30, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_enable(NRF_DPPIC20, BIT(PFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_enable(NRF_DPPIC30, BIT(PFSK_DPPI_CH_PHYEND_TIMESTAMP));
 }
 
 static void debug_phyend_gpio_route_disable(void)
 {
-	nrf_dppi_channels_disable(NRF_DPPIC20, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
-	nrf_dppi_channels_disable(NRF_DPPIC30, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_disable(NRF_DPPIC20, BIT(PFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_disable(NRF_DPPIC30, BIT(PFSK_DPPI_CH_PHYEND_TIMESTAMP));
 }
 
 static void debug_phyend_gpio_init(void)
 {
 	debug_phyend_gpio_route_init();
-	nrf_gpio_cfg_output(PGFSK_HW_DEBUG_PHYEND_HW_PIN);
-	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_HW_PIN);
-	nrf_gpiote_task_configure(PGFSK_HW_DEBUG_PHYEND_GPIOTE,
-				  PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH,
-				  PGFSK_HW_DEBUG_PHYEND_HW_PIN,
+	nrf_gpio_cfg_output(PFSK_RADIO_DEBUG_PHYEND_DPPI_PIN);
+	nrf_gpio_pin_clear(PFSK_RADIO_DEBUG_PHYEND_DPPI_PIN);
+	nrf_gpiote_task_configure(PFSK_RADIO_DEBUG_PHYEND_GPIOTE,
+				  PFSK_RADIO_DEBUG_PHYEND_GPIOTE_CH,
+				  PFSK_RADIO_DEBUG_PHYEND_DPPI_PIN,
 				  NRF_GPIOTE_POLARITY_TOGGLE,
 				  NRF_GPIOTE_INITIAL_VALUE_LOW);
-	nrf_gpiote_task_enable(PGFSK_HW_DEBUG_PHYEND_GPIOTE,
-			       PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH);
+	nrf_gpiote_task_enable(PFSK_RADIO_DEBUG_PHYEND_GPIOTE,
+			       PFSK_RADIO_DEBUG_PHYEND_GPIOTE_CH);
 	nrf_gpiote_subscribe_set(
-		PGFSK_HW_DEBUG_PHYEND_GPIOTE,
-		nrf_gpiote_out_task_get(PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH),
-		PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+		PFSK_RADIO_DEBUG_PHYEND_GPIOTE,
+		nrf_gpiote_out_task_get(PFSK_RADIO_DEBUG_PHYEND_GPIOTE_CH),
+		PFSK_DPPI_CH_PHYEND_TIMESTAMP);
 
-	nrf_gpio_cfg_output(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
-	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+	nrf_gpio_cfg_output(PFSK_RADIO_DEBUG_PHYEND_ISR_PIN);
+	nrf_gpio_pin_clear(PFSK_RADIO_DEBUG_PHYEND_ISR_PIN);
 }
 
 static void debug_phyend_gpio_reset(void)
 {
-	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_HW_PIN);
-	nrf_gpiote_task_force(PGFSK_HW_DEBUG_PHYEND_GPIOTE,
-			      PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH,
+	nrf_gpio_pin_clear(PFSK_RADIO_DEBUG_PHYEND_DPPI_PIN);
+	nrf_gpiote_task_force(PFSK_RADIO_DEBUG_PHYEND_GPIOTE,
+			      PFSK_RADIO_DEBUG_PHYEND_GPIOTE_CH,
 			      NRF_GPIOTE_INITIAL_VALUE_LOW);
 
-	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+	nrf_gpio_pin_clear(PFSK_RADIO_DEBUG_PHYEND_ISR_PIN);
 }
 
 static void debug_phyend_isr_toggle(void)
 {
-	nrf_gpio_pin_toggle(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+	nrf_gpio_pin_toggle(PFSK_RADIO_DEBUG_PHYEND_ISR_PIN);
 }
 #else
 static inline void debug_phyend_gpio_init(void)
@@ -166,12 +166,12 @@ static inline void debug_phyend_isr_toggle(void)
 
 static uint8_t next_rx_wr_idx(void)
 {
-	return (g_rx_wr_idx + 1U) % PGFSK_HW_RX_RING_DEPTH;
+	return (g_rx_wr_idx + 1U) % PFSK_RADIO_RX_RING_DEPTH;
 }
 
 static void advance_tx_rd_idx(void)
 {
-	g_tx_rd_idx = (g_tx_rd_idx + 1U) % PGFSK_HW_TX_RING_DEPTH;
+	g_tx_rd_idx = (g_tx_rd_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH;
 }
 
 static void advance_rx_wr_idx(void)
@@ -181,7 +181,7 @@ static void advance_rx_wr_idx(void)
 
 static void advance_rx_rd_idx(void)
 {
-	g_rx_rd_idx = (g_rx_rd_idx + 1U) % PGFSK_HW_RX_RING_DEPTH;
+	g_rx_rd_idx = (g_rx_rd_idx + 1U) % PFSK_RADIO_RX_RING_DEPTH;
 }
 
 static bool tx_ring_empty(void)
@@ -198,37 +198,37 @@ static void program_rx_packetptr(void)
 {
 	nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_rx_ring[g_rx_wr_idx]);
 	nrf_radio_shorts_set(NRF_RADIO,
-			     PGFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_RXEN_MASK);
+			     PFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_RXEN_MASK);
 }
 
 static void program_tx_packetptr(void)
 {
 	if (tx_ring_empty()) {
 		nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_keepalive_packet);
-		g_hw.tx_packet_from_ring = false;
+		g_radio.tx_packet_from_ring = false;
 	} else {
 		nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_tx_ring[g_tx_rd_idx]);
-		g_hw.tx_packet_from_ring = true;
+		g_radio.tx_packet_from_ring = true;
 	}
 
 	nrf_radio_shorts_set(NRF_RADIO,
-			     PGFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_TXEN_MASK);
+			     PFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_TXEN_MASK);
 }
 
 static uint32_t capture_timer_tick(void)
 {
-	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE5);
-	return nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_NOW);
+	nrf_timer_task_trigger(PFSK_TIMER, NRF_TIMER_TASK_CAPTURE5);
+	return nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_NOW);
 }
 
-static bool queue_radio_event(const struct pgfsk_hw_event *event)
+static bool queue_radio_event(const struct pfsk_radio_event *event)
 {
 	if (event == NULL) {
 		return false;
 	}
 
 	if (k_msgq_put(&g_radio_event_queue, event, K_NO_WAIT) != 0) {
-		LOG_ERR("PGFSK HW event queue full, dropping event type %d", event->type);
+		LOG_ERR("PFSK radio event queue full, dropping event type %d", event->type);
 		return false;
 	}
 
@@ -237,40 +237,40 @@ static bool queue_radio_event(const struct pgfsk_hw_event *event)
 
 static void clear_deadline(void)
 {
-	g_hw.deadline_armed = false;
-	nrf_timer_int_disable(PGFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
+	g_radio.deadline_armed = false;
+	nrf_timer_int_disable(PFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
 }
 
 static void set_deadline(uint32_t deadline_tick)
 {
 	uint32_t now_tick;
 
-	if (g_hw.turn_state == PGFSK_HW_TURN_DISABLED) {
+	if (g_radio.turn_state == PFSK_RADIO_TURN_DISABLED) {
 		return;
 	}
 
 	now_tick = capture_timer_tick();
-	if ((int32_t)(deadline_tick - now_tick) <= (int32_t)PGFSK_HW_DEADLINE_MIN_LEAD_US) {
+	if ((int32_t)(deadline_tick - now_tick) <= (int32_t)PFSK_RADIO_DEADLINE_MIN_LEAD_US) {
 		k_spinlock_key_t key = k_spin_lock(&g_lock);
 
-		deadline_tick = now_tick + PGFSK_HW_DEADLINE_MIN_LEAD_US;
+		deadline_tick = now_tick + PFSK_RADIO_DEADLINE_MIN_LEAD_US;
 		g_stats.deadline_late_count++;
 
 		k_spin_unlock(&g_lock, key);
 	}
 
-	nrf_timer_cc_set(PGFSK_TIMER, PGFSK_TIMER_CC_DEADLINE, deadline_tick);
-	nrf_timer_event_clear(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
-	g_hw.deadline_armed = true;
-	nrf_timer_int_enable(PGFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
+	nrf_timer_cc_set(PFSK_TIMER, PFSK_TIMER_CC_DEADLINE, deadline_tick);
+	nrf_timer_event_clear(PFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
+	g_radio.deadline_armed = true;
+	nrf_timer_int_enable(PFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
 }
 
 static bool trigger_prepared_tx(void)
 {
 	nrf_radio_state_t radio_state;
 
-	if (g_hw.turn_state == PGFSK_HW_TURN_DISABLED ||
-	    g_hw.turn_state == PGFSK_HW_TURN_IN_TX) {
+	if (g_radio.turn_state == PFSK_RADIO_TURN_DISABLED ||
+	    g_radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
 		return false;
 	}
 
@@ -281,7 +281,7 @@ static bool trigger_prepared_tx(void)
 
 	program_tx_packetptr();
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
-	g_hw.turn_state = PGFSK_HW_TURN_IN_TX;
+	g_radio.turn_state = PFSK_RADIO_TURN_IN_TX;
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 
 	return true;
@@ -292,7 +292,7 @@ static uint32_t listen_timeout_jitter_us(void)
 	static uint32_t probe_prng_state;
 	uint32_t x;
 
-	if (PGFSK_HW_LISTEN_TIMEOUT_JITTER_US == 0U) {
+	if (PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US == 0U) {
 		return 0U;
 	}
 
@@ -323,22 +323,22 @@ static uint32_t listen_timeout_jitter_us(void)
 	}
 
 	probe_prng_state = x;
-	return x % (PGFSK_HW_LISTEN_TIMEOUT_JITTER_US + 1U);
+	return x % (PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US + 1U);
 }
 
 static void arm_initial_listen_deadline(void)
 {
-	set_deadline(capture_timer_tick() + PGFSK_HW_LISTEN_TIMEOUT_BASE_US + listen_timeout_jitter_us());
+	set_deadline(capture_timer_tick() + PFSK_RADIO_LISTEN_TIMEOUT_BASE_US + listen_timeout_jitter_us());
 }
 
 static void arm_post_tx_listen_deadline(uint32_t tx_phyend_tick)
 {
-	set_deadline(tx_phyend_tick + PGFSK_HW_MAX_PACKET_AIRTIME_US + listen_timeout_jitter_us());
+	set_deadline(tx_phyend_tick + PFSK_RADIO_MAX_PACKET_AIRTIME_US + listen_timeout_jitter_us());
 }
 
 static void arm_rx_deadline(uint32_t address_tick)
 {
-	set_deadline(address_tick + PGFSK_HW_MAX_PACKET_AIRTIME_US);
+	set_deadline(address_tick + PFSK_RADIO_MAX_PACKET_AIRTIME_US);
 }
 
 static void note_rx_ok(int16_t rssi_dbm)
@@ -380,10 +380,10 @@ static void hfclk_start(void)
 
 static void radio_program_address_table(void)
 {
-	const uint32_t dongle_base = (PGFSK_HW_ADDR_DONGLE & 0x00FFFFFFUL) << 8;
-	const uint32_t headset_base = (PGFSK_HW_ADDR_HEADSET & 0x00FFFFFFUL) << 8;
-	const uint32_t prefix0 = ((PGFSK_HW_ADDR_DONGLE >> 24) & 0xFFU) |
-							 (((PGFSK_HW_ADDR_HEADSET >> 24) & 0xFFU) << 8);
+	const uint32_t dongle_base = (PFSK_RADIO_ADDR_DONGLE & 0x00FFFFFFUL) << 8;
+	const uint32_t headset_base = (PFSK_RADIO_ADDR_HEADSET & 0x00FFFFFFUL) << 8;
+	const uint32_t prefix0 = ((PFSK_RADIO_ADDR_DONGLE >> 24) & 0xFFU) |
+							 (((PFSK_RADIO_ADDR_HEADSET >> 24) & 0xFFU) << 8);
 
 	nrf_radio_base0_set(NRF_RADIO, dongle_base);
 	nrf_radio_base1_set(NRF_RADIO, headset_base);
@@ -392,33 +392,33 @@ static void radio_program_address_table(void)
 
 static void timer_isr(const void *arg)
 {
-	struct pgfsk_hw_event event;
+	struct pfsk_radio_event event;
 	uint32_t deadline_tick;
 
 	ARG_UNUSED(arg);
 
-	if (nrf_timer_event_check(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3)) {
-		nrf_timer_event_clear(PGFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
+	if (nrf_timer_event_check(PFSK_TIMER, NRF_TIMER_EVENT_COMPARE3)) {
+		nrf_timer_event_clear(PFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
 
-		if (g_hw.deadline_armed) {
-			deadline_tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_DEADLINE);
+		if (g_radio.deadline_armed) {
+			deadline_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_DEADLINE);
 			clear_deadline();
 
 			memset(&event, 0, sizeof(event));
 			event.tick = deadline_tick;
 
-			if (g_hw.turn_state == PGFSK_HW_TURN_IN_RX) {
-				event.type = PGFSK_HW_EVENT_RX_INCOMPLETE;
+			if (g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
+				event.type = PFSK_RADIO_EVENT_RX_INCOMPLETE;
 				(void)queue_radio_event(&event);
-			} else if (g_hw.turn_state == PGFSK_HW_TURN_LISTEN) {
-				event.type = PGFSK_HW_EVENT_LISTEN_TIMEOUT;
+			} else if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
+				event.type = PFSK_RADIO_EVENT_LISTEN_TIMEOUT;
 				(void)queue_radio_event(&event);
 			} else {
 				return;
 			}
 
 			if (!trigger_prepared_tx()) {
-				event.type = PGFSK_HW_EVENT_TX_TRIGGER_FAILED;
+				event.type = PFSK_RADIO_EVENT_TX_TRIGGER_FAILED;
 				(void)queue_radio_event(&event);
 			}
 		}
@@ -432,13 +432,13 @@ static void radio_isr(const void *arg)
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS)) {
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
 
-		if (g_hw.turn_state == PGFSK_HW_TURN_LISTEN) {
-			uint32_t rx_tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_RX_TS);
+		if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
+			uint32_t rx_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_RX_TS);
 
-			g_hw.turn_state = PGFSK_HW_TURN_IN_RX;
+			g_radio.turn_state = PFSK_RADIO_TURN_IN_RX;
 			arm_rx_deadline(rx_tick);
 			program_tx_packetptr();
-		} else if (g_hw.turn_state == PGFSK_HW_TURN_IN_TX) {
+		} else if (g_radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
 			/* TX is already on air here. Switch back to RX before TX PHYEND,
 			 * because the DISABLED short fires before the DISABLED ISR can run.
 			 */
@@ -447,23 +447,23 @@ static void radio_isr(const void *arg)
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCOK)) {
-		struct pgfsk_hw_event event;
+		struct pfsk_radio_event event;
 		int16_t rssi_dbm;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCOK);
 
-		if (g_hw.turn_state == PGFSK_HW_TURN_LISTEN ||
-		    g_hw.turn_state == PGFSK_HW_TURN_IN_RX) {
+		if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN ||
+		    g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
-			event.type = PGFSK_HW_EVENT_RX_OK;
-			event.tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_PHYEND_TS);
+			event.type = PFSK_RADIO_EVENT_RX_OK;
+			event.tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
 			event.rssi_dbm = rssi_dbm;
 			note_rx_ok(rssi_dbm);
 			clear_deadline();
 
 			if (rx_ring_write_would_fill()) {
-				LOG_ERR("PGFSK RX ring full, dropping RX_OK");
+				LOG_ERR("PFSK RX ring full, dropping RX_OK");
 			} else if (queue_radio_event(&event)) {
 				advance_rx_wr_idx();
 			}
@@ -471,23 +471,23 @@ static void radio_isr(const void *arg)
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR)) {
-		struct pgfsk_hw_event event;
+		struct pfsk_radio_event event;
 		int16_t rssi_dbm;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
 
-		if (g_hw.turn_state == PGFSK_HW_TURN_LISTEN ||
-		    g_hw.turn_state == PGFSK_HW_TURN_IN_RX) {
+		if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN ||
+		    g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
-			event.type = PGFSK_HW_EVENT_RX_BAD;
-			event.tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_PHYEND_TS);
+			event.type = PFSK_RADIO_EVENT_RX_BAD;
+			event.tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
 			event.rssi_dbm = rssi_dbm;
 			note_rx_bad(rssi_dbm);
 			clear_deadline();
 
 			if (rx_ring_write_would_fill()) {
-				LOG_ERR("PGFSK RX ring full, dropping RX_BAD");
+				LOG_ERR("PFSK RX ring full, dropping RX_BAD");
 			} else if (queue_radio_event(&event)) {
 				advance_rx_wr_idx();
 			}
@@ -498,29 +498,29 @@ static void radio_isr(const void *arg)
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PHYEND);
 		debug_phyend_isr_toggle();
 
-		if (g_hw.turn_state == PGFSK_HW_TURN_IN_RX) {
-			g_hw.turn_state = PGFSK_HW_TURN_IN_TX;
-		} else if (g_hw.turn_state == PGFSK_HW_TURN_IN_TX) {
-			uint32_t tx_phyend_tick = nrf_timer_cc_get(PGFSK_TIMER, PGFSK_TIMER_CC_PHYEND_TS);
-			struct pgfsk_hw_event event;
+		if (g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
+			g_radio.turn_state = PFSK_RADIO_TURN_IN_TX;
+		} else if (g_radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
+			uint32_t tx_phyend_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
+			struct pfsk_radio_event event;
 
-			if (g_hw.tx_packet_from_ring) {
+			if (g_radio.tx_packet_from_ring) {
 				advance_tx_rd_idx();
 			}
 
-			g_hw.turn_state = PGFSK_HW_TURN_LISTEN;
+			g_radio.turn_state = PFSK_RADIO_TURN_LISTEN;
 			arm_post_tx_listen_deadline(tx_phyend_tick);
 			note_tx_end();
 
 			memset(&event, 0, sizeof(event));
-			event.type = PGFSK_HW_EVENT_TX_END;
+			event.type = PFSK_RADIO_EVENT_TX_END;
 			event.tick = tx_phyend_tick;
 			(void)queue_radio_event(&event);
 		}
 	}
 }
 
-void pgfsk_hw_init(void)
+void pfsk_radio_init(void)
 {
 	nrf_radio_packet_conf_t pkt_conf = {
 		.lflen = 8,
@@ -529,7 +529,7 @@ void pgfsk_hw_init(void)
 		.s1incl = false,
 		.plen = NRF_RADIO_PREAMBLE_LENGTH_16BIT,
 		.crcinc = false,
-		.maxlen = sizeof(struct pgfsk_packet) - sizeof(uint8_t),
+		.maxlen = sizeof(struct pfsk_packet) - sizeof(uint8_t),
 		.statlen = 0,
 		.balen = 3,
 		.big_endian = false,
@@ -538,23 +538,23 @@ void pgfsk_hw_init(void)
 
 	hfclk_start();
 
-	nrf_radio_mode_set(NRF_RADIO, PGFSK_HW_MODE_SETTING);
-	nrf_radio_frequency_set(NRF_RADIO, PGFSK_HW_FREQUENCY_MHZ);
-	nrf_radio_txpower_set(NRF_RADIO, PGFSK_HW_TXPOWER);
+	nrf_radio_mode_set(NRF_RADIO, PFSK_RADIO_MODE_SETTING);
+	nrf_radio_frequency_set(NRF_RADIO, PFSK_RADIO_FREQUENCY_MHZ);
+	nrf_radio_txpower_set(NRF_RADIO, PFSK_RADIO_TXPOWER);
 	nrf_radio_packet_configure(NRF_RADIO, &pkt_conf);
-	nrf_radio_datawhiteiv_set(NRF_RADIO, (PGFSK_HW_FREQUENCY_MHZ - 2400) & 0x3F);
+	nrf_radio_datawhiteiv_set(NRF_RADIO, (PFSK_RADIO_FREQUENCY_MHZ - 2400) & 0x3F);
 	nrf_radio_crc_configure(NRF_RADIO, 2, NRF_RADIO_CRC_ADDR_SKIP, 0x11021UL);
 	radio_program_address_table();
 
-	nrf_timer_mode_set(PGFSK_TIMER, NRF_TIMER_MODE_TIMER);
-	nrf_timer_bit_width_set(PGFSK_TIMER, NRF_TIMER_BIT_WIDTH_32);
-	nrf_timer_prescaler_set(PGFSK_TIMER, PGFSK_TIMER_PRESCALER);
+	nrf_timer_mode_set(PFSK_TIMER, NRF_TIMER_MODE_TIMER);
+	nrf_timer_bit_width_set(PFSK_TIMER, NRF_TIMER_BIT_WIDTH_32);
+	nrf_timer_prescaler_set(PFSK_TIMER, PFSK_TIMER_PRESCALER);
 
-	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS, PGFSK_DPPI_CH_RX_TIMESTAMP);
-	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE2, PGFSK_DPPI_CH_RX_TIMESTAMP);
+	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS, PFSK_DPPI_CH_RX_TIMESTAMP);
+	nrf_timer_subscribe_set(PFSK_TIMER, NRF_TIMER_TASK_CAPTURE2, PFSK_DPPI_CH_RX_TIMESTAMP);
 
-	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PHYEND, PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
-	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE4, PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PHYEND, PFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_timer_subscribe_set(PFSK_TIMER, NRF_TIMER_TASK_CAPTURE4, PFSK_DPPI_CH_PHYEND_TIMESTAMP);
 	debug_phyend_gpio_init();
 
 	IRQ_CONNECT(RADIO_0_IRQn, 0, radio_isr, NULL, 0);
@@ -566,7 +566,7 @@ void pgfsk_hw_init(void)
 	reset_stats();
 }
 
-void pgfsk_hw_start(void)
+void pfsk_radio_start(void)
 {
 	unsigned int irq_key;
 
@@ -575,8 +575,8 @@ void pgfsk_hw_start(void)
 
 	irq_key = irq_lock();
 
-	memset((void *)&g_hw, 0, sizeof(g_hw));
-	g_hw.turn_state = PGFSK_HW_TURN_LISTEN;
+	memset((void *)&g_radio, 0, sizeof(g_radio));
+	g_radio.turn_state = PFSK_RADIO_TURN_LISTEN;
 	g_tx_wr_idx = 0U;
 	g_tx_rd_idx = 0U;
 	g_rx_wr_idx = 0U;
@@ -589,12 +589,12 @@ void pgfsk_hw_start(void)
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCOK);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PHYEND);
 
-	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_CLEAR);
-	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_START);
+	nrf_timer_task_trigger(PFSK_TIMER, NRF_TIMER_TASK_CLEAR);
+	nrf_timer_task_trigger(PFSK_TIMER, NRF_TIMER_TASK_START);
 
-	nrf_dppi_channels_enable(PGFSK_DPPI,
-				 BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
-					 BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_enable(PFSK_DPPI,
+				 BIT(PFSK_DPPI_CH_RX_TIMESTAMP) |
+					 BIT(PFSK_DPPI_CH_PHYEND_TIMESTAMP));
 	debug_phyend_gpio_route_enable();
 
 	nrf_radio_int_enable(NRF_RADIO,
@@ -609,27 +609,27 @@ void pgfsk_hw_start(void)
 	irq_unlock(irq_key);
 }
 
-void pgfsk_hw_set_role_dongle(void)
+void pfsk_radio_set_role_dongle(void)
 {
 	nrf_radio_txaddress_set(NRF_RADIO, 0);
 	nrf_radio_rxaddresses_set(NRF_RADIO, 1 << 1);
 }
 
-void pgfsk_hw_set_role_headset(void)
+void pfsk_radio_set_role_headset(void)
 {
 	nrf_radio_txaddress_set(NRF_RADIO, 1);
 	nrf_radio_rxaddresses_set(NRF_RADIO, 1 << 0);
 }
 
-void pgfsk_hw_stop(void)
+void pfsk_radio_stop(void)
 {
 	unsigned int irq_key;
 
 	irq_key = irq_lock();
 
-	memset((void *)&g_hw, 0, sizeof(g_hw));
+	memset((void *)&g_radio, 0, sizeof(g_radio));
 
-	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_STOP);
+	nrf_timer_task_trigger(PFSK_TIMER, NRF_TIMER_TASK_STOP);
 	nrf_radio_int_disable(NRF_RADIO,
 			      NRF_RADIO_INT_ADDRESS_MASK |
 				      NRF_RADIO_INT_CRCERROR_MASK |
@@ -637,9 +637,9 @@ void pgfsk_hw_stop(void)
 				      NRF_RADIO_INT_PHYEND_MASK);
 	nrf_radio_shorts_set(NRF_RADIO, 0U);
 	nrf_dppi_channels_disable(
-		PGFSK_DPPI,
-		BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
-			BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+		PFSK_DPPI,
+		BIT(PFSK_DPPI_CH_RX_TIMESTAMP) |
+			BIT(PFSK_DPPI_CH_PHYEND_TIMESTAMP));
 	debug_phyend_gpio_route_disable();
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
@@ -652,7 +652,7 @@ void pgfsk_hw_stop(void)
 	k_msgq_purge(&g_radio_event_queue);
 }
 
-void pgfsk_hw_get_stats(struct pgfsk_hw_stats *stats)
+void pfsk_radio_get_stats(struct pfsk_radio_stats *stats)
 {
 	if (stats == NULL) {
 		return;
@@ -673,37 +673,37 @@ static void reset_stats(void)
 	k_spin_unlock(&g_lock, key);
 }
 
-struct pgfsk_packet *pgfsk_hw_tx_get_wr_ptr(void)
+struct pfsk_packet *pfsk_radio_tx_get_wr_ptr(void)
 {
-	if (((g_tx_wr_idx + 1U) % PGFSK_HW_TX_RING_DEPTH) == g_tx_rd_idx) {
+	if (((g_tx_wr_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH) == g_tx_rd_idx) {
 		return NULL;
 	}
 
 	return &g_tx_ring[g_tx_wr_idx];
 }
 
-void pgfsk_hw_tx_advance_wr_idx(void)
+void pfsk_radio_tx_advance_wr_idx(void)
 {
-	g_tx_wr_idx = (g_tx_wr_idx + 1U) % PGFSK_HW_TX_RING_DEPTH;
+	g_tx_wr_idx = (g_tx_wr_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH;
 }
 
-const struct pgfsk_packet *pgfsk_hw_rx_get_rd_ptr(void)
+const struct pfsk_packet *pfsk_radio_rx_get_rd_ptr(void)
 {
-	if (g_hw.turn_state != PGFSK_HW_TURN_DISABLED && g_rx_rd_idx != g_rx_wr_idx) {
+	if (g_radio.turn_state != PFSK_RADIO_TURN_DISABLED && g_rx_rd_idx != g_rx_wr_idx) {
 		return &g_rx_ring[g_rx_rd_idx];
 	}
 
 	return NULL;
 }
 
-void pgfsk_hw_rx_advance_rd_idx(void)
+void pfsk_radio_rx_advance_rd_idx(void)
 {
 	if (g_rx_rd_idx != g_rx_wr_idx) {
 		advance_rx_rd_idx();
 	}
 }
 
-bool pgfsk_hw_dequeue_event(struct pgfsk_hw_event *event, k_timeout_t timeout)
+bool pfsk_radio_dequeue_event(struct pfsk_radio_event *event, k_timeout_t timeout)
 {
 	if (event == NULL) {
 		return false;

@@ -41,10 +41,10 @@ Implementation is in `firmware/`, a Zephyr application for
 Currently implemented:
 
 - USB device bring-up with profile-selected descriptors (UAC+CDC or CDC-only)
-- persisted boot profile selection between `usb`, `pgfsk_dongle`, and `pgfsk_headset`
+- persisted boot profile selection between `usb`, `pfsk_dongle`, and `pfsk_headset`
 - USB CDC CLI
 - USB audio mode
-- proprietary radio link test, including TX/RX traffic and status counters
+- PFSK radio test mode, including TX/RX traffic and status counters
 - initial audio I2S / codec integration scaffolding
 
 Not implemented yet:
@@ -57,7 +57,7 @@ Important implementation notes:
 
 - `firmware/src/main.c`: loads the persisted boot profile and starts that profile's audio path
 - `firmware/src/app_control.c`: owns boot profile persistence and startup
-- PGFSK profiles currently enable the present radio/link-test path; they are not yet the final audio transport
+- PFSK profiles currently enable the present radio test-mode path; they are not yet the final audio transport
 
 ## CLI Interface
 
@@ -67,7 +67,7 @@ Current commands include:
 
 - `help`
 - `get`
-- `set profile <usb|pgfsk_dongle|pgfsk_headset>`
+- `set profile <usb|pfsk_dongle|pfsk_headset>`
 - `status`
 - `status on [ms]`
 - `status off`
@@ -119,7 +119,7 @@ flowchart LR
     Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
 
     Source <-->|USB Audio / CDC| Dongle
-    Dongle <-->|Proprietary 2.4 GHz GFSK| Headset
+    Dongle <-->|Proprietary FSK| Headset
     Headset <-->|Audio| Endpoint
 ```
 

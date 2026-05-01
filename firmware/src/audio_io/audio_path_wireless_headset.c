@@ -7,8 +7,8 @@
 #include "audio_io/audio_path_common.h"
 #include "audio_io/i2s.h"
 #include "audio_io/nau88l21.h"
-#include "prop_gfsk/link.h"
-#include "prop_gfsk/test_mode.h"
+#include "prop_fsk/session.h"
+#include "prop_fsk/test_mode.h"
 #include "tusb.h"
 
 #define HEADSET_THREAD_STACK_SIZE  3072
@@ -130,11 +130,11 @@ static void headset_thread(void *a, void *b, void *c)
 	ARG_UNUSED(c);
 
 	while (1) {
-		/* 1. PGFSK RX → speaker FIFO */
+		/* 1. PFSK RX → speaker FIFO */
 		while (1) {
-			struct pgfsk_frame frame;
+			struct pfsk_frame frame;
 
-			if (!pgfsk_link_rx_dequeue(&frame, K_NO_WAIT)) {
+			if (!pfsk_session_rx_dequeue(&frame, K_NO_WAIT)) {
 				break;
 			}
 
@@ -152,11 +152,11 @@ static void headset_thread(void *a, void *b, void *c)
 			(void)tu_fifo_write_n(&g_headset_spk_fifo, frame.payload, AUDIO_I2S_BLOCK_BYTES);
 		}
 
-		/* 2. I2S RX → PGFSK TX (if link in service) */
-		if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
+		/* 2. I2S RX → PFSK TX (if session in service) */
+		if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE) {
 			while (1) {
 				uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
-				struct pgfsk_frame frame;
+				struct pfsk_frame frame;
 				size_t mono_bytes;
 
 				if (tu_fifo_read_n(&g_headset_mic_fifo, stereo, AUDIO_I2S_BLOCK_BYTES) < AUDIO_I2S_BLOCK_BYTES) {
@@ -168,7 +168,7 @@ static void headset_thread(void *a, void *b, void *c)
 					stereo,
 					AUDIO_I2S_BLOCK_BYTES,
 					frame.payload,
-					PGFSK_PAYLOAD_MAX_LEN);
+					PFSK_PAYLOAD_MAX_LEN);
 				if (mono_bytes == 0U) {
 					g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
 					continue;
@@ -176,8 +176,8 @@ static void headset_thread(void *a, void *b, void *c)
 
 				frame.len = mono_bytes;
 
-				if (!pgfsk_link_tx_enqueue(&frame, K_NO_WAIT)) {
-					if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE) {
+				if (!pfsk_session_tx_enqueue(&frame, K_NO_WAIT)) {
+					if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE) {
 						g_headset_status.overflow_bytes += mono_bytes;
 					}
 				}

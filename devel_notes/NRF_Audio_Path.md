@@ -5,8 +5,8 @@
 Implemented audio bridges:
 
 - USB <-> I2S (wired path)
-- USB <-> proprietary GFSK (wireless path, dongle role)
-- proprietary GFSK <-> I2S (wireless path, headset role)
+- USB <-> PFSK (wireless path, dongle role)
+- PFSK <-> I2S (wireless path, headset role)
 
 Planned, not implemented:
 
@@ -49,8 +49,8 @@ USB audio FIFO adapter:
 `app_control_apply()` applies the path implied by the current profile:
 
 - `profile=usb` -> wired path
-- `profile=pgfsk_dongle` -> wireless path, dongle behavior
-- `profile=pgfsk_headset` -> wireless path, headset behavior
+- `profile=pfsk_dongle` -> wireless path, dongle behavior
+- `profile=pfsk_headset` -> wireless path, headset behavior
 
 There is no separate audio-path coordinator or active-path state enum; the active audio path is derived from the `app_control` profile.
 
@@ -66,10 +66,10 @@ Wireless role behavior is selected from `app_control_get_current_profile()` at r
 | Profile | Audio path | Data flow |
 |---|---|---|
 | `usb` | `wired` | USB speaker -> I2S TX, I2S RX -> USB mic |
-| `pgfsk_dongle` | `wireless` | USB speaker -> GFSK TX, GFSK RX -> USB mic |
-| `pgfsk_headset` | `wireless` | GFSK RX -> I2S TX, I2S RX -> GFSK TX |
+| `pfsk_dongle` | `wireless` | USB speaker -> PFSK TX, PFSK RX -> USB mic |
+| `pfsk_headset` | `wireless` | PFSK RX -> I2S TX, I2S RX -> PFSK TX |
 
-Special case: changing between PGFSK profiles resets the wireless path so role-specific behavior updates immediately.
+Special case: changing between PFSK profiles resets the wireless path so role-specific behavior updates immediately.
 
 ## Audio Units and Constants
 
@@ -163,7 +163,7 @@ Status fields (`audio_path_wired_status`):
 
 Purpose:
 
-- profile-dependent bridge using one local playback ring and PGFSK link queues
+- profile-dependent bridge using one local playback ring and PFSK session queues
 
 Local ring:
 
@@ -171,13 +171,13 @@ Local ring:
 - TinyUSB FIFO configured in overwrite mode
 - `audio_ring_push()` returns evicted-oldest bytes for accounting
 
-PGFSK audio payload map (inside `pgfsk_frame.payload`):
+PFSK audio payload map (inside `pfsk_frame.payload`):
 
 - bytes `0..1`: `peer_meta`, little-endian uint16
 - bytes `2..`: audio payload (length = `frame.len - 2`)
 
 Direction is implicit from the device role; there is no stream id byte.
-Audio byte count is not duplicated in the audio header — the link layer
+Audio byte count is not duplicated in the audio header — the session layer
 already carries the total payload length. A frame shorter than the 2-byte
 header is dropped and counted in `rx_malformed_frames`.
 
@@ -203,20 +203,20 @@ so the receiver uses the value directly with no further smoothing.
 
 - ingest USB speaker bytes (up to `AUDIO_DMA_MAX_BYTES=384` per pull) into ring
 - parse received capture frames, push audio to USB mic FIFO, latch peer ring level from `peer_meta`
-- once `PLAYING`, send playback from ring to PGFSK in `AUDIO_STEP_BYTES=96` chunks; outbound `peer_meta` is zero (reserved)
+- once `PLAYING`, send playback from ring to PFSK in `AUDIO_STEP_BYTES=96` chunks; outbound `peer_meta` is zero (reserved)
 - update USB feedback from the latched peer (headset) ring level
 
 ### Headset role behavior
 
 - parse received playback frames, push audio to local ring (inbound `peer_meta` is currently unused)
-- send I2S capture to PGFSK as mono; outbound `peer_meta` carries the headset's filtered ring level
+- send I2S capture to PFSK as mono; outbound `peer_meta` carries the headset's filtered ring level
 - once `PLAYING`, send playback from ring to I2S in `AUDIO_I2S_BLOCK_BYTES` (`96-byte`) blocks
 - if low panic, inject one silence I2S block and count underrun/silence bytes
 - no USB feedback update path in this role
 
-### Link test interaction
+### PFSK test-mode interaction
 
-When `pgfsk_test_mode_is_running()`:
+When `pfsk_test_mode_is_running()`:
 
 - ring is cleared each step
 - status is forced to buffering/zeroed level+error+adjust

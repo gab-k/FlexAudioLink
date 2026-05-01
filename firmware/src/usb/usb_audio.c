@@ -186,7 +186,7 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 
 	uint8_t alt = tu_u16_low(tu_le16toh(p_request->wValue));
 
-	if (alt != 0U && app_control_get_current_profile() == APP_PROFILE_PGFSK_HEADSET) {
+	if (alt != 0U && app_control_get_current_profile() == APP_PROFILE_PFSK_HEADSET) {
 		LOG_WRN("rejecting active USB audio alt=%u in headset profile", alt);
 		return false;
 	}

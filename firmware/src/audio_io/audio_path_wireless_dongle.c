@@ -7,8 +7,8 @@
 #include "tusb.h"
 
 #include "audio_io/audio_path_common.h"
-#include "prop_gfsk/link.h"
-#include "prop_gfsk/test_mode.h"
+#include "prop_fsk/session.h"
+#include "prop_fsk/test_mode.h"
 #include "usb/usb_audio.h"
 
 #define DONGLE_THREAD_STACK_SIZE  3072
@@ -46,16 +46,16 @@ static void dongle_thread(void *a, void *b, void *c)
 	ARG_UNUSED(c);
 
 	while (1) {
-		if (pgfsk_test_mode_is_running()) {
+		if (pfsk_test_mode_is_running()) {
 			g_dongle_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 			g_dongle_status.spk_level_bytes = 0U;
 		} else {
-			/* 1. PGFSK RX → USB mic EP IN */
+			/* 1. PFSK RX → USB mic EP IN */
 			while (1) {
-				struct pgfsk_frame frame;
+				struct pfsk_frame frame;
 				size_t pushed;
 
-				if (!pgfsk_link_rx_dequeue(&frame, K_NO_WAIT)) {
+				if (!pfsk_session_rx_dequeue(&frame, K_NO_WAIT)) {
 					break;
 				}
 
@@ -80,13 +80,13 @@ static void dongle_thread(void *a, void *b, void *c)
 						level);
 			}
 
-			/* 3. If PLAYING: USB EP OUT FIFO → PGFSK TX */
+			/* 3. If PLAYING: USB EP OUT FIFO → PFSK TX */
 			if (g_dongle_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
 				tu_fifo_t *usb_ff = tud_audio_get_ep_out_ff();
 
-				if (pgfsk_link_get_state() == PGFSK_LINK_STATE_IN_SERVICE && usb_ff != NULL) {
+				if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE && usb_ff != NULL) {
 					while (tu_fifo_count(usb_ff) >= AUDIO_STEP_BYTES) {
-						struct pgfsk_frame frame;
+						struct pfsk_frame frame;
 						uint32_t got;
 
 						memset(&frame, 0, sizeof(frame));
@@ -98,7 +98,7 @@ static void dongle_thread(void *a, void *b, void *c)
 
 						frame.len = got;
 
-						if (!pgfsk_link_tx_enqueue(&frame, K_NO_WAIT)) {
+						if (!pfsk_session_tx_enqueue(&frame, K_NO_WAIT)) {
 							g_dongle_status.overflow_bytes += got;
 							break;
 						}

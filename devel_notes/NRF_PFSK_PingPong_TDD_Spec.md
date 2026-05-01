@@ -1,8 +1,8 @@
-# nRF GFSK Ping-Pong TDD Spec
+# nRF PFSK Ping-Pong TDD Spec
 
-Implementation reference: `firmware/src/prop_gfsk/`.
+Implementation reference: `firmware/src/prop_fsk/`.
 
-`radio_hw.c` is authoritative for radio timing and DMA ownership. `link.c`
+`radio_core.c` is authoritative for radio timing and DMA ownership. `session.c`
 is authoritative for service state, app queues, payload sequencing, and loss
 accounting.
 
@@ -15,7 +15,7 @@ accounting.
 - No role-specific slot timing exists.
 - A TX turn always sends either one queued payload packet or one keepalive.
 
-## Hardware Turn State
+## Radio Turn State
 
 Active protocol states:
 
@@ -31,15 +31,15 @@ Implementation sentinel:
 |---|---|
 | `DISABLED` | Radio path stopped; not a protocol turn. |
 
-`link.c` must not duplicate this state machine.
+`session.c` must not duplicate this state machine.
 
-## Hardware Events
+## Radio Events
 
-`radio_hw` emits one ordered metadata-only event stream to `link.c`.
+`radio_core` emits one ordered metadata-only event stream to `session.c`.
 
 ```c
-struct pgfsk_hw_event {
-	enum pgfsk_hw_event_type type;
+struct pfsk_radio_event {
+	enum pfsk_radio_event_type type;
 	uint32_t tick;
 	int16_t rssi_dbm;
 };
@@ -74,32 +74,32 @@ offset 1..N: PAYLOAD bytes, N = LENGTH
 Packet struct:
 
 ```c
-struct pgfsk_packet {
+struct pfsk_packet {
 	uint8_t  length;
 	uint16_t seq;
-	uint8_t  data[PGFSK_PAYLOAD_MAX_LEN];
+	uint8_t  data[PFSK_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 ```
 
 Constants:
 
-- `PGFSK_PACKET_METADATA_LEN = 2U`
-- `PGFSK_PAYLOAD_MAX_LEN = 252`
+- `PFSK_PACKET_METADATA_LEN = 2U`
+- `PFSK_PAYLOAD_MAX_LEN = 252`
 - max transmitted `length = 254`
-- `PGFSK_KEEPALIVE_PAYLOAD_LEN = 16U`
-- `PGFSK_KEEPALIVE_SEQ = UINT16_MAX`
-- `PGFSK_KEEPALIVE_LEN = PGFSK_PACKET_METADATA_LEN + PGFSK_KEEPALIVE_PAYLOAD_LEN`
-- keepalive `length = PGFSK_KEEPALIVE_LEN`
-- payload packets never use `PGFSK_KEEPALIVE_SEQ`
+- `PFSK_KEEPALIVE_PAYLOAD_LEN = 16U`
+- `PFSK_KEEPALIVE_SEQ = UINT16_MAX`
+- `PFSK_KEEPALIVE_LEN = PFSK_PACKET_METADATA_LEN + PFSK_KEEPALIVE_PAYLOAD_LEN`
+- keepalive `length = PFSK_KEEPALIVE_LEN`
+- payload packets never use `PFSK_KEEPALIVE_SEQ`
 - zero-length app TX frames are invalid
 
 ## Buffers
 
-`radio_hw.c` owns the packet buffers:
+`radio_core.c` owns the packet buffers:
 
 ```c
-g_tx_ring[PGFSK_HW_TX_RING_DEPTH]
-g_rx_ring[PGFSK_HW_RX_RING_DEPTH]
+g_tx_ring[PFSK_RADIO_TX_RING_DEPTH]
+g_rx_ring[PFSK_RADIO_RX_RING_DEPTH]
 g_keepalive_packet
 ```
 
@@ -107,10 +107,10 @@ Ring ownership:
 
 | Ring index | Writer |
 |---|---|
-| TX write | link thread |
+| TX write | session thread |
 | TX read | radio ISR |
 | RX write | radio ISR |
-| RX read | link thread |
+| RX read | session thread |
 
 Rings are SPSC. One slot remains unused to distinguish full from empty.
 
@@ -118,9 +118,9 @@ TX ring rules:
 
 - TX ring contains payload packets only.
 - Keepalives are never queued in the TX ring.
-- Link publishes a payload by filling `pgfsk_hw_tx_get_wr_ptr()` and then
-  calling `pgfsk_hw_tx_advance_wr_idx()`.
-- Link-thread publication does not touch `PACKETPTR`.
+- Session publishes a payload by filling `pfsk_radio_tx_get_wr_ptr()` and then
+  calling `pfsk_radio_tx_advance_wr_idx()`.
+- Session-thread publication does not touch `PACKETPTR`.
 
 RX ring rules:
 
@@ -128,7 +128,7 @@ RX ring rules:
 - `CRCOK`/`CRCERROR` queues a metadata-only event.
 - RX write index advances only if the RX ring has room and event queueing
   succeeds.
-- Link releases a consumed RX slot with `pgfsk_hw_rx_advance_rd_idx()`.
+- Session releases a consumed RX slot with `pfsk_radio_rx_advance_rd_idx()`.
 
 ## RADIO Shortcuts
 
@@ -167,7 +167,7 @@ Programming points:
 
 | Point | Action |
 |---|---|
-| `pgfsk_hw_start()` | Program initial RX pointer. |
+| `pfsk_radio_start()` | Program initial RX pointer. |
 | `ADDRESS` while `LISTEN` | Program next TX pointer. |
 | `LISTEN`/`IN_RX` timeout | Program TX pointer directly before switchover to TX. |
 | `ADDRESS` while `IN_TX` | Program next RX pointer. |
@@ -189,8 +189,8 @@ Deadline rules:
 | `ADDRESS` -> `IN_RX` | `address_tick + MAX_PACKET_AIRTIME_US` |
 | TX `PHYEND` -> `LISTEN` | `tx_phyend_tick + MAX_PACKET_AIRTIME_US + jitter` |
 
-`radio_hw` clamps too-late deadlines forward by
-`PGFSK_HW_DEADLINE_MIN_LEAD_US` and increments `deadline_late_count`.
+`radio_core` clamps too-late deadlines forward by
+`PFSK_RADIO_DEADLINE_MIN_LEAD_US` and increments `deadline_late_count`.
 
 TX ring publication never changes deadlines.
 
@@ -256,7 +256,7 @@ Actions:
 `TX_END` is queued from `PHYEND`, not from `DISABLED`. The next RX pointer was
 already programmed by TX `ADDRESS`.
 
-## Link Handling
+## Session Handling
 
 `RX_OK`:
 
@@ -314,7 +314,7 @@ Stay in service:
 Leave service:
 
 - only consecutive `LISTEN_TIMEOUT` events count as missed peer activity
-- threshold is `PGFSK_LINK_SYNC_LOSS_TURNS`
+- threshold is `PFSK_SESSION_SYNC_LOSS_TURNS`
 
 On service loss:
 
@@ -322,11 +322,11 @@ On service loss:
 - reset miss counter
 - clear in-service timestamp
 - clear RX sequence continuity
-- do not reset hardware turn state
+- do not reset radio turn state
 
 ## Responsibilities
 
-`radio_hw` owns:
+`radio_core` owns:
 
 - RADIO/TIMER configuration
 - turn state
@@ -334,17 +334,17 @@ On service loss:
 - `PACKETPTR` and shorts
 - RX/TX rings
 - keepalive fallback packet
-- metadata-only hardware event queue
+- metadata-only radio event queue
 - hardware stats
 
-`link.c` owns:
+`session.c` owns:
 
 - service state
 - app TX/RX queues
 - payload copy into TX ring
 - payload sequence/loss accounting
 - keepalive RX policy
-- user-visible link stats/logs
+- user-visible session stats/logs
 
 ## Invariants
 
@@ -352,12 +352,12 @@ On service loss:
 2. `PHYEND` anchors packet end.
 3. `ADDRESS` is the only peer packet start gate.
 4. `FRAMESTART` and `SYNC` are not protocol inputs.
-5. `link.c` does not own hardware turn state.
+5. `session.c` does not own radio turn state.
 6. RX events do not carry packet payloads.
 7. TX ring entries are payload-only.
 8. Empty TX ring means transmit `g_keepalive_packet`.
 9. Keepalive does not consume payload sequence numbers.
-10. Payload sequence generation skips `PGFSK_KEEPALIVE_SEQ`.
-11. Link-thread TX publication does not program `PACKETPTR`.
+10. Payload sequence generation skips `PFSK_KEEPALIVE_SEQ`.
+11. Session-thread TX publication does not program `PACKETPTR`.
 12. Listen timeout is a hard turn boundary.
-13. Stop purges stale hardware events and leaves hardware state disabled.
+13. Stop purges stale radio events and leaves radio state disabled.

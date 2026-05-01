@@ -1,0 +1,450 @@
+#include "prop_fsk/session.h"
+
+#include <string.h>
+
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
+
+LOG_MODULE_REGISTER(pfsk_session, CONFIG_LOG_DEFAULT_LEVEL);
+
+#define PFSK_SESSION_THREAD_STACK_SIZE       2048
+#define PFSK_SESSION_THREAD_PRIORITY         6
+#define PFSK_SESSION_QUEUE_DEPTH             4
+#define PFSK_SESSION_SYNC_LOSS_TURNS         8U
+
+struct session_stats {
+	uint32_t packets_lost_in_service;
+	uint32_t loss_burst_1_count;
+	uint32_t loss_burst_2_count;
+	uint32_t loss_burst_3_4_count;
+	uint32_t loss_burst_5_plus_count;
+	uint32_t max_loss_burst_len;
+	uint32_t outage_count;
+	uint32_t rx_incomplete_count;
+	uint32_t tx_trigger_fail_count;
+};
+
+struct pfsk_session_runtime {
+	enum pfsk_session_state service_state;
+	struct session_stats stats;
+	uint8_t consecutive_rx_misses;
+	uint64_t in_service_since_cyc;
+	uint16_t next_tx_seq;
+	uint16_t last_rx_seq;
+	bool have_last_rx_seq;
+	struct k_mutex mutex_lock;
+};
+
+static struct pfsk_session_runtime g_session = {
+	.service_state = PFSK_SESSION_STATE_NO_SERVICE,
+	.mutex_lock = Z_MUTEX_INITIALIZER(g_session.mutex_lock),
+};
+
+static bool pfsk_session_copy_to_radio_ring(void);
+
+K_MSGQ_DEFINE(g_pfsk_tx_queue, sizeof(struct pfsk_frame),PFSK_SESSION_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(g_pfsk_rx_queue, sizeof(struct pfsk_frame),PFSK_SESSION_QUEUE_DEPTH, 4);
+
+static K_THREAD_STACK_DEFINE(g_pfsk_session_thread_stack, PFSK_SESSION_THREAD_STACK_SIZE);
+static struct k_thread g_pfsk_session_thread;
+
+static void pfsk_session_thread(void *arg1, void *arg2, void *arg3);
+
+static bool pfsk_session_seq_gap_from_expected(uint16_t expected, uint16_t seq, uint16_t *gap)
+{
+	uint16_t delta = (uint16_t)(seq - expected);
+
+	if (delta == 0U) {
+		*gap = 0U;
+		return true;
+	}
+
+	if (delta < 0x8000U) {
+		*gap = delta;
+		return true;
+	}
+
+	return false;
+}
+
+static uint16_t pfsk_session_next_payload_seq(uint16_t seq)
+{
+	seq++;
+	if (seq == PFSK_KEEPALIVE_SEQ) {
+		seq++;
+	}
+
+	return seq;
+}
+
+static void pfsk_session_reset_runtime(enum pfsk_session_state service_state)
+{
+	g_session.service_state = service_state;
+	memset(&g_session.stats, 0, sizeof(g_session.stats));
+	g_session.consecutive_rx_misses = 0U;
+	g_session.in_service_since_cyc = 0U;
+	g_session.next_tx_seq = 0U;
+	g_session.last_rx_seq = 0U;
+	g_session.have_last_rx_seq = false;
+}
+
+static bool pfsk_session_abort_enable(void)
+{
+	pfsk_radio_stop();
+
+	g_session.service_state = PFSK_SESSION_STATE_NO_SERVICE;
+
+	return false;
+}
+
+static bool pfsk_session_start_radio(void)
+{
+	pfsk_radio_start();
+	while (pfsk_session_copy_to_radio_ring()) {
+	}
+
+	return true;
+}
+
+static void pfsk_session_record_loss_burst(uint32_t burst_len)
+{
+	if (burst_len == 0U) {
+		return;
+	}
+
+	if (burst_len == 1U) {
+		g_session.stats.loss_burst_1_count++;
+	} else if (burst_len == 2U) {
+		g_session.stats.loss_burst_2_count++;
+	} else if (burst_len <= 4U) {
+		g_session.stats.loss_burst_3_4_count++;
+	} else {
+		g_session.stats.loss_burst_5_plus_count++;
+	}
+
+	if (burst_len > g_session.stats.max_loss_burst_len) {
+		g_session.stats.max_loss_burst_len = burst_len;
+	}
+}
+
+static void pfsk_session_enter_in_service(void)
+{
+	if (g_session.service_state == PFSK_SESSION_STATE_IN_SERVICE) {
+		return;
+	}
+
+	g_session.service_state = PFSK_SESSION_STATE_IN_SERVICE;
+	g_session.consecutive_rx_misses = 0U;
+	g_session.in_service_since_cyc = k_cycle_get_64();
+	LOG_INF("service established");
+}
+
+static void pfsk_session_mark_no_service(void)
+{
+	bool was_in_service = (g_session.service_state == PFSK_SESSION_STATE_IN_SERVICE);
+
+	if (was_in_service) {
+		g_session.stats.outage_count++;
+	}
+
+	g_session.service_state = PFSK_SESSION_STATE_NO_SERVICE;
+	g_session.consecutive_rx_misses = 0U;
+	g_session.in_service_since_cyc = 0U;
+	g_session.have_last_rx_seq = false;
+
+	if (was_in_service) {
+		LOG_WRN("service outage (listen timeouts)");
+	}
+}
+
+static void pfsk_session_record_in_service_rx(uint16_t seq)
+{
+	if (g_session.have_last_rx_seq) {
+		uint16_t expected = pfsk_session_next_payload_seq(g_session.last_rx_seq);
+		uint16_t gap;
+
+		if (pfsk_session_seq_gap_from_expected(expected, seq, &gap) && gap > 0U) {
+			g_session.stats.packets_lost_in_service += gap;
+			pfsk_session_record_loss_burst(gap);
+		}
+	}
+
+	g_session.last_rx_seq = seq;
+	g_session.have_last_rx_seq = true;
+}
+
+static void pfsk_session_queue_rx_frame(const struct pfsk_packet *packet, int16_t rssi_dbm)
+{
+	struct pfsk_frame frame;
+	size_t payload_len;
+
+	if (packet == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	if (packet->length < PFSK_PACKET_METADATA_LEN ||
+	    (packet->length - PFSK_PACKET_METADATA_LEN) > PFSK_PAYLOAD_MAX_LEN) {
+		return;
+	}
+
+	payload_len = packet->length - PFSK_PACKET_METADATA_LEN;
+	frame = (struct pfsk_frame){
+		.seq = packet->seq,
+		.len = payload_len,
+		.rssi_dbm = rssi_dbm,
+	};
+	memcpy(frame.payload, packet->data, payload_len);
+	(void)k_msgq_put(&g_pfsk_rx_queue, &frame, K_NO_WAIT);
+}
+
+static bool pfsk_session_is_keepalive_packet(const struct pfsk_packet *packet)
+{
+	if (packet == NULL) {
+		__ASSERT_NO_MSG(0);
+		return false;
+	}
+
+	return packet->length == PFSK_KEEPALIVE_LEN && packet->seq == PFSK_KEEPALIVE_SEQ;
+}
+
+static bool pfsk_session_copy_to_radio_ring(void)
+{
+	struct pfsk_packet *packet;
+	struct pfsk_frame frame;
+
+	packet = pfsk_radio_tx_get_wr_ptr();
+	if (packet == NULL) {
+		return false;
+	}
+
+	if (k_msgq_get(&g_pfsk_tx_queue, &frame, K_NO_WAIT) != 0) {
+		return false;
+	}
+
+	memset(packet, 0, sizeof(*packet));
+	packet->length = PFSK_PACKET_METADATA_LEN + frame.len;
+	packet->seq = g_session.next_tx_seq;
+	memcpy(packet->data, frame.payload, frame.len);
+
+	pfsk_radio_tx_advance_wr_idx();
+	g_session.next_tx_seq = pfsk_session_next_payload_seq(g_session.next_tx_seq);
+	return true;
+}
+
+static void pfsk_session_handle_rx_ok(const struct pfsk_radio_event *event)
+{
+	const struct pfsk_packet *packet;
+	bool is_keepalive;
+
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	packet = pfsk_radio_rx_get_rd_ptr();
+	if (packet == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	is_keepalive = pfsk_session_is_keepalive_packet(packet);
+	if (packet->length < PFSK_PACKET_METADATA_LEN ||
+	    (packet->length - PFSK_PACKET_METADATA_LEN) > PFSK_PAYLOAD_MAX_LEN ||
+	    (!is_keepalive && packet->length == PFSK_PACKET_METADATA_LEN)) {
+		pfsk_radio_rx_advance_rd_idx();
+		return;
+	}
+
+	g_session.consecutive_rx_misses = 0U;
+	pfsk_session_enter_in_service();
+
+	if (!is_keepalive) {
+		pfsk_session_queue_rx_frame(packet, event->rssi_dbm);
+		pfsk_session_record_in_service_rx(packet->seq);
+	}
+
+	pfsk_radio_rx_advance_rd_idx();
+}
+
+static void pfsk_session_handle_rx_bad(const struct pfsk_radio_event *event)
+{
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	g_session.consecutive_rx_misses = 0U;
+	pfsk_radio_rx_advance_rd_idx();
+}
+
+static void pfsk_session_handle_tx_end(const struct pfsk_radio_event *event)
+{
+	if (event == NULL) {
+		__ASSERT_NO_MSG(0);
+		return;
+	}
+
+	while (pfsk_session_copy_to_radio_ring()) {
+	}
+}
+
+static void pfsk_session_handle_listen_timeout(void)
+{
+	if (g_session.service_state == PFSK_SESSION_STATE_IN_SERVICE) {
+		g_session.consecutive_rx_misses++;
+		if (g_session.consecutive_rx_misses >= PFSK_SESSION_SYNC_LOSS_TURNS) {
+			pfsk_session_mark_no_service();
+			return;
+		}
+	} else {
+		LOG_WRN_RATELIMIT_RATE(10000, "Waiting for PFSK peer...");
+	}
+}
+
+static bool pfsk_session_start_with_role(void (*set_role)(void))
+{
+	bool started;
+
+	pfsk_radio_init();
+
+	k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
+	pfsk_session_reset_runtime(PFSK_SESSION_STATE_NO_SERVICE);
+	set_role();
+	started = pfsk_session_start_radio();
+	k_mutex_unlock(&g_session.mutex_lock);
+
+	k_thread_create(&g_pfsk_session_thread, g_pfsk_session_thread_stack,
+			K_THREAD_STACK_SIZEOF(g_pfsk_session_thread_stack),
+			pfsk_session_thread, NULL, NULL, NULL,
+			PFSK_SESSION_THREAD_PRIORITY, 0, K_NO_WAIT);
+
+	return started;
+}
+
+bool pfsk_session_start_dongle(void)
+{
+	return pfsk_session_start_with_role(pfsk_radio_set_role_dongle);
+}
+
+bool pfsk_session_start_headset(void)
+{
+	return pfsk_session_start_with_role(pfsk_radio_set_role_headset);
+}
+
+enum pfsk_session_state pfsk_session_get_state(void)
+{
+	enum pfsk_session_state state;
+
+	k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
+	state = g_session.service_state;
+	k_mutex_unlock(&g_session.mutex_lock);
+	return state;
+}
+
+void pfsk_session_get_report(struct pfsk_session_report *report)
+{
+	struct pfsk_radio_stats radio_stats;
+	struct session_stats stats;
+	enum pfsk_session_state state;
+	uint64_t in_service_since_cyc;
+	uint64_t time_in_service_us = 0U;
+
+	if (report == NULL) {
+		return;
+	}
+
+	pfsk_radio_get_stats(&radio_stats);
+
+	k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
+	stats = g_session.stats;
+	state = g_session.service_state;
+	in_service_since_cyc = g_session.in_service_since_cyc;
+	k_mutex_unlock(&g_session.mutex_lock);
+
+	if (state == PFSK_SESSION_STATE_IN_SERVICE && in_service_since_cyc != 0U) {
+		time_in_service_us = k_cyc_to_us_floor64(k_cycle_get_64() - in_service_since_cyc);
+	}
+
+	*report = (struct pfsk_session_report){
+		.packets_tx = radio_stats.packets_tx,
+		.rx_ok_count = radio_stats.rx_ok_count,
+		.packets_lost_in_service = stats.packets_lost_in_service,
+		.loss_burst_1_count = stats.loss_burst_1_count,
+		.loss_burst_2_count = stats.loss_burst_2_count,
+		.loss_burst_3_4_count = stats.loss_burst_3_4_count,
+		.loss_burst_5_plus_count = stats.loss_burst_5_plus_count,
+		.max_loss_burst_len = stats.max_loss_burst_len,
+		.crc_error_count = radio_stats.crc_errors,
+		.deadline_late_count = radio_stats.deadline_late_count,
+		.rx_incomplete_count = stats.rx_incomplete_count,
+		.tx_trigger_fail_count = stats.tx_trigger_fail_count,
+		.outage_count = stats.outage_count,
+		.time_in_service_us = time_in_service_us,
+		.last_rssi_dbm = radio_stats.last_rssi_dbm,
+		.state = state,
+	};
+}
+
+bool pfsk_session_tx_enqueue(const struct pfsk_frame *frame, k_timeout_t timeout)
+{
+	if (frame == NULL || frame->len == 0U || frame->len > PFSK_PAYLOAD_MAX_LEN) {
+		return false;
+	}
+
+	return k_msgq_put(&g_pfsk_tx_queue, frame, timeout) == 0;
+}
+
+bool pfsk_session_rx_dequeue(struct pfsk_frame *frame, k_timeout_t timeout)
+{
+	if (frame == NULL) {
+		return false;
+	}
+
+	return k_msgq_get(&g_pfsk_rx_queue, frame, timeout) == 0;
+}
+
+static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)
+{
+	struct pfsk_radio_event event;
+
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	while (1) {
+		if (!pfsk_radio_dequeue_event(&event, K_FOREVER)) {
+			continue;
+		}
+
+		k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
+		switch (event.type) {
+		case PFSK_RADIO_EVENT_RX_OK:
+			pfsk_session_handle_rx_ok(&event);
+			break;
+		case PFSK_RADIO_EVENT_RX_BAD:
+			pfsk_session_handle_rx_bad(&event);
+			break;
+		case PFSK_RADIO_EVENT_TX_END:
+			pfsk_session_handle_tx_end(&event);
+			break;
+		case PFSK_RADIO_EVENT_RX_INCOMPLETE:
+			g_session.stats.rx_incomplete_count++;
+			g_session.consecutive_rx_misses = 0U;
+			break;
+		case PFSK_RADIO_EVENT_LISTEN_TIMEOUT:
+			pfsk_session_handle_listen_timeout();
+			break;
+		case PFSK_RADIO_EVENT_TX_TRIGGER_FAILED:
+			g_session.stats.tx_trigger_fail_count++;
+			pfsk_session_mark_no_service();
+			LOG_ERR("failed to trigger prepared TX");
+			(void)pfsk_session_abort_enable();
+			break;
+		default:
+			break;
+		}
+		k_mutex_unlock(&g_session.mutex_lock);
+	}
+}

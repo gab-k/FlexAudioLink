@@ -20,11 +20,11 @@
    Interface:
    CLI plus `linktest`
    Pass criteria:
-   Link starts, headset reaches running state, lock is acquired within timeout, RX counters increase, RSSI is plausible, and rebooting into a different profile recovers cleanly.
+   PFSK session starts, headset reaches running state, lock is acquired within timeout, RX counters increase, RSSI is plausible, and rebooting into a different profile recovers cleanly.
 
 4. USB descriptor enumeration stability
    Coverage:
-   UAC+CDC descriptor set after booting `usb` and `pgfsk_dongle`; CDC-only descriptor set after booting `pgfsk_headset`.
+   UAC+CDC descriptor set after booting `usb` and `pfsk_dongle`; CDC-only descriptor set after booting `pfsk_headset`.
    Pass criteria:
    Device enumerates with the profile-appropriate descriptors and retains functional CDC CLI after rebooting into each profile.
 

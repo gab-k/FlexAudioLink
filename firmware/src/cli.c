@@ -8,8 +8,8 @@
 #include "audio_io/audio_path_wireless_dongle.h"
 #include "audio_io/audio_path_wireless_headset.h"
 #include "audio_io/nau88l21.h"
-#include "prop_gfsk/link.h"
-#include "prop_gfsk/test_mode.h"
+#include "prop_fsk/session.h"
+#include "prop_fsk/test_mode.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -106,10 +106,10 @@ static void cli_print(const char *fmt, ...)
 
 static void cli_emit_status_link_push(void)
 {
-	struct pgfsk_link_report stats;
+	struct pfsk_session_report stats;
 	uint32_t loss_permille = 0U;
 
-	pgfsk_link_get_report(&stats);
+	pfsk_session_get_report(&stats);
 
 	if ((stats.rx_ok_count + stats.packets_lost_in_service) > 0U) {
 		loss_permille = (stats.packets_lost_in_service * 1000U) /
@@ -167,7 +167,7 @@ static void cli_emit_status_audio_push(void)
 			  s.mic_overflow_bytes);
 		return;
 	}
-	case APP_PROFILE_PGFSK_DONGLE: {
+	case APP_PROFILE_PFSK_DONGLE: {
 		struct audio_path_wireless_status s;
 
 		audio_path_wireless_dongle_get_status(&s);
@@ -184,7 +184,7 @@ static void cli_emit_status_audio_push(void)
 			  s.mic_usb_level_bytes);
 		return;
 	}
-	case APP_PROFILE_PGFSK_HEADSET: {
+	case APP_PROFILE_PFSK_HEADSET: {
 		struct audio_path_wireless_status s;
 
 		audio_path_wireless_headset_get_status(&s);
@@ -254,10 +254,10 @@ static void cli_print_device_group(void)
 	case APP_PROFILE_USB:
 		audio_io = "wired";
 		break;
-	case APP_PROFILE_PGFSK_DONGLE:
+	case APP_PROFILE_PFSK_DONGLE:
 		audio_io = "usb";
 		break;
-	case APP_PROFILE_PGFSK_HEADSET:
+	case APP_PROFILE_PFSK_HEADSET:
 		audio_io = "codec";
 		break;
 	default:
@@ -306,7 +306,7 @@ static void cli_print_help(void)
 	cli_print("  help\n");
 	cli_print("  echo on|off\n");
 	cli_print("  get <group|param>\n");
-	cli_print("  set profile <usb|pgfsk_dongle|pgfsk_headset>\n");
+	cli_print("  set profile <usb|pfsk_dongle|pfsk_headset>\n");
 	cli_print("  i2s tone on|off|status\n");
 	cli_print("  linktest on|off|status\n");
 	cli_print("  status_link on [ms]|off\n");
@@ -374,10 +374,10 @@ static void cli_cmd_set(char *args)
 
 		if (strcasecmp(value, "usb") == 0) {
 			profile = APP_PROFILE_USB;
-		} else if (strcasecmp(value, "pgfsk_dongle") == 0) {
-			profile = APP_PROFILE_PGFSK_DONGLE;
-		} else if (strcasecmp(value, "pgfsk_headset") == 0) {
-			profile = APP_PROFILE_PGFSK_HEADSET;
+		} else if (strcasecmp(value, "pfsk_dongle") == 0) {
+			profile = APP_PROFILE_PFSK_DONGLE;
+		} else if (strcasecmp(value, "pfsk_headset") == 0) {
+			profile = APP_PROFILE_PFSK_HEADSET;
 		} else {
 			cli_print("ERR profile invalid_value\n");
 			return;
@@ -408,12 +408,12 @@ static void cli_cmd_set(char *args)
 static void cli_cmd_linktest(char *args)
 {
 	if (args == NULL || *args == '\0' || strcasecmp(args, "status") == 0) {
-		cli_print("linktest=%s\n", pgfsk_test_mode_is_running() ? "on" : "off");
+		cli_print("linktest=%s\n", pfsk_test_mode_is_running() ? "on" : "off");
 		return;
 	}
 
 	if (strcasecmp(args, "on") == 0) {
-		if (!pgfsk_test_mode_start()) {
+		if (!pfsk_test_mode_start()) {
 			cli_print("ERR linktest start_failed\n");
 			return;
 		}
@@ -423,7 +423,7 @@ static void cli_cmd_linktest(char *args)
 	}
 
 	if (strcasecmp(args, "off") == 0) {
-		if (!pgfsk_test_mode_stop()) {
+		if (!pfsk_test_mode_stop()) {
 			cli_print("ERR linktest stop_failed\n");
 			return;
 		}
@@ -494,7 +494,7 @@ static void cli_cmd_fll(char *args)
 		case APP_PROFILE_USB:
 			audio_path_wired_fll_set_auto();
 			break;
-		case APP_PROFILE_PGFSK_HEADSET:
+		case APP_PROFILE_PFSK_HEADSET:
 			audio_path_wireless_headset_fll_set_auto();
 			break;
 		default:
@@ -506,7 +506,7 @@ static void cli_cmd_fll(char *args)
 	}
 
 	if (strcasecmp(args, "status") == 0) {
-		int32_t fixed = (profile == APP_PROFILE_PGFSK_HEADSET)
+		int32_t fixed = (profile == APP_PROFILE_PFSK_HEADSET)
 			? audio_path_wireless_headset_fll_get_fixed_rate()
 			: audio_path_wired_fll_get_fixed_rate();
 
@@ -518,7 +518,7 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	if (profile == APP_PROFILE_PGFSK_DONGLE) {
+	if (profile == APP_PROFILE_PFSK_DONGLE) {
 		cli_print("ERR fll not available for dongle profile\n");
 		return;
 	}
@@ -532,7 +532,7 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	if (profile == APP_PROFILE_PGFSK_HEADSET) {
+	if (profile == APP_PROFILE_PFSK_HEADSET) {
 		audio_path_wireless_headset_fll_set_fixed((int32_t)rate);
 		if (audio_path_wireless_headset_fll_get_fixed_rate() == 0) {
 			cli_print("ERR fll driver rejected rate %ld\n", rate);
