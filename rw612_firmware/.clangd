@@ -1,7 +1,0 @@
-CompileFlags:
-  # Tell clangd to strip out this GCC-specific flag before parsing
-  Remove: [-mapcs]
-
-Diagnostics:
-  # Silence the overly aggressive unused-includes warnings
-  Suppress: [unused-includes]

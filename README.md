@@ -28,7 +28,6 @@ All FlexAudioLink nodes use the same hardware and firmware base and are configur
 ## Repository Layout
 
 - [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware): active Zephyr-based firmware for `nrf54lm20dk/nrf54lm20a/cpuapp`
-- [`rw612_firmware/`](/home/gab/FlexAudioLink/rw612_firmware): older MCUXpresso + FreeRTOS firmware retained as reference
 - [`webui/`](/home/gab/FlexAudioLink/webui): Svelte configuration UI plus Python WebSocket-to-serial bridge
 - [`hardware/`](/home/gab/FlexAudioLink/hardware): KiCad project and hardware notes for the nRF54LM20A + NAU88L21 + nPM1300 design
 - [`python/`](/home/gab/FlexAudioLink/python): standalone utilities for signal generation and latency/error experiments
@@ -36,20 +35,18 @@ All FlexAudioLink nodes use the same hardware and firmware base and are configur
 
 ## Current Firmware State
 
-The active implementation is in [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware).
+Implementation is in [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware).
 
-The current firmware direction is based on the nRF54LM20A and a proprietary 2.4 GHz link. The older RW612 Wi-Fi firmware remains in the repository as reference material.
-
-Implemented in the current nRF tree:
+Currently implemented:
 
 - USB device bring-up with profile-selected descriptors (UAC+CDC or CDC-only)
 - persisted boot profile selection: `usb`, `pgfsk_dongle`, or `pgfsk_headset`
-- default `usb` profile when no saved profile exists
 - USB CDC CLI
-- proprietary radio link test, including TX/RX traffic and status counters
+- USB audio mode
+- Proprietary radio link test, including TX/RX traffic and status counters
 - initial audio I2S / codec integration scaffolding
 
-Not complete in the current nRF tree:
+Not implemented yet:
 
 - end-to-end wireless audio streaming
 - BLE audio transport

@@ -2,7 +2,3 @@
 	path = nrf_firmware/tinyusb
 	url = https://github.com/hathach/tinyusb.git
 	branch = master
-[submodule "rw612_firmware/tinyusb"]
-	path = rw612_firmware/tinyusb
-	url = https://github.com/hathach/tinyusb.git
-	branch = master
