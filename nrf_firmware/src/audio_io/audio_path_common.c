@@ -137,8 +137,7 @@ int32_t audio_codec_clock_controller(uint32_t target,
 		#ifdef AUDIO_CTRL_DEBUG_LOG 
 		if (++log_cnt % 10 == 0) {
 			int32_t rate = 48000 - output;
-			LOG_INF("rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d "
-			       "P=%d I=%d out=%d",
+			LOG_INF("rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d P=%d I=%d out=%d",
 			       rate, level, fifo, pending, filtered,
 			       error_bytes, p_out,
 			       (int32_t)*i_sum, output);
