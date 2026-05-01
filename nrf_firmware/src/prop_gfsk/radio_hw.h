@@ -12,8 +12,9 @@
 #define PGFSK_HW_FREQUENCY_MHZ       2480
 #define PGFSK_HW_TXPOWER             NRF_RADIO_TXPOWER_POS8DBM
 #define PGFSK_HW_MODE_SETTING        NRF_RADIO_MODE_NRF_4MBIT_BT_0_6
-#define PGFSK_HW_ADDR_DONGLE         0x55D391A5UL
-#define PGFSK_HW_ADDR_HEADSET        0x55D391A5UL
+#define PGFSK_HW_ADDR_DONGLE             0x55D391A5UL
+#define PGFSK_HW_ADDR_HEADSET            0x55D391A5UL
+#define PGFSK_HW_MAX_PACKET_AIRTIME_US   550U
 
 /* Packet layout */
 #define PGFSK_PAYLOAD_MAX_LEN               252
@@ -40,7 +41,7 @@
 /*
  * Timer CC channel assignments:
  *   CC[2]  RX ADDRESS timestamp
- *   CC[3]  deadline (generates TIMEOUT event when reached)
+ *   CC[3]  deadline (generates semantic timeout event when reached)
  *   CC[4]  PHYEND timestamp
  *   CC[5]  ad-hoc "now" capture
  */
@@ -56,17 +57,17 @@ struct pgfsk_packet {
 } __packed __aligned(4);
 
 enum pgfsk_hw_event_type {
-	PGFSK_HW_EVENT_RX_ADDRESS = 0,
-	PGFSK_HW_EVENT_RX_OK,
+	PGFSK_HW_EVENT_RX_OK = 0,
 	PGFSK_HW_EVENT_RX_BAD,
 	PGFSK_HW_EVENT_TX_END,
-	PGFSK_HW_EVENT_TIMEOUT,
+	PGFSK_HW_EVENT_RX_INCOMPLETE,
+	PGFSK_HW_EVENT_LISTEN_TIMEOUT,
+	PGFSK_HW_EVENT_TX_TRIGGER_FAILED,
 };
 
 struct pgfsk_hw_event {
 	enum pgfsk_hw_event_type type;
 	uint32_t tick;
-	struct pgfsk_packet packet;
 	int16_t rssi_dbm;
 };
 
@@ -84,14 +85,9 @@ void pgfsk_hw_set_role_dongle(void);
 void pgfsk_hw_set_role_headset(void);
 void pgfsk_hw_stop(void);
 void pgfsk_hw_get_stats(struct pgfsk_hw_stats *stats);
-void pgfsk_hw_reset_stats(void);
 
-uint32_t pgfsk_hw_get_tick(void);
-bool pgfsk_hw_start_listen(void);
-bool pgfsk_hw_wait_for_rx_active(void);
-bool pgfsk_hw_prepare_tx(const struct pgfsk_packet *packet);
-bool pgfsk_hw_trigger_prepared_tx(void);
-void pgfsk_hw_set_deadline(uint32_t deadline_tick);
-void pgfsk_hw_clear_deadline(void);
+struct pgfsk_packet *pgfsk_hw_tx_get_wr_ptr(void);
+void pgfsk_hw_tx_advance_wr_idx(void);
+const struct pgfsk_packet *pgfsk_hw_rx_get_rd_ptr(void);
+void pgfsk_hw_rx_advance_rd_idx(void);
 bool pgfsk_hw_dequeue_event(struct pgfsk_hw_event *event, k_timeout_t timeout);
-struct k_msgq *pgfsk_hw_event_msgq(void);
