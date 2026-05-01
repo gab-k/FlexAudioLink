@@ -22,27 +22,27 @@ Current implementation constraint:
 
 Profile orchestration and route selection:
 
-- `nrf_firmware/src/app_control.c`
+- `firmware/src/app_control.c`
 
 Shared audio-path helpers/constants:
 
-- `nrf_firmware/src/audio_io/audio_path_common.c`
-- `nrf_firmware/src/audio_io/audio_path_common.h`
+- `firmware/src/audio_io/audio_path_common.c`
+- `firmware/src/audio_io/audio_path_common.h`
 
 Route implementations:
 
-- `nrf_firmware/src/audio_io/audio_path_wired.c`
-- `nrf_firmware/src/audio_io/audio_path_wireless.c`
+- `firmware/src/audio_io/audio_path_wired.c`
+- `firmware/src/audio_io/audio_path_wireless.c`
 
 I2S/codec pipeline:
 
-- `nrf_firmware/src/audio_io/i2s.c`
-- `nrf_firmware/src/audio_io/i2s.h`
+- `firmware/src/audio_io/i2s.c`
+- `firmware/src/audio_io/i2s.h`
 
 USB audio FIFO adapter:
 
-- `nrf_firmware/src/usb/usb_audio.c`
-- `nrf_firmware/src/usb/usb_audio.h`
+- `firmware/src/usb/usb_audio.c`
+- `firmware/src/usb/usb_audio.h`
 
 ## Route Selection and Activation
 

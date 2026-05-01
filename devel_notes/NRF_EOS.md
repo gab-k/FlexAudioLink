@@ -50,23 +50,23 @@ Zephyr exports `compile_commands.json` into the build directory. Point clangd at
 
 ```yaml
 CompileFlags:
-  CompilationDatabase: nrf_firmware/build
+  CompilationDatabase: firmware/build
 ```
 
 ## 5. Building
 
-Apps live in `FlexAudioLink/nrf_firmware/` — outside the NCS workspace, which is the standard Zephyr pattern.
+Apps live in `FlexAudioLink/firmware/` — outside the NCS workspace, which is the standard Zephyr pattern.
 
 Using the VS Code extension (recommended):
 1. Open the nRF Connect panel
-2. Select the `nrf_firmware` application
+2. Select the `firmware` application
 3. Choose board target: `nrf54lm20dk/nrf54lm20a/cpuapp`
 4. Click Build
 
 Or via command line using CMake:
 
 ```bash
-cd ~/FlexAudioLink/nrf_firmware
+cd ~/FlexAudioLink/firmware
 
 # Configure
 cmake -B build -GNinja -DBOARD=nrf54lm20dk/nrf54lm20a/cpuapp .

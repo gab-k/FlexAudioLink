@@ -1,5 +1,5 @@
 {
-    "cmake.sourceDirectory": "${workspaceFolder}/nrf_firmware",
+    "cmake.sourceDirectory": "${workspaceFolder}/firmware",
     "cmake.configureOnOpen": false,
     "cmake.useCMakePresets": "auto",
     "cmake.generator": "Ninja",
@@ -7,7 +7,7 @@
     "C_Cpp.intelliSenseEngine": "disabled",
     "C_Cpp.errorSquiggles": "disabled",
     "clangd.arguments": [
-        "--compile-commands-dir=${workspaceFolder}/nrf_firmware/build/nrf_firmware",
+        "--compile-commands-dir=${workspaceFolder}/firmware/build/firmware",
         "--query-driver=**/arm-zephyr-eabi-gcc,**/arm-none-eabi-gcc"
     ],
     "[c]": {

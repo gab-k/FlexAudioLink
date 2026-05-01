@@ -1,22 +1,4 @@
-# nrf_firmware
-
-Zephyr firmware for `nrf54lm20dk/nrf54lm20a/cpuapp`.
-
-## Current State
-
-Implemented in the current tree:
-
-- USB device bring-up
-- USB CDC CLI
-- persisted boot profile selection between dongle, headset and usb mode
-- profile-selected USB descriptors (UAC+CDC for `usb`/`pgfsk_dongle`, CDC-only for `pgfsk_headset`)
-- proprietary radio link test
-- initial codec / I2S integration scaffolding
-
-Not complete:
-
-- end-to-end wireless audio streaming
-- BLE audio transport
+# nRF54LM20A Zephyr firmware
 
 ## New Machine Setup
 
@@ -51,7 +33,7 @@ nrfutil sdk-manager install v3.2.4   # once per SDK version
 cd ~
 git clone https://github.com/gab-k/FlexAudioLink.git
 cd ~/FlexAudioLink
-git submodule update --init --recursive nrf_firmware/tinyusb
+git submodule update --init --recursive firmware/tinyusb
 ```
 
 5. Export `ZEPHYR_BASE`:
@@ -88,21 +70,21 @@ Then build:
 Standard build:
 
 ```bash
-cd ~/FlexAudioLink/nrf_firmware
+cd ~/FlexAudioLink/firmware
 west build -b nrf54lm20dk/nrf54lm20a/cpuapp . --build-dir build
 ```
 
 Pristine build:
 
 ```bash
-cd ~/FlexAudioLink/nrf_firmware
+cd ~/FlexAudioLink/firmware
 west build -p always -b nrf54lm20dk/nrf54lm20a/cpuapp . --build-dir build
 ```
 
 
 ## VS Code Tasks
 
-[`tasks.json`](/home/gab/FlexAudioLink/.vscode/tasks.json) provides:
+`tasks.json` provides:
 
 - `west: build`
 - `west: pristine build`

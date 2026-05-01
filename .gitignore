@@ -18,20 +18,20 @@ firmware/flash_debug/
 firmware/flash_release/
 
 # Zephyr / NCS build outputs
-nrf_firmware/**/build/
+firmware/**/build/
 
 # Machine-local CMake preset overrides
 CMakeUserPresets.json
 
 # Zephyr generated files that shouldn't be committed
-nrf_firmware/**/.west/
+firmware/**/.west/
 /webui/__pycache__/
 
 # nRF firmware local tooling files
-/nrf_firmware/.clangd
-/nrf_firmware/.claude/
-/nrf_firmware/.vscode/
-/nrf_firmware/Kconfig.bak
+/firmware/.clangd
+/firmware/.claude/
+/firmware/.vscode/
+/firmware/Kconfig.bak
 
 # Compiled objects and binaries
 **/*.o

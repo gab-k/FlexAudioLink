@@ -1,6 +1,6 @@
 # nRF GFSK Ping-Pong TDD Spec
 
-Implementation reference: `nrf_firmware/src/prop_gfsk/`.
+Implementation reference: `firmware/src/prop_gfsk/`.
 
 `radio_hw.c` is authoritative for radio timing and DMA ownership. `link.c`
 is authoritative for service state, app queues, payload sequencing, and loss

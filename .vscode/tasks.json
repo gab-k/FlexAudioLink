@@ -12,20 +12,20 @@
         "--ncs-version",
         "v3.2.4",
         "--chdir",
-        "${workspaceFolder}/nrf_firmware",
+        "${workspaceFolder}/firmware",
         "--",
         "west",
         "build",
         "-b",
         "nrf54lm20dk/nrf54lm20a/cpuapp",
-        "${workspaceFolder}/nrf_firmware",
+        "${workspaceFolder}/firmware",
         "--build-dir",
-        "${workspaceFolder}/nrf_firmware/build",
+        "${workspaceFolder}/firmware/build",
         "--",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
       ],
       "options": {
-        "cwd": "${workspaceFolder}/nrf_firmware",
+        "cwd": "${workspaceFolder}/firmware",
         "env": {
           "ZEPHYR_BASE": "${env:HOME}/ncs/v3.2.4/zephyr"
         }
@@ -37,7 +37,7 @@
       "problemMatcher": [
         "$gcc"
       ],
-      "detail": "Standard west build for nrf_firmware using the SDK under ~/ncs."
+      "detail": "Standard west build using the SDK under ~/ncs."
     },
     {
       "label": "west: pristine build",
@@ -50,7 +50,7 @@
         "--ncs-version",
         "v3.2.4",
         "--chdir",
-        "${workspaceFolder}/nrf_firmware",
+        "${workspaceFolder}/firmware",
         "--",
         "west",
         "build",
@@ -58,14 +58,14 @@
         "always",
         "-b",
         "nrf54lm20dk/nrf54lm20a/cpuapp",
-        "${workspaceFolder}/nrf_firmware",
+        "${workspaceFolder}/firmware",
         "--build-dir",
-        "${workspaceFolder}/nrf_firmware/build",
+        "${workspaceFolder}/firmware/build",
         "--",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
       ],
       "options": {
-        "cwd": "${workspaceFolder}/nrf_firmware",
+        "cwd": "${workspaceFolder}/firmware",
         "env": {
           "ZEPHYR_BASE": "${env:HOME}/ncs/v3.2.4/zephyr"
         }
@@ -73,7 +73,7 @@
       "problemMatcher": [
         "$gcc"
       ],
-      "detail": "Pristine west build for nrf_firmware using the SDK under ~/ncs."
+      "detail": "Pristine west build using the SDK under ~/ncs."
     }
   ]
 }

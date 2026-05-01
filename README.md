@@ -27,23 +27,24 @@ All FlexAudioLink nodes use the same hardware and firmware base and are configur
 
 ## Repository Layout
 
-- [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware): active Zephyr-based firmware for `nrf54lm20dk/nrf54lm20a/cpuapp`
-- [`webui/`](/home/gab/FlexAudioLink/webui): Svelte configuration UI plus Python WebSocket-to-serial bridge
-- [`hardware/`](/home/gab/FlexAudioLink/hardware): KiCad project and hardware notes for the nRF54LM20A + NAU88L21 + nPM1300 design
-- [`python/`](/home/gab/FlexAudioLink/python): standalone utilities for signal generation and latency/error experiments
-- [`devel_notes/`](/home/gab/FlexAudioLink/devel_notes): bring-up and development references
+- `firmware/`: active Zephyr-based firmware for `nrf54lm20dk/nrf54lm20a/cpuapp`
+- `webui/`: Svelte configuration UI plus Python WebSocket-to-serial bridge
+- `hardware/`: KiCad project and hardware notes for the nRF54LM20A + NAU88L21 + nPM1300 design
+- `python/`: standalone utilities for signal generation and latency/error experiments
+- `devel_notes/`: bring-up and development references
 
 ## Current Firmware State
 
-Implementation is in [`nrf_firmware/`](/home/gab/FlexAudioLink/nrf_firmware).
+Implementation is in `firmware/`, a Zephyr application for
+`nrf54lm20dk/nrf54lm20a/cpuapp`.
 
 Currently implemented:
 
 - USB device bring-up with profile-selected descriptors (UAC+CDC or CDC-only)
-- persisted boot profile selection: `usb`, `pgfsk_dongle`, or `pgfsk_headset`
+- persisted boot profile selection between `usb`, `pgfsk_dongle`, and `pgfsk_headset`
 - USB CDC CLI
 - USB audio mode
-- Proprietary radio link test, including TX/RX traffic and status counters
+- proprietary radio link test, including TX/RX traffic and status counters
 - initial audio I2S / codec integration scaffolding
 
 Not implemented yet:
@@ -54,13 +55,13 @@ Not implemented yet:
 
 Important implementation notes:
 
-- [`nrf_firmware/src/main.c`](/home/gab/FlexAudioLink/nrf_firmware/src/main.c): loads the persisted boot profile and starts that profile's audio path
-- [`nrf_firmware/src/app_control.c`](/home/gab/FlexAudioLink/nrf_firmware/src/app_control.c): owns boot profile persistence and startup
+- `firmware/src/main.c`: loads the persisted boot profile and starts that profile's audio path
+- `firmware/src/app_control.c`: owns boot profile persistence and startup
 - PGFSK profiles currently enable the present radio/link-test path; they are not yet the final audio transport
 
 ## CLI Interface
 
-The nRF firmware exposes a USB CDC CLI in [`nrf_firmware/src/cli.c`](/home/gab/FlexAudioLink/nrf_firmware/src/cli.c).
+The nRF firmware exposes a USB CDC CLI in `firmware/src/cli.c`.
 
 Current commands include:
 
@@ -79,7 +80,7 @@ The web UI uses this text interface.
 
 ## Hardware
 
-[`hardware/`](/home/gab/FlexAudioLink/hardware) currently contains early hardware notes and KiCad work-in-progress.
+`hardware/` currently contains early hardware notes and KiCad work-in-progress.
 
 The current notes investigate a design based on:
 
@@ -89,18 +90,17 @@ The current notes investigate a design based on:
 
 This part of the repository is exploratory and subject to change.
 
-See [`hardware/hw_spec.md`](/home/gab/FlexAudioLink/hardware/hw_spec.md).
 
 ## Build Notes
 
-For toolchain setup and build steps, see [`nrf_firmware/README.md`](/home/gab/FlexAudioLink/nrf_firmware/README.md).
+For toolchain setup and build steps, see `firmware/README.md`.
 
 ## Web UI
 
-[`webui/`](/home/gab/FlexAudioLink/webui) contains:
+`webui/` contains:
 
 - a Svelte application in `webui/app/`
-- a Python WebSocket-to-serial bridge in [`webui/websocket_serial_bridge.py`](/home/gab/FlexAudioLink/webui/websocket_serial_bridge.py)
+- a Python WebSocket-to-serial bridge in `webui/websocket_serial_bridge.py`
 
 The UI communicates with the device over USB CDC ACM using:
 

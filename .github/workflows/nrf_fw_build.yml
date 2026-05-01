@@ -82,12 +82,12 @@ jobs:
           hash -r
           nrfutil sdk-manager toolchain launch \
             --ncs-version "${NCS_VERSION}" \
-            --chdir "${{ github.workspace }}/nrf_firmware" \
+            --chdir "${{ github.workspace }}/firmware" \
             -- \
             west build -p always \
               -b nrf54lm20dk/nrf54lm20a/cpuapp \
-              "${{ github.workspace }}/nrf_firmware" \
-              --build-dir "${{ github.workspace }}/nrf_firmware/build" \
+              "${{ github.workspace }}/firmware" \
+              --build-dir "${{ github.workspace }}/firmware/build" \
               -- \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
@@ -95,14 +95,14 @@ jobs:
         if: ${{ env.ACT != 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: nrf-firmware-nrf54lm20dk_debug
+          name: firmware-nrf54lm20dk_debug
           path: |
-            nrf_firmware/build/merged.hex
-            nrf_firmware/build/*.yml
-            nrf_firmware/build/*.yaml
-            nrf_firmware/build/nrf_firmware/zephyr/.config
-            nrf_firmware/build/nrf_firmware/zephyr/zephyr.*
-            nrf_firmware/build/nrf_firmware/zephyr/include/generated/zephyr/autoconf.h
-            nrf_firmware/build/nrf_firmware/zephyr/include/generated/zephyr/devicetree_generated.h
-            nrf_firmware/build/nrf_firmware/compile_commands.json
+            firmware/build/merged.hex
+            firmware/build/*.yml
+            firmware/build/*.yaml
+            firmware/build/firmware/zephyr/.config
+            firmware/build/firmware/zephyr/zephyr.*
+            firmware/build/firmware/zephyr/include/generated/zephyr/autoconf.h
+            firmware/build/firmware/zephyr/include/generated/zephyr/devicetree_generated.h
+            firmware/build/firmware/compile_commands.json
           retention-days: 14
