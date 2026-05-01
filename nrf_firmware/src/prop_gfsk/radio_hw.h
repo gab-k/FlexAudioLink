@@ -17,8 +17,21 @@
 #define PGFSK_HW_MAX_PACKET_AIRTIME_US   550U
 
 /* Packet layout */
-#define PGFSK_PAYLOAD_MAX_LEN               252
+#define PGFSK_PAYLOAD_MAX_LEN           252
 #define PGFSK_PACKET_METADATA_LEN       2U   /* seq(2) */
+
+#define PGFSK_KEEPALIVE_PAYLOAD_LEN     16U
+#define PGFSK_KEEPALIVE_SEQ             UINT16_MAX
+#define PGFSK_KEEPALIVE_LEN  (PGFSK_PACKET_METADATA_LEN + PGFSK_KEEPALIVE_PAYLOAD_LEN)
+
+/*
+ * Optional PHYEND scope probes. Enable by defining PGFSK_HW_DEBUG_PHYEND_GPIO.
+ *
+ * DEBUG CODE pins:
+ *   P0.00: RADIO PHYEND DPPI/PPIB route through GPIOTE30 channel 3
+ *   P0.01: firmware-observed RADIO PHYEND in the ISR
+ */
+#define PGFSK_HW_DEBUG_PHYEND_GPIO
 
 /*
  * TIMER10 runs free at 1 MHz (prescaler 5 on a 32 MHz base clock).

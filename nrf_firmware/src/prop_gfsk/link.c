@@ -68,6 +68,16 @@ static bool pgfsk_link_seq_gap_from_expected(uint16_t expected, uint16_t seq, ui
 	return false;
 }
 
+static uint16_t pgfsk_link_next_payload_seq(uint16_t seq)
+{
+	seq++;
+	if (seq == PGFSK_KEEPALIVE_SEQ) {
+		seq++;
+	}
+
+	return seq;
+}
+
 static void pgfsk_link_reset_runtime(enum pgfsk_link_state service_state)
 {
 	g_link.service_state = service_state;
@@ -151,7 +161,7 @@ static void pgfsk_link_mark_no_service(void)
 static void pgfsk_link_record_in_service_rx(uint16_t seq)
 {
 	if (g_link.have_last_rx_seq) {
-		uint16_t expected = g_link.last_rx_seq + 1U;
+		uint16_t expected = pgfsk_link_next_payload_seq(g_link.last_rx_seq);
 		uint16_t gap;
 
 		if (pgfsk_link_seq_gap_from_expected(expected, seq, &gap) && gap > 0U) {
@@ -189,6 +199,16 @@ static void pgfsk_link_queue_rx_frame(const struct pgfsk_packet *packet, int16_t
 	(void)k_msgq_put(&g_pgfsk_rx_queue, &frame, K_NO_WAIT);
 }
 
+static bool pgfsk_link_is_keepalive_packet(const struct pgfsk_packet *packet)
+{
+	if (packet == NULL) {
+		__ASSERT_NO_MSG(0);
+		return false;
+	}
+
+	return packet->length == PGFSK_KEEPALIVE_LEN && packet->seq == PGFSK_KEEPALIVE_SEQ;
+}
+
 static bool pgfsk_link_copy_to_hw_rb(void)
 {
 	struct pgfsk_packet *packet;
@@ -209,13 +229,14 @@ static bool pgfsk_link_copy_to_hw_rb(void)
 	memcpy(packet->data, frame.payload, frame.len);
 
 	pgfsk_hw_tx_advance_wr_idx();
-	g_link.next_tx_seq++;
+	g_link.next_tx_seq = pgfsk_link_next_payload_seq(g_link.next_tx_seq);
 	return true;
 }
 
 static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 {
 	const struct pgfsk_packet *packet;
+	bool is_keepalive;
 
 	if (event == NULL) {
 		__ASSERT_NO_MSG(0);
@@ -228,8 +249,10 @@ static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 		return;
 	}
 
+	is_keepalive = pgfsk_link_is_keepalive_packet(packet);
 	if (packet->length < PGFSK_PACKET_METADATA_LEN ||
-	    (packet->length - PGFSK_PACKET_METADATA_LEN) > PGFSK_PAYLOAD_MAX_LEN) {
+	    (packet->length - PGFSK_PACKET_METADATA_LEN) > PGFSK_PAYLOAD_MAX_LEN ||
+	    (!is_keepalive && packet->length == PGFSK_PACKET_METADATA_LEN)) {
 		pgfsk_hw_rx_advance_rd_idx();
 		return;
 	}
@@ -237,7 +260,7 @@ static void pgfsk_link_handle_rx_ok(const struct pgfsk_hw_event *event)
 	g_link.consecutive_rx_misses = 0U;
 	pgfsk_link_enter_in_service();
 
-	if (packet->length > PGFSK_PACKET_METADATA_LEN) {
+	if (!is_keepalive) {
 		pgfsk_link_queue_rx_frame(packet, event->rssi_dbm);
 		pgfsk_link_record_in_service_rx(packet->seq);
 	}

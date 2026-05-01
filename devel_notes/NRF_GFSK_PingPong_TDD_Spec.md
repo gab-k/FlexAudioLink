@@ -86,7 +86,11 @@ Constants:
 - `PGFSK_PACKET_METADATA_LEN = 2U`
 - `PGFSK_PAYLOAD_MAX_LEN = 252`
 - max transmitted `length = 254`
-- keepalive `length = PGFSK_PACKET_METADATA_LEN`
+- `PGFSK_KEEPALIVE_PAYLOAD_LEN = 16U`
+- `PGFSK_KEEPALIVE_SEQ = UINT16_MAX`
+- `PGFSK_KEEPALIVE_LEN = PGFSK_PACKET_METADATA_LEN + PGFSK_KEEPALIVE_PAYLOAD_LEN`
+- keepalive `length = PGFSK_KEEPALIVE_LEN`
+- payload packets never use `PGFSK_KEEPALIVE_SEQ`
 - zero-length app TX frames are invalid
 
 ## Buffers
@@ -260,7 +264,7 @@ already programmed by TX `ADDRESS`.
 - reject malformed length and release slot
 - reset `consecutive_rx_misses`
 - enter `IN_SERVICE`
-- if metadata-only: keepalive, no app frame, no seq accounting
+- if keepalive marker: no app frame, no seq accounting
 - if payload: queue app RX frame and update seq/loss accounting
 - release RX slot
 
@@ -353,6 +357,7 @@ On service loss:
 7. TX ring entries are payload-only.
 8. Empty TX ring means transmit `g_keepalive_packet`.
 9. Keepalive does not consume payload sequence numbers.
-10. Link-thread TX publication does not program `PACKETPTR`.
-11. Listen timeout is a hard turn boundary.
-12. Stop purges stale hardware events and leaves hardware state disabled.
+10. Payload sequence generation skips `PGFSK_KEEPALIVE_SEQ`.
+11. Link-thread TX publication does not program `PACKETPTR`.
+12. Listen timeout is a hard turn boundary.
+13. Stop purges stale hardware events and leaves hardware state disabled.

@@ -8,6 +8,12 @@
 #include <hal/nrf_clock.h>
 #include <soc.h>
 
+#ifdef PGFSK_HW_DEBUG_PHYEND_GPIO
+#include <hal/nrf_gpiote.h>
+#include <hal/nrf_gpio.h>
+#include <hal/nrf_ppib.h>
+#endif
+
 LOG_MODULE_REGISTER(pgfsk_radio_hw, CONFIG_LOG_DEFAULT_LEVEL);
 
 #define PGFSK_HW_EVENT_QUEUE_DEPTH 8
@@ -20,10 +26,19 @@ LOG_MODULE_REGISTER(pgfsk_radio_hw, CONFIG_LOG_DEFAULT_LEVEL);
 	 	NRF_RADIO_SHORT_PHYEND_DISABLE_MASK | \
 	 	NRF_RADIO_SHORT_ADDRESS_RSSISTART_MASK)
 
+#ifdef PGFSK_HW_DEBUG_PHYEND_GPIO
+#define PGFSK_HW_DEBUG_PHYEND_HW_PIN     NRF_GPIO_PIN_MAP(0U, 0U)
+#define PGFSK_HW_DEBUG_PHYEND_ISR_PIN    NRF_GPIO_PIN_MAP(0U, 1U)
+#define PGFSK_HW_DEBUG_PHYEND_GPIOTE     NRF_GPIOTE30
+#define PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH  3U
+#endif
+
 BUILD_ASSERT(PGFSK_HW_TX_RING_DEPTH > 1U, "TX ring must leave one slot unused");
 BUILD_ASSERT(PGFSK_HW_RX_RING_DEPTH > 1U, "RX ring must leave one slot unused");
 BUILD_ASSERT(PGFSK_HW_TX_RING_DEPTH <= UINT8_MAX, "TX ring indices are uint8_t");
 BUILD_ASSERT(PGFSK_HW_RX_RING_DEPTH <= UINT8_MAX, "RX ring indices are uint8_t");
+BUILD_ASSERT(PGFSK_KEEPALIVE_PAYLOAD_LEN <= PGFSK_PAYLOAD_MAX_LEN, "keepalive doesn't fit packet");
+BUILD_ASSERT(PGFSK_KEEPALIVE_LEN <= UINT8_MAX, "keepalive length must fit LFLEN");
 BUILD_ASSERT(offsetof(struct pgfsk_packet, seq) == 1U, "seq must follow length byte");
 BUILD_ASSERT(offsetof(struct pgfsk_packet, data) == 1U + PGFSK_PACKET_METADATA_LEN,
 	     "data offset inconsistent with METADATA_LEN");
@@ -31,7 +46,8 @@ BUILD_ASSERT(offsetof(struct pgfsk_packet, data) == 1U + PGFSK_PACKET_METADATA_L
 static struct pgfsk_packet g_tx_ring[PGFSK_HW_TX_RING_DEPTH];
 static struct pgfsk_packet g_rx_ring[PGFSK_HW_RX_RING_DEPTH];
 static struct pgfsk_packet g_keepalive_packet = {
-	.length = PGFSK_PACKET_METADATA_LEN,
+	.length = PGFSK_KEEPALIVE_LEN,
+	.seq = PGFSK_KEEPALIVE_SEQ,
 };
 static volatile uint8_t g_tx_wr_idx;
 static volatile uint8_t g_tx_rd_idx;
@@ -60,6 +76,93 @@ static struct k_spinlock g_lock;
 #define PGFSK_HW_DEADLINE_MIN_LEAD_US 20U
 
 static void reset_stats(void);
+
+#ifdef PGFSK_HW_DEBUG_PHYEND_GPIO
+static void debug_phyend_gpio_route_init(void)
+{
+	/* DEBUG CODE: bridge RADIO-domain PHYEND DPPI to P0.00/GPIOTE30. */
+	nrf_ppib_subscribe_set(NRF_PPIB11,
+			       nrf_ppib_send_task_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			       PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_ppib_publish_set(NRF_PPIB21,
+			     nrf_ppib_receive_event_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			     PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_ppib_subscribe_set(NRF_PPIB22,
+			       nrf_ppib_send_task_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			       PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	nrf_ppib_publish_set(NRF_PPIB30,
+			     nrf_ppib_receive_event_get(PGFSK_DPPI_CH_PHYEND_TIMESTAMP),
+			     PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+}
+
+static void debug_phyend_gpio_route_enable(void)
+{
+	nrf_dppi_channels_enable(NRF_DPPIC20, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_enable(NRF_DPPIC30, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+}
+
+static void debug_phyend_gpio_route_disable(void)
+{
+	nrf_dppi_channels_disable(NRF_DPPIC20, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	nrf_dppi_channels_disable(NRF_DPPIC30, BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+}
+
+static void debug_phyend_gpio_init(void)
+{
+	debug_phyend_gpio_route_init();
+	nrf_gpio_cfg_output(PGFSK_HW_DEBUG_PHYEND_HW_PIN);
+	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_HW_PIN);
+	nrf_gpiote_task_configure(PGFSK_HW_DEBUG_PHYEND_GPIOTE,
+				  PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH,
+				  PGFSK_HW_DEBUG_PHYEND_HW_PIN,
+				  NRF_GPIOTE_POLARITY_TOGGLE,
+				  NRF_GPIOTE_INITIAL_VALUE_LOW);
+	nrf_gpiote_task_enable(PGFSK_HW_DEBUG_PHYEND_GPIOTE,
+			       PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH);
+	nrf_gpiote_subscribe_set(
+		PGFSK_HW_DEBUG_PHYEND_GPIOTE,
+		nrf_gpiote_out_task_get(PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH),
+		PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+
+	nrf_gpio_cfg_output(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+}
+
+static void debug_phyend_gpio_reset(void)
+{
+	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_HW_PIN);
+	nrf_gpiote_task_force(PGFSK_HW_DEBUG_PHYEND_GPIOTE,
+			      PGFSK_HW_DEBUG_PHYEND_GPIOTE_CH,
+			      NRF_GPIOTE_INITIAL_VALUE_LOW);
+
+	nrf_gpio_pin_clear(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+}
+
+static void debug_phyend_isr_toggle(void)
+{
+	nrf_gpio_pin_toggle(PGFSK_HW_DEBUG_PHYEND_ISR_PIN);
+}
+#else
+static inline void debug_phyend_gpio_init(void)
+{
+}
+
+static inline void debug_phyend_gpio_reset(void)
+{
+}
+
+static inline void debug_phyend_gpio_route_enable(void)
+{
+}
+
+static inline void debug_phyend_gpio_route_disable(void)
+{
+}
+
+static inline void debug_phyend_isr_toggle(void)
+{
+}
+#endif
 
 static uint8_t next_rx_wr_idx(void)
 {
@@ -393,6 +496,7 @@ static void radio_isr(const void *arg)
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_PHYEND)) {
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PHYEND);
+		debug_phyend_isr_toggle();
 
 		if (g_hw.turn_state == PGFSK_HW_TURN_IN_RX) {
 			g_hw.turn_state = PGFSK_HW_TURN_IN_TX;
@@ -451,6 +555,7 @@ void pgfsk_hw_init(void)
 
 	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PHYEND, PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
 	nrf_timer_subscribe_set(PGFSK_TIMER, NRF_TIMER_TASK_CAPTURE4, PGFSK_DPPI_CH_PHYEND_TIMESTAMP);
+	debug_phyend_gpio_init();
 
 	IRQ_CONNECT(RADIO_0_IRQn, 0, radio_isr, NULL, 0);
 	irq_enable(RADIO_0_IRQn);
@@ -476,6 +581,7 @@ void pgfsk_hw_start(void)
 	g_tx_rd_idx = 0U;
 	g_rx_wr_idx = 0U;
 	g_rx_rd_idx = 0U;
+	debug_phyend_gpio_reset();
 
 	program_rx_packetptr();
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
@@ -487,7 +593,9 @@ void pgfsk_hw_start(void)
 	nrf_timer_task_trigger(PGFSK_TIMER, NRF_TIMER_TASK_START);
 
 	nrf_dppi_channels_enable(PGFSK_DPPI,
-							 BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) | BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+				 BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
+					 BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	debug_phyend_gpio_route_enable();
 
 	nrf_radio_int_enable(NRF_RADIO,
 			     NRF_RADIO_INT_ADDRESS_MASK |
@@ -532,6 +640,7 @@ void pgfsk_hw_stop(void)
 		PGFSK_DPPI,
 		BIT(PGFSK_DPPI_CH_RX_TIMESTAMP) |
 			BIT(PGFSK_DPPI_CH_PHYEND_TIMESTAMP));
+	debug_phyend_gpio_route_disable();
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
