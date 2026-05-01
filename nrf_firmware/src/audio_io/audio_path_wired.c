@@ -170,7 +170,7 @@ static void wired_thread(void *a, void *b, void *c)
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
 				audio_i2s_activate(spk_ff, &g_wired_rx_fifo);
 			}
-		} else if (level == 0U) {
+		} else if (pending == 0U && fifo_bytes < AUDIO_I2S_BLOCK_BYTES) {
 			g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 			LOG_INF("switching to BUFFERING, notifying i2s thread...");
 			audio_i2s_deactivate();

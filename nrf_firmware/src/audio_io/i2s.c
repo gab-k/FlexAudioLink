@@ -172,8 +172,6 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
 	
-	struct i2s_cmd cmd = {I2S_CMD_DEACTIVATE, NULL, NULL};
-
 	if (!device_is_ready(i2s_dev) || !device_is_ready(codec_i2c_dev)) {
 		LOG_ERR("device not ready");
 		return;
@@ -190,13 +188,12 @@ static void audio_i2s_thread(void *a, void *b, void *c)
 
 	while (1) {
 		int ret;
+		struct i2s_cmd cmd = {I2S_CMD_DEACTIVATE, NULL, NULL};
 
 		/* Inactive loop: Wait for activation command, then enter active I/O loop until deactivation or error. */
-		while(cmd.type == I2S_CMD_DEACTIVATE) {
+        do {
 			k_msgq_get(&i2s_cmdq, &cmd, K_FOREVER);
-			if (cmd.type == I2S_CMD_ACTIVATE)
-				break;
-		}
+		} while (cmd.type != I2S_CMD_ACTIVATE);
 
 		/* Prepare active loop */
 		tu_fifo_t *tx_fifo = cmd.tx;
