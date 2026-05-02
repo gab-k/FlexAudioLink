@@ -36,18 +36,18 @@ struct pfsk_session_runtime {
 	struct k_mutex mutex_lock;
 };
 
-static struct pfsk_session_runtime g_session = {
+static struct pfsk_session_runtime session = {
 	.service_state = PFSK_SESSION_STATE_NO_SERVICE,
-	.mutex_lock = Z_MUTEX_INITIALIZER(g_session.mutex_lock),
+	.mutex_lock = Z_MUTEX_INITIALIZER(session.mutex_lock),
 };
 
 static bool pfsk_session_copy_to_radio_rb(void);
 
-K_MSGQ_DEFINE(g_pfsk_tx_queue, sizeof(struct pfsk_packet), PFSK_SESSION_QUEUE_DEPTH, 4);
-K_MSGQ_DEFINE(g_pfsk_rx_queue, sizeof(struct pfsk_packet), PFSK_SESSION_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(pfsk_tx_queue, sizeof(struct pfsk_packet), PFSK_SESSION_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(pfsk_rx_queue, sizeof(struct pfsk_packet), PFSK_SESSION_QUEUE_DEPTH, 4);
 
-static K_THREAD_STACK_DEFINE(g_pfsk_session_thread_stack, PFSK_SESSION_THREAD_STACK_SIZE);
-static struct k_thread g_pfsk_session_thread;
+static K_THREAD_STACK_DEFINE(pfsk_session_thread_stack, PFSK_SESSION_THREAD_STACK_SIZE);
+static struct k_thread pfsk_session_thread_data;
 
 static void pfsk_session_thread(void *arg1, void *arg2, void *arg3);
 
@@ -80,20 +80,20 @@ static uint16_t pfsk_session_next_payload_seq(uint16_t seq)
 
 static void pfsk_session_reset_runtime(enum pfsk_session_state service_state)
 {
-	g_session.service_state = service_state;
-	memset(&g_session.stats, 0, sizeof(g_session.stats));
-	g_session.consecutive_rx_misses = 0U;
-	g_session.in_service_since_cyc = 0U;
-	g_session.next_tx_seq = 0U;
-	g_session.last_rx_seq = 0U;
-	g_session.have_last_rx_seq = false;
+	session.service_state = service_state;
+	memset(&session.stats, 0, sizeof(session.stats));
+	session.consecutive_rx_misses = 0U;
+	session.in_service_since_cyc = 0U;
+	session.next_tx_seq = 0U;
+	session.last_rx_seq = 0U;
+	session.have_last_rx_seq = false;
 }
 
 static bool pfsk_session_abort_enable(void)
 {
 	pfsk_radio_stop();
 
-	g_session.service_state = PFSK_SESSION_STATE_NO_SERVICE;
+	session.service_state = PFSK_SESSION_STATE_NO_SERVICE;
 
 	return false;
 }
@@ -114,44 +114,44 @@ static void pfsk_session_record_loss_burst(uint32_t burst_len)
 	}
 
 	if (burst_len == 1U) {
-		g_session.stats.loss_burst_1_count++;
+		session.stats.loss_burst_1_count++;
 	} else if (burst_len == 2U) {
-		g_session.stats.loss_burst_2_count++;
+		session.stats.loss_burst_2_count++;
 	} else if (burst_len <= 4U) {
-		g_session.stats.loss_burst_3_4_count++;
+		session.stats.loss_burst_3_4_count++;
 	} else {
-		g_session.stats.loss_burst_5_plus_count++;
+		session.stats.loss_burst_5_plus_count++;
 	}
 
-	if (burst_len > g_session.stats.max_loss_burst_len) {
-		g_session.stats.max_loss_burst_len = burst_len;
+	if (burst_len > session.stats.max_loss_burst_len) {
+		session.stats.max_loss_burst_len = burst_len;
 	}
 }
 
 static void pfsk_session_enter_in_service(void)
 {
-	if (g_session.service_state == PFSK_SESSION_STATE_IN_SERVICE) {
+	if (session.service_state == PFSK_SESSION_STATE_IN_SERVICE) {
 		return;
 	}
 
-	g_session.service_state = PFSK_SESSION_STATE_IN_SERVICE;
-	g_session.consecutive_rx_misses = 0U;
-	g_session.in_service_since_cyc = k_cycle_get_64();
+	session.service_state = PFSK_SESSION_STATE_IN_SERVICE;
+	session.consecutive_rx_misses = 0U;
+	session.in_service_since_cyc = k_cycle_get_64();
 	LOG_INF("service established");
 }
 
 static void pfsk_session_mark_no_service(void)
 {
-	bool was_in_service = (g_session.service_state == PFSK_SESSION_STATE_IN_SERVICE);
+	bool was_in_service = (session.service_state == PFSK_SESSION_STATE_IN_SERVICE);
 
 	if (was_in_service) {
-		g_session.stats.outage_count++;
+		session.stats.outage_count++;
 	}
 
-	g_session.service_state = PFSK_SESSION_STATE_NO_SERVICE;
-	g_session.consecutive_rx_misses = 0U;
-	g_session.in_service_since_cyc = 0U;
-	g_session.have_last_rx_seq = false;
+	session.service_state = PFSK_SESSION_STATE_NO_SERVICE;
+	session.consecutive_rx_misses = 0U;
+	session.in_service_since_cyc = 0U;
+	session.have_last_rx_seq = false;
 
 	if (was_in_service) {
 		LOG_WRN("service outage (listen timeouts)");
@@ -160,18 +160,18 @@ static void pfsk_session_mark_no_service(void)
 
 static void pfsk_session_record_in_service_rx(uint16_t seq)
 {
-	if (g_session.have_last_rx_seq) {
-		uint16_t expected = pfsk_session_next_payload_seq(g_session.last_rx_seq);
+	if (session.have_last_rx_seq) {
+		uint16_t expected = pfsk_session_next_payload_seq(session.last_rx_seq);
 		uint16_t gap;
 
 		if (pfsk_session_seq_gap_from_expected(expected, seq, &gap) && gap > 0U) {
-			g_session.stats.packets_lost_in_service += gap;
+			session.stats.packets_lost_in_service += gap;
 			pfsk_session_record_loss_burst(gap);
 		}
 	}
 
-	g_session.last_rx_seq = seq;
-	g_session.have_last_rx_seq = true;
+	session.last_rx_seq = seq;
+	session.have_last_rx_seq = true;
 }
 
 static bool pfsk_session_packet_len_is_valid(uint8_t packet_len)
@@ -201,7 +201,7 @@ static bool pfsk_session_copy_to_radio_rb(void)
 		return false;
 	}
 
-	if (k_msgq_get(&g_pfsk_tx_queue, &queued_packet, K_NO_WAIT) != 0) {
+	if (k_msgq_get(&pfsk_tx_queue, &queued_packet, K_NO_WAIT) != 0) {
 		return false;
 	}
 
@@ -213,11 +213,11 @@ static bool pfsk_session_copy_to_radio_rb(void)
 	payload_bytes = queued_packet.length - PFSK_PACKET_METADATA_LEN;
 	memset(radio_packet, 0, sizeof(*radio_packet));
 	radio_packet->length = queued_packet.length;
-	radio_packet->seq = g_session.next_tx_seq;
+	radio_packet->seq = session.next_tx_seq;
 	memcpy(radio_packet->payload, queued_packet.payload, payload_bytes);
 
 	pfsk_radio_tx_advance_wr_idx();
-	g_session.next_tx_seq = pfsk_session_next_payload_seq(g_session.next_tx_seq);
+	session.next_tx_seq = pfsk_session_next_payload_seq(session.next_tx_seq);
 	return true;
 }
 
@@ -244,11 +244,11 @@ static void pfsk_session_handle_rx_ok(const struct pfsk_radio_event *event)
 		return;
 	}
 
-	g_session.consecutive_rx_misses = 0U;
+	session.consecutive_rx_misses = 0U;
 	pfsk_session_enter_in_service();
 
 	if (!is_keepalive) {
-		(void)k_msgq_put(&g_pfsk_rx_queue, packet, K_NO_WAIT);
+		(void)k_msgq_put(&pfsk_rx_queue, packet, K_NO_WAIT);
 		pfsk_session_record_in_service_rx(packet->seq);
 	}
 
@@ -262,7 +262,7 @@ static void pfsk_session_handle_rx_bad(const struct pfsk_radio_event *event)
 		return;
 	}
 
-	g_session.consecutive_rx_misses = 0U;
+	session.consecutive_rx_misses = 0U;
 	pfsk_radio_rx_advance_rd_idx();
 }
 
@@ -279,9 +279,9 @@ static void pfsk_session_handle_tx_end(const struct pfsk_radio_event *event)
 
 static void pfsk_session_handle_listen_timeout(void)
 {
-	if (g_session.service_state == PFSK_SESSION_STATE_IN_SERVICE) {
-		g_session.consecutive_rx_misses++;
-		if (g_session.consecutive_rx_misses >= PFSK_SESSION_SYNC_LOSS_TURNS) {
+	if (session.service_state == PFSK_SESSION_STATE_IN_SERVICE) {
+		session.consecutive_rx_misses++;
+		if (session.consecutive_rx_misses >= PFSK_SESSION_SYNC_LOSS_TURNS) {
 			pfsk_session_mark_no_service();
 			return;
 		}
@@ -296,14 +296,14 @@ static bool pfsk_session_start_with_role(void (*set_role)(void))
 
 	pfsk_radio_init();
 
-	k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
+	k_mutex_lock(&session.mutex_lock, K_FOREVER);
 	pfsk_session_reset_runtime(PFSK_SESSION_STATE_NO_SERVICE);
 	set_role();
 	started = pfsk_session_start_radio();
-	k_mutex_unlock(&g_session.mutex_lock);
+	k_mutex_unlock(&session.mutex_lock);
 
-	k_thread_create(&g_pfsk_session_thread, g_pfsk_session_thread_stack,
-			K_THREAD_STACK_SIZEOF(g_pfsk_session_thread_stack),
+	k_thread_create(&pfsk_session_thread_data, pfsk_session_thread_stack,
+			K_THREAD_STACK_SIZEOF(pfsk_session_thread_stack),
 			pfsk_session_thread, NULL, NULL, NULL,
 			PFSK_SESSION_THREAD_PRIORITY, 0, K_NO_WAIT);
 
@@ -324,9 +324,9 @@ enum pfsk_session_state pfsk_session_get_state(void)
 {
 	enum pfsk_session_state state;
 
-	k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
-	state = g_session.service_state;
-	k_mutex_unlock(&g_session.mutex_lock);
+	k_mutex_lock(&session.mutex_lock, K_FOREVER);
+	state = session.service_state;
+	k_mutex_unlock(&session.mutex_lock);
 	return state;
 }
 
@@ -344,11 +344,11 @@ void pfsk_session_get_report(struct pfsk_session_report *report)
 
 	pfsk_radio_get_stats(&radio_stats);
 
-	k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
-	stats = g_session.stats;
-	state = g_session.service_state;
-	in_service_since_cyc = g_session.in_service_since_cyc;
-	k_mutex_unlock(&g_session.mutex_lock);
+	k_mutex_lock(&session.mutex_lock, K_FOREVER);
+	stats = session.stats;
+	state = session.service_state;
+	in_service_since_cyc = session.in_service_since_cyc;
+	k_mutex_unlock(&session.mutex_lock);
 
 	if (state == PFSK_SESSION_STATE_IN_SERVICE && in_service_since_cyc != 0U) {
 		time_in_service_us = k_cyc_to_us_floor64(k_cycle_get_64() - in_service_since_cyc);
@@ -386,7 +386,7 @@ bool pfsk_session_tx_enqueue(const struct pfsk_packet *packet, k_timeout_t timeo
 		return false;
 	}
 
-	return k_msgq_put(&g_pfsk_tx_queue, packet, timeout) == 0;
+	return k_msgq_put(&pfsk_tx_queue, packet, timeout) == 0;
 }
 
 bool pfsk_session_rx_dequeue(struct pfsk_packet *packet, k_timeout_t timeout)
@@ -396,7 +396,7 @@ bool pfsk_session_rx_dequeue(struct pfsk_packet *packet, k_timeout_t timeout)
 		return false;
 	}
 
-	return k_msgq_get(&g_pfsk_rx_queue, packet, timeout) == 0;
+	return k_msgq_get(&pfsk_rx_queue, packet, timeout) == 0;
 }
 
 static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)
@@ -412,7 +412,7 @@ static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)
 			continue;
 		}
 
-		k_mutex_lock(&g_session.mutex_lock, K_FOREVER);
+		k_mutex_lock(&session.mutex_lock, K_FOREVER);
 		switch (event.type) {
 		case PFSK_RADIO_EVENT_RX_OK:
 			pfsk_session_handle_rx_ok(&event);
@@ -424,14 +424,14 @@ static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)
 			pfsk_session_handle_tx_end(&event);
 			break;
 		case PFSK_RADIO_EVENT_RX_INCOMPLETE:
-			g_session.stats.rx_incomplete_count++;
-			g_session.consecutive_rx_misses = 0U;
+			session.stats.rx_incomplete_count++;
+			session.consecutive_rx_misses = 0U;
 			break;
 		case PFSK_RADIO_EVENT_LISTEN_TIMEOUT:
 			pfsk_session_handle_listen_timeout();
 			break;
 		case PFSK_RADIO_EVENT_TX_TRIGGER_FAILED:
-			g_session.stats.tx_trigger_fail_count++;
+			session.stats.tx_trigger_fail_count++;
 			pfsk_session_mark_no_service();
 			LOG_ERR("failed to trigger prepared TX");
 			(void)pfsk_session_abort_enable();
@@ -439,6 +439,6 @@ static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)
 		default:
 			break;
 		}
-		k_mutex_unlock(&g_session.mutex_lock);
+		k_mutex_unlock(&session.mutex_lock);
 	}
 }

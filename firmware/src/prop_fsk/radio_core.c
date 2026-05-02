@@ -44,18 +44,18 @@ BUILD_ASSERT(offsetof(struct pfsk_packet, seq) == 1U, "seq must follow length by
 BUILD_ASSERT(offsetof(struct pfsk_packet, payload) == 1U + PFSK_PACKET_METADATA_LEN,
 	     "payload offset inconsistent with METADATA_LEN");
 
-static struct pfsk_packet g_tx_ring[PFSK_RADIO_TX_RING_DEPTH];
-static struct pfsk_packet g_rx_ring[PFSK_RADIO_RX_RING_DEPTH];
-static struct pfsk_packet g_keepalive_packet = {
+static struct pfsk_packet tx_ring[PFSK_RADIO_TX_RING_DEPTH];
+static struct pfsk_packet rx_ring[PFSK_RADIO_RX_RING_DEPTH];
+static struct pfsk_packet keepalive_packet = {
 	.length = PFSK_KEEPALIVE_LEN,
 	.seq = PFSK_KEEPALIVE_SEQ,
 };
-static volatile uint8_t g_tx_wr_idx;
-static volatile uint8_t g_tx_rd_idx;
-static volatile uint8_t g_rx_wr_idx;
-static volatile uint8_t g_rx_rd_idx;
+static volatile uint8_t tx_wr_idx;
+static volatile uint8_t tx_rd_idx;
+static volatile uint8_t rx_wr_idx;
+static volatile uint8_t rx_rd_idx;
 
-K_MSGQ_DEFINE(g_radio_event_queue, sizeof(struct pfsk_radio_event), PFSK_RADIO_EVENT_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(radio_event_queue, sizeof(struct pfsk_radio_event), PFSK_RADIO_EVENT_QUEUE_DEPTH, 4);
 
 enum pfsk_radio_turn_state {
 	PFSK_RADIO_TURN_DISABLED = 0,
@@ -70,9 +70,9 @@ struct radio_core_state {
 	bool tx_packet_from_ring;
 };
 
-static volatile struct radio_core_state g_radio;
-static struct pfsk_radio_stats g_stats;
-static struct k_spinlock g_lock;
+static volatile struct radio_core_state radio;
+static struct pfsk_radio_stats stats;
+static struct k_spinlock lock;
 
 #define PFSK_RADIO_DEADLINE_MIN_LEAD_US 20U
 
@@ -167,37 +167,37 @@ static inline void debug_phyend_isr_toggle(void)
 
 static uint8_t next_rx_wr_idx(void)
 {
-	return (g_rx_wr_idx + 1U) % PFSK_RADIO_RX_RING_DEPTH;
+	return (rx_wr_idx + 1U) % PFSK_RADIO_RX_RING_DEPTH;
 }
 
 static void advance_tx_rd_idx(void)
 {
-	g_tx_rd_idx = (g_tx_rd_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH;
+	tx_rd_idx = (tx_rd_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH;
 }
 
 static void advance_rx_wr_idx(void)
 {
-	g_rx_wr_idx = next_rx_wr_idx();
+	rx_wr_idx = next_rx_wr_idx();
 }
 
 static void advance_rx_rd_idx(void)
 {
-	g_rx_rd_idx = (g_rx_rd_idx + 1U) % PFSK_RADIO_RX_RING_DEPTH;
+	rx_rd_idx = (rx_rd_idx + 1U) % PFSK_RADIO_RX_RING_DEPTH;
 }
 
 static bool tx_ring_empty(void)
 {
-	return g_tx_rd_idx == g_tx_wr_idx;
+	return tx_rd_idx == tx_wr_idx;
 }
 
 static bool rx_ring_write_would_fill(void)
 {
-	return next_rx_wr_idx() == g_rx_rd_idx;
+	return next_rx_wr_idx() == rx_rd_idx;
 }
 
 static void program_rx_packetptr(void)
 {
-	nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_rx_ring[g_rx_wr_idx]);
+	nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&rx_ring[rx_wr_idx]);
 	nrf_radio_shorts_set(NRF_RADIO,
 			     PFSK_RADIO_BASE_SHORTS | NRF_RADIO_SHORT_DISABLED_RXEN_MASK);
 }
@@ -205,11 +205,11 @@ static void program_rx_packetptr(void)
 static void program_tx_packetptr(void)
 {
 	if (tx_ring_empty()) {
-		nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_keepalive_packet);
-		g_radio.tx_packet_from_ring = false;
+		nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&keepalive_packet);
+		radio.tx_packet_from_ring = false;
 	} else {
-		nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&g_tx_ring[g_tx_rd_idx]);
-		g_radio.tx_packet_from_ring = true;
+		nrf_radio_packetptr_set(NRF_RADIO, (uint32_t *)&tx_ring[tx_rd_idx]);
+		radio.tx_packet_from_ring = true;
 	}
 
 	nrf_radio_shorts_set(NRF_RADIO,
@@ -228,7 +228,7 @@ static bool queue_radio_event(const struct pfsk_radio_event *event)
 		return false;
 	}
 
-	if (k_msgq_put(&g_radio_event_queue, event, K_NO_WAIT) != 0) {
+	if (k_msgq_put(&radio_event_queue, event, K_NO_WAIT) != 0) {
 		LOG_ERR("PFSK radio event queue full, dropping event type %d", event->type);
 		return false;
 	}
@@ -238,7 +238,7 @@ static bool queue_radio_event(const struct pfsk_radio_event *event)
 
 static void clear_deadline(void)
 {
-	g_radio.deadline_armed = false;
+	radio.deadline_armed = false;
 	nrf_timer_int_disable(PFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
 }
 
@@ -246,23 +246,23 @@ static void set_deadline(uint32_t deadline_tick)
 {
 	uint32_t now_tick;
 
-	if (g_radio.turn_state == PFSK_RADIO_TURN_DISABLED) {
+	if (radio.turn_state == PFSK_RADIO_TURN_DISABLED) {
 		return;
 	}
 
 	now_tick = capture_timer_tick();
 	if ((int32_t)(deadline_tick - now_tick) <= (int32_t)PFSK_RADIO_DEADLINE_MIN_LEAD_US) {
-		k_spinlock_key_t key = k_spin_lock(&g_lock);
+		k_spinlock_key_t key = k_spin_lock(&lock);
 
 		deadline_tick = now_tick + PFSK_RADIO_DEADLINE_MIN_LEAD_US;
-		g_stats.deadline_late_count++;
+		stats.deadline_late_count++;
 
-		k_spin_unlock(&g_lock, key);
+		k_spin_unlock(&lock, key);
 	}
 
 	nrf_timer_cc_set(PFSK_TIMER, PFSK_TIMER_CC_DEADLINE, deadline_tick);
 	nrf_timer_event_clear(PFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
-	g_radio.deadline_armed = true;
+	radio.deadline_armed = true;
 	nrf_timer_int_enable(PFSK_TIMER, NRF_TIMER_INT_COMPARE3_MASK);
 }
 
@@ -270,8 +270,8 @@ static bool trigger_prepared_tx(void)
 {
 	nrf_radio_state_t radio_state;
 
-	if (g_radio.turn_state == PFSK_RADIO_TURN_DISABLED ||
-	    g_radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
+	if (radio.turn_state == PFSK_RADIO_TURN_DISABLED ||
+	    radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
 		return false;
 	}
 
@@ -282,7 +282,7 @@ static bool trigger_prepared_tx(void)
 
 	program_tx_packetptr();
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
-	g_radio.turn_state = PFSK_RADIO_TURN_IN_TX;
+	radio.turn_state = PFSK_RADIO_TURN_IN_TX;
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 
 	return true;
@@ -344,31 +344,31 @@ static void arm_rx_deadline(uint32_t address_tick)
 
 static void note_rx_ok(int16_t rssi_dbm)
 {
-	k_spinlock_key_t key = k_spin_lock(&g_lock);
+	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	g_stats.rx_ok_count++;
-	g_stats.last_rssi_dbm = rssi_dbm;
+	stats.rx_ok_count++;
+	stats.last_rssi_dbm = rssi_dbm;
 
-	k_spin_unlock(&g_lock, key);
+	k_spin_unlock(&lock, key);
 }
 
 static void note_rx_bad(int16_t rssi_dbm)
 {
-	k_spinlock_key_t key = k_spin_lock(&g_lock);
+	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	g_stats.crc_errors++;
-	g_stats.last_rssi_dbm = rssi_dbm;
+	stats.crc_errors++;
+	stats.last_rssi_dbm = rssi_dbm;
 
-	k_spin_unlock(&g_lock, key);
+	k_spin_unlock(&lock, key);
 }
 
 static void note_tx_end(void)
 {
-	k_spinlock_key_t key = k_spin_lock(&g_lock);
+	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	g_stats.packets_tx++;
+	stats.packets_tx++;
 
-	k_spin_unlock(&g_lock, key);
+	k_spin_unlock(&lock, key);
 }
 
 static void hfclk_start(void)
@@ -401,17 +401,17 @@ static void timer_isr(const void *arg)
 	if (nrf_timer_event_check(PFSK_TIMER, NRF_TIMER_EVENT_COMPARE3)) {
 		nrf_timer_event_clear(PFSK_TIMER, NRF_TIMER_EVENT_COMPARE3);
 
-		if (g_radio.deadline_armed) {
+		if (radio.deadline_armed) {
 			deadline_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_DEADLINE);
 			clear_deadline();
 
 			memset(&event, 0, sizeof(event));
 			event.tick = deadline_tick;
 
-			if (g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
+			if (radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 				event.type = PFSK_RADIO_EVENT_RX_INCOMPLETE;
 				(void)queue_radio_event(&event);
-			} else if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
+			} else if (radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
 				event.type = PFSK_RADIO_EVENT_LISTEN_TIMEOUT;
 				(void)queue_radio_event(&event);
 			} else {
@@ -433,13 +433,13 @@ static void radio_isr(const void *arg)
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS)) {
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
 
-		if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
+		if (radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
 			uint32_t rx_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_RX_TS);
 
-			g_radio.turn_state = PFSK_RADIO_TURN_IN_RX;
+			radio.turn_state = PFSK_RADIO_TURN_IN_RX;
 			arm_rx_deadline(rx_tick);
 			program_tx_packetptr();
-		} else if (g_radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
+		} else if (radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
 			/* TX is already on air here. Switch back to RX before TX PHYEND,
 			 * because the DISABLED short fires before the DISABLED ISR can run.
 			 */
@@ -453,8 +453,8 @@ static void radio_isr(const void *arg)
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCOK);
 
-		if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN ||
-		    g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
+		if (radio.turn_state == PFSK_RADIO_TURN_LISTEN ||
+		    radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
 			event.type = PFSK_RADIO_EVENT_RX_OK;
@@ -477,8 +477,8 @@ static void radio_isr(const void *arg)
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
 
-		if (g_radio.turn_state == PFSK_RADIO_TURN_LISTEN ||
-		    g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
+		if (radio.turn_state == PFSK_RADIO_TURN_LISTEN ||
+		    radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
 			event.type = PFSK_RADIO_EVENT_RX_BAD;
@@ -499,17 +499,17 @@ static void radio_isr(const void *arg)
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PHYEND);
 		debug_phyend_isr_toggle();
 
-		if (g_radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
-			g_radio.turn_state = PFSK_RADIO_TURN_IN_TX;
-		} else if (g_radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
+		if (radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
+			radio.turn_state = PFSK_RADIO_TURN_IN_TX;
+		} else if (radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
 			uint32_t tx_phyend_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
 			struct pfsk_radio_event event;
 
-			if (g_radio.tx_packet_from_ring) {
+			if (radio.tx_packet_from_ring) {
 				advance_tx_rd_idx();
 			}
 
-			g_radio.turn_state = PFSK_RADIO_TURN_LISTEN;
+			radio.turn_state = PFSK_RADIO_TURN_LISTEN;
 			arm_post_tx_listen_deadline(tx_phyend_tick);
 			note_tx_end();
 
@@ -571,17 +571,17 @@ void pfsk_radio_start(void)
 {
 	unsigned int irq_key;
 
-	k_msgq_purge(&g_radio_event_queue);
+	k_msgq_purge(&radio_event_queue);
 	reset_stats();
 
 	irq_key = irq_lock();
 
-	memset((void *)&g_radio, 0, sizeof(g_radio));
-	g_radio.turn_state = PFSK_RADIO_TURN_LISTEN;
-	g_tx_wr_idx = 0U;
-	g_tx_rd_idx = 0U;
-	g_rx_wr_idx = 0U;
-	g_rx_rd_idx = 0U;
+	memset((void *)&radio, 0, sizeof(radio));
+	radio.turn_state = PFSK_RADIO_TURN_LISTEN;
+	tx_wr_idx = 0U;
+	tx_rd_idx = 0U;
+	rx_wr_idx = 0U;
+	rx_rd_idx = 0U;
 	debug_phyend_gpio_reset();
 
 	program_rx_packetptr();
@@ -628,7 +628,7 @@ void pfsk_radio_stop(void)
 
 	irq_key = irq_lock();
 
-	memset((void *)&g_radio, 0, sizeof(g_radio));
+	memset((void *)&radio, 0, sizeof(radio));
 
 	nrf_timer_task_trigger(PFSK_TIMER, NRF_TIMER_TASK_STOP);
 	nrf_radio_int_disable(NRF_RADIO,
@@ -650,48 +650,48 @@ void pfsk_radio_stop(void)
 
 	irq_unlock(irq_key);
 
-	k_msgq_purge(&g_radio_event_queue);
+	k_msgq_purge(&radio_event_queue);
 }
 
-void pfsk_radio_get_stats(struct pfsk_radio_stats *stats)
+void pfsk_radio_get_stats(struct pfsk_radio_stats *s)
 {
-	if (stats == NULL) {
+	if (s == NULL) {
 		return;
 	}
 
-	k_spinlock_key_t key = k_spin_lock(&g_lock);
-	*stats = g_stats;
-	k_spin_unlock(&g_lock, key);
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	*s = stats;
+	k_spin_unlock(&lock, key);
 }
 
 static void reset_stats(void)
 {
-	k_spinlock_key_t key = k_spin_lock(&g_lock);
+	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	memset(&g_stats, 0, sizeof(g_stats));
-	g_stats.last_rssi_dbm = -100;
+	memset(&stats, 0, sizeof(stats));
+	stats.last_rssi_dbm = -100;
 
-	k_spin_unlock(&g_lock, key);
+	k_spin_unlock(&lock, key);
 }
 
 struct pfsk_packet *pfsk_radio_tx_get_wr_ptr(void)
 {
-	if (((g_tx_wr_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH) == g_tx_rd_idx) {
+	if (((tx_wr_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH) == tx_rd_idx) {
 		return NULL;
 	}
 
-	return &g_tx_ring[g_tx_wr_idx];
+	return &tx_ring[tx_wr_idx];
 }
 
 void pfsk_radio_tx_advance_wr_idx(void)
 {
-	g_tx_wr_idx = (g_tx_wr_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH;
+	tx_wr_idx = (tx_wr_idx + 1U) % PFSK_RADIO_TX_RING_DEPTH;
 }
 
 const struct pfsk_packet *pfsk_radio_rx_get_rd_ptr(void)
 {
-	if (g_radio.turn_state != PFSK_RADIO_TURN_DISABLED && g_rx_rd_idx != g_rx_wr_idx) {
-		return &g_rx_ring[g_rx_rd_idx];
+	if (radio.turn_state != PFSK_RADIO_TURN_DISABLED && rx_rd_idx != rx_wr_idx) {
+		return &rx_ring[rx_rd_idx];
 	}
 
 	return NULL;
@@ -699,7 +699,7 @@ const struct pfsk_packet *pfsk_radio_rx_get_rd_ptr(void)
 
 void pfsk_radio_rx_advance_rd_idx(void)
 {
-	if (g_rx_rd_idx != g_rx_wr_idx) {
+	if (rx_rd_idx != rx_wr_idx) {
 		advance_rx_rd_idx();
 	}
 }
@@ -710,5 +710,5 @@ bool pfsk_radio_dequeue_event(struct pfsk_radio_event *event, k_timeout_t timeou
 		return false;
 	}
 
-	return k_msgq_get(&g_radio_event_queue, event, timeout) == 0;
+	return k_msgq_get(&radio_event_queue, event, timeout) == 0;
 }

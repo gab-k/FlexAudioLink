@@ -11,17 +11,17 @@ LOG_MODULE_REGISTER(audio_path_pfsk_dongle, LOG_LEVEL_INF);
 #define DONGLE_THREAD_PRIORITY    6
 #define DONGLE_LOOP_SLEEP_MS      1
 
-static struct audio_path_wireless_dongle_status g_dongle_status;
+static struct audio_path_wireless_dongle_status dongle_status;
 
-static K_THREAD_STACK_DEFINE(g_dongle_thread_stack, DONGLE_THREAD_STACK_SIZE);
-static struct k_thread g_dongle_thread;
+static K_THREAD_STACK_DEFINE(dongle_thread_stack, DONGLE_THREAD_STACK_SIZE);
+static struct k_thread dongle_thread_data;
 
 static void dongle_thread(void *a, void *b, void *c);
 
 void audio_path_wireless_dongle_init(void)
 {
-	k_thread_create(&g_dongle_thread, g_dongle_thread_stack,
-			K_THREAD_STACK_SIZEOF(g_dongle_thread_stack),
+	k_thread_create(&dongle_thread_data, dongle_thread_stack,
+			K_THREAD_STACK_SIZEOF(dongle_thread_stack),
 			dongle_thread, NULL, NULL, NULL,
 			DONGLE_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
@@ -29,7 +29,7 @@ void audio_path_wireless_dongle_init(void)
 void audio_path_wireless_dongle_get_status(struct audio_path_wireless_dongle_status *out)
 {
 	if (out != NULL) {
-		*out = g_dongle_status;
+		*out = dongle_status;
 	}
 }
 
@@ -97,7 +97,7 @@ static void dongle_thread(void *a, void *b, void *c)
 			packet.length = PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_SPK_PACKET_BYTES;
 
 			if (!pfsk_session_tx_enqueue(&packet, K_NO_WAIT)) {
-				g_dongle_status.overflow_bytes += payload_bytes;
+				dongle_status.overflow_bytes += payload_bytes;
 				break;
 			}
 		}

@@ -17,10 +17,10 @@ LOG_MODULE_REGISTER(audio_path_wired, LOG_LEVEL_INF);
 #define WIRED_WARN_LOW_BYTES  (WIRED_AUDIO_TARGET_BYTES * 10U / 50U )
 #define WIRED_WARN_HIGH_BYTES (WIRED_AUDIO_TARGET_BYTES * 90U / 50U )
 
-static struct audio_path_wired_status g_wired_status;
+static struct audio_path_wired_status wired_status;
 
-static K_THREAD_STACK_DEFINE(g_wired_thread_stack, WIRED_THREAD_STACK_SIZE);
-static struct k_thread g_wired_thread;
+static K_THREAD_STACK_DEFINE(wired_thread_stack, WIRED_THREAD_STACK_SIZE);
+static struct k_thread wired_thread_data;
 
 static void wired_thread(void *a, void *b, void *c);
 
@@ -31,7 +31,7 @@ static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 	static float i_sum;
 	uint32_t now_ms;
 
-	if (g_audio_fll.fixed) {
+	if (audio_fll.fixed) {
 		return;
 	}
 
@@ -46,15 +46,15 @@ static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 							  AUDIO_P_GAIN, AUDIO_P_KI,
 							  fifo_lvl, pending);
 
-	g_wired_status.spk_filtered_level_bytes = (uint32_t)filter;
-	g_wired_status.spk_error_bytes = (int32_t)WIRED_AUDIO_TARGET_BYTES - (int32_t)g_wired_status.spk_filtered_level_bytes;
-	g_wired_status.spk_p_adjust_hz = adjust_hz;
+	wired_status.spk_filtered_level_bytes = (uint32_t)filter;
+	wired_status.spk_error_bytes = (int32_t)WIRED_AUDIO_TARGET_BYTES - (int32_t)wired_status.spk_filtered_level_bytes;
+	wired_status.spk_p_adjust_hz = adjust_hz;
 
 	int32_t target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
 	int ret = nau88l21_set_fll_target_rate_hz(target_rate);
 
 	if (ret == 0) {
-		g_wired_status.spk_fll_target_rate_hz = target_rate;
+		wired_status.spk_fll_target_rate_hz = target_rate;
 	} else {
 		LOG_ERR("Failed to set codec FLL target rate to %d Hz", target_rate);
 	}
@@ -62,11 +62,11 @@ static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 
 void audio_path_wired_init(void)
 {
-	g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
-	g_wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
+	wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+	wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
 
-	k_thread_create(&g_wired_thread, g_wired_thread_stack,
-			K_THREAD_STACK_SIZEOF(g_wired_thread_stack),
+	k_thread_create(&wired_thread_data, wired_thread_stack,
+			K_THREAD_STACK_SIZEOF(wired_thread_stack),
 			wired_thread, NULL, NULL, NULL,
 			WIRED_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
@@ -77,9 +77,9 @@ void audio_path_wired_get_status(struct audio_path_wired_status *out)
 		return;
 	}
 
-	*out = g_wired_status;
-	if (g_audio_fll.fixed) {
-		out->spk_fll_target_rate_hz = g_audio_fll.fixed_rate_hz;
+	*out = wired_status;
+	if (audio_fll.fixed) {
+		out->spk_fll_target_rate_hz = audio_fll.fixed_rate_hz;
 	}
 }
 
@@ -104,23 +104,23 @@ static void wired_thread(void *a, void *b, void *c)
 		uint32_t pending = audio_i2s_tx_get_pending_bytes();
 		uint32_t level = ep_out_ff_bytes + pending;
 
-		g_wired_status.spk_fifo_bytes = ep_out_ff_bytes;
-		g_wired_status.spk_pending_bytes = pending;
+		wired_status.spk_fifo_bytes = ep_out_ff_bytes;
+		wired_status.spk_pending_bytes = pending;
 
-		if (g_wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
+		if (wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
 			if (level >= WIRED_AUDIO_START_BYTES) {
-				g_wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
+				wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
 				audio_i2s_activate(ep_out_ff, ep_in_ff);
 			}
 		} else if (pending == 0U && ep_out_ff_bytes < AUDIO_I2S_BLOCK_BYTES) {
-			g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+			wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 			LOG_INF("switching to BUFFERING, notifying i2s thread...");
 			audio_i2s_deactivate();
-			g_wired_status.spk_underrun_events++;
+			wired_status.spk_underrun_events++;
 		}
 
-		if (g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+		if (wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
 			wired_update_codec_clock(ep_out_ff_bytes, pending);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, ep_out_ff_bytes, pending, WIRED_WARN_LOW_BYTES, WIRED_WARN_HIGH_BYTES);

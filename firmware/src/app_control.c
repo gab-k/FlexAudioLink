@@ -13,17 +13,17 @@
 
 #define APP_PROFILE_SETTINGS_KEY "profile/active"
 
-static enum app_profile g_current_profile = APP_PROFILE_USB;
-static volatile bool g_boot_profile_ready;
+static enum app_profile current_profile = APP_PROFILE_USB;
+static volatile bool boot_profile_ready;
 
 enum app_profile app_control_get_current_profile(void)
 {
-	return g_current_profile;
+	return current_profile;
 }
 
 bool app_control_boot_profile_ready(void)
 {
-	return g_boot_profile_ready;
+	return boot_profile_ready;
 }
 
 const char *app_control_get_profile_name(enum app_profile profile)
@@ -46,7 +46,7 @@ bool app_control_save_boot_profile(enum app_profile profile)
 		return false;
 	}
 
-	if (profile == g_current_profile) {
+	if (profile == current_profile) {
 		return true;
 	}
 
@@ -69,15 +69,15 @@ void app_control_boot(void)
 	uint8_t saved;
 	ssize_t rc = settings_load_one(APP_PROFILE_SETTINGS_KEY, &saved, sizeof(saved));
 	if (rc == sizeof(saved) && saved < APP_PROFILE_COUNT) {
-		g_current_profile = (enum app_profile)saved;
+		current_profile = (enum app_profile)saved;
 	} else {
-		g_current_profile = APP_PROFILE_USB;
+		current_profile = APP_PROFILE_USB;
 	}
-	g_boot_profile_ready = true;
+	boot_profile_ready = true;
 
-	printk("Boot profile: %s\n", app_control_get_profile_name(g_current_profile));
+	printk("Boot profile: %s\n", app_control_get_profile_name(current_profile));
 
-	switch (g_current_profile) {
+	switch (current_profile) {
 	case APP_PROFILE_USB:
 		audio_path_wired_init();
 		break;

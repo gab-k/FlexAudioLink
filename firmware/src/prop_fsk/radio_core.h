@@ -98,7 +98,7 @@ void pfsk_radio_start(void);
 void pfsk_radio_set_role_dongle(void);
 void pfsk_radio_set_role_headset(void);
 void pfsk_radio_stop(void);
-void pfsk_radio_get_stats(struct pfsk_radio_stats *stats);
+void pfsk_radio_get_stats(struct pfsk_radio_stats *s);
 
 struct pfsk_packet *pfsk_radio_tx_get_wr_ptr(void);
 void pfsk_radio_tx_advance_wr_idx(void);

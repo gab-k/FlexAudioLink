@@ -68,7 +68,7 @@ int32_t audio_codec_clock_controller(uint32_t target,
 
 void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);
 
-extern struct audio_fll_state g_audio_fll;
+extern struct audio_fll_state audio_fll;
 
 bool audio_fll_set_fixed(int32_t rate_hz);
 void audio_fll_set_auto(void);

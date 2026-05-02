@@ -131,13 +131,13 @@ int32_t audio_codec_clock_controller(uint32_t target,
 	return output;
 }
 
-struct audio_fll_state g_audio_fll;
+struct audio_fll_state audio_fll;
 
 bool audio_fll_set_fixed(int32_t rate_hz)
 {
 	if (nau88l21_set_fll_target_rate_hz(rate_hz) == 0) {
-		g_audio_fll.fixed = true;
-		g_audio_fll.fixed_rate_hz = rate_hz;
+		audio_fll.fixed = true;
+		audio_fll.fixed_rate_hz = rate_hz;
 		return true;
 	}
 	return false;
@@ -145,11 +145,11 @@ bool audio_fll_set_fixed(int32_t rate_hz)
 
 void audio_fll_set_auto(void)
 {
-	g_audio_fll.fixed = false;
-	g_audio_fll.fixed_rate_hz = 0;
+	audio_fll.fixed = false;
+	audio_fll.fixed_rate_hz = 0;
 }
 
 int32_t audio_fll_get_fixed_rate(void)
 {
-	return g_audio_fll.fixed ? g_audio_fll.fixed_rate_hz : 0;
+	return audio_fll.fixed ? audio_fll.fixed_rate_hz : 0;
 }

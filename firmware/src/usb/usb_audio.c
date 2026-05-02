@@ -14,14 +14,14 @@ LOG_MODULE_REGISTER(usb_audio, LOG_LEVEL_INF);
 #define USB_AUDIO_VOLUME_MAX_256DB         ((int16_t)(0))
 #define USB_AUDIO_VOLUME_RES_256DB         ((uint16_t)(1 * 256))
 
-static int8_t g_usb_audio_speaker_mute[USB_AUDIO_SPK_CHANNEL_COUNT];
-static int16_t g_usb_audio_speaker_volume[USB_AUDIO_SPK_CHANNEL_COUNT];
+static int8_t usb_audio_speaker_mute[USB_AUDIO_SPK_CHANNEL_COUNT];
+static int16_t usb_audio_speaker_volume[USB_AUDIO_SPK_CHANNEL_COUNT];
 
-static OSAL_MUTEX_DEF(g_usb_audio_ep_out_mutex_wr);
-static OSAL_MUTEX_DEF(g_usb_audio_ep_out_mutex_rd);
-static OSAL_MUTEX_DEF(g_usb_audio_ep_in_mutex_wr);
-static OSAL_MUTEX_DEF(g_usb_audio_ep_in_mutex_rd);
-static bool g_usb_audio_mutexes_configured;
+static OSAL_MUTEX_DEF(usb_audio_ep_out_mutex_wr);
+static OSAL_MUTEX_DEF(usb_audio_ep_out_mutex_rd);
+static OSAL_MUTEX_DEF(usb_audio_ep_in_mutex_wr);
+static OSAL_MUTEX_DEF(usb_audio_ep_in_mutex_rd);
+static bool usb_audio_mutexes_configured;
 
 static bool usb_audio_uac2_get_clock_req(uint8_t rhport, audio20_control_request_t const *request)
 {
@@ -99,7 +99,7 @@ static bool usb_audio_uac2_get_feature_req(uint8_t rhport, audio20_control_reque
 	if (request->bControlSelector == AUDIO20_FU_CTRL_MUTE &&
 	    request->bRequest == AUDIO20_CS_REQ_CUR) {
 		audio20_control_cur_1_t cur = {
-			.bCur = g_usb_audio_speaker_mute[channel],
+			.bCur = usb_audio_speaker_mute[channel],
 		};
 
 		return tud_audio_buffer_and_schedule_control_xfer(
@@ -109,7 +109,7 @@ static bool usb_audio_uac2_get_feature_req(uint8_t rhport, audio20_control_reque
 	if (request->bControlSelector == AUDIO20_FU_CTRL_VOLUME) {
 		if (request->bRequest == AUDIO20_CS_REQ_CUR) {
 			audio20_control_cur_2_t cur = {
-				.bCur = tu_htole16(g_usb_audio_speaker_volume[channel]),
+				.bCur = tu_htole16(usb_audio_speaker_volume[channel]),
 			};
 
 			return tud_audio_buffer_and_schedule_control_xfer(
@@ -153,7 +153,7 @@ static bool usb_audio_uac2_set_feature_req(audio20_control_request_t const *requ
 			return false;
 		}
 
-		g_usb_audio_speaker_mute[channel] =
+		usb_audio_speaker_mute[channel] =
 			((audio20_control_cur_1_t const *)buf)->bCur ? 1 : 0;
 		return true;
 	}
@@ -173,7 +173,7 @@ static bool usb_audio_uac2_set_feature_req(audio20_control_request_t const *requ
 			return false;
 		}
 
-		g_usb_audio_speaker_volume[channel] = volume_db_256;
+		usb_audio_speaker_volume[channel] = volume_db_256;
 		return true;
 	}
 
@@ -191,7 +191,7 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 		return false;
 	}
 
-	if (!g_usb_audio_mutexes_configured) {
+	if (!usb_audio_mutexes_configured) {
 		tu_fifo_t *ep_out_ff = tud_audio_get_ep_out_ff();
 		tu_fifo_t *ep_in_ff = tud_audio_get_ep_in_ff();
 
@@ -201,12 +201,12 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 		}
 
 		tu_fifo_config_mutex(ep_out_ff,
-				     osal_mutex_create(&g_usb_audio_ep_out_mutex_wr),
-				     osal_mutex_create(&g_usb_audio_ep_out_mutex_rd));
+				     osal_mutex_create(&usb_audio_ep_out_mutex_wr),
+				     osal_mutex_create(&usb_audio_ep_out_mutex_rd));
 		tu_fifo_config_mutex(ep_in_ff,
-				     osal_mutex_create(&g_usb_audio_ep_in_mutex_wr),
-				     osal_mutex_create(&g_usb_audio_ep_in_mutex_rd));
-		g_usb_audio_mutexes_configured = true;
+				     osal_mutex_create(&usb_audio_ep_in_mutex_wr),
+				     osal_mutex_create(&usb_audio_ep_in_mutex_rd));
+		usb_audio_mutexes_configured = true;
 	}
 
 	return true;
@@ -218,8 +218,8 @@ void usb_audio_reset(void)
 	tu_fifo_t *ep_in_ff;
 
 	for (size_t channel = 0U; channel < USB_AUDIO_SPK_CHANNEL_COUNT; channel++) {
-		g_usb_audio_speaker_mute[channel] = 0;
-		g_usb_audio_speaker_volume[channel] = USB_AUDIO_VOLUME_MAX_256DB;
+		usb_audio_speaker_mute[channel] = 0;
+		usb_audio_speaker_volume[channel] = USB_AUDIO_VOLUME_MAX_256DB;
 	}
 
 	ep_out_ff = tud_audio_get_ep_out_ff();

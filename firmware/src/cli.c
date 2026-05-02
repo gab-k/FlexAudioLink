@@ -26,18 +26,18 @@
 #define CLI_THREAD_STACK_SIZE 2048
 #define CLI_THREAD_PRIORITY 10
 
-static bool g_cli_connected;
-static bool g_cli_echo_enabled = true;
-static bool g_status_link_push_enabled;
-static bool g_status_audio_push_enabled;
-static uint32_t g_status_link_push_period_ms = 500;
-static uint32_t g_status_audio_push_period_ms = 500;
-static int64_t g_next_status_link_deadline_ms;
-static int64_t g_next_status_audio_deadline_ms;
+static bool cli_connected;
+static bool cli_echo_enabled = true;
+static bool status_link_push_enabled;
+static bool status_audio_push_enabled;
+static uint32_t status_link_push_period_ms = 500;
+static uint32_t status_audio_push_period_ms = 500;
+static int64_t next_status_link_deadline_ms;
+static int64_t next_status_audio_deadline_ms;
 /* Complete command lines are queued here and executed by the low-priority CLI thread. */
-K_MSGQ_DEFINE(g_cli_msgq, CLI_MAX_CMD_LEN, CLI_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(cli_msgq, CLI_MAX_CMD_LEN, CLI_QUEUE_DEPTH, 4);
 /* Async user-visible messages from other threads are serialized here. */
-K_MSGQ_DEFINE(g_cli_output_msgq, CLI_MAX_OUTPUT_LEN, CLI_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(cli_output_msgq, CLI_MAX_OUTPUT_LEN, CLI_QUEUE_DEPTH, 4);
 
 static void cli_process_line(char *line);
 static void cli_thread(void *arg1, void *arg2, void *arg3);
@@ -63,7 +63,7 @@ static void cli_write_raw(const char *data, size_t len)
 {
 	uint32_t written = 0U;
 
-	if (!g_cli_connected || !tud_cdc_connected() || data == NULL || len == 0U) {
+	if (!cli_connected || !tud_cdc_connected() || data == NULL || len == 0U) {
 		return;
 	}
 
@@ -421,15 +421,15 @@ static void cli_cmd_status_link(char *args)
 	}
 
 	if (strncasecmp(args, "on", 2) == 0) {
-		g_status_link_push_period_ms = cli_parse_status_period_ms(args + 2);
-		g_status_link_push_enabled = true;
-		g_next_status_link_deadline_ms = k_uptime_get() + g_status_link_push_period_ms;
-		cli_print("OK status_link=%u\n", g_status_link_push_period_ms);
+		status_link_push_period_ms = cli_parse_status_period_ms(args + 2);
+		status_link_push_enabled = true;
+		next_status_link_deadline_ms = k_uptime_get() + status_link_push_period_ms;
+		cli_print("OK status_link=%u\n", status_link_push_period_ms);
 		return;
 	}
 
 	if (strcasecmp(args, "off") == 0) {
-		g_status_link_push_enabled = false;
+		status_link_push_enabled = false;
 		cli_print("OK status_link=off\n");
 		return;
 	}
@@ -445,15 +445,15 @@ static void cli_cmd_status_audio(char *args)
 	}
 
 	if (strncasecmp(args, "on", 2) == 0) {
-		g_status_audio_push_period_ms = cli_parse_status_period_ms(args + 2);
-		g_status_audio_push_enabled = true;
-		g_next_status_audio_deadline_ms = k_uptime_get() + g_status_audio_push_period_ms;
-		cli_print("OK status_audio=%u\n", g_status_audio_push_period_ms);
+		status_audio_push_period_ms = cli_parse_status_period_ms(args + 2);
+		status_audio_push_enabled = true;
+		next_status_audio_deadline_ms = k_uptime_get() + status_audio_push_period_ms;
+		cli_print("OK status_audio=%u\n", status_audio_push_period_ms);
 		return;
 	}
 
 	if (strcasecmp(args, "off") == 0) {
-		g_status_audio_push_enabled = false;
+		status_audio_push_enabled = false;
 		cli_print("OK status_audio=off\n");
 		return;
 	}
@@ -525,7 +525,7 @@ static void cli_process_line(char *line)
 	cmd = strtok(line, " \t");
 	args = strtok(NULL, "");
 
-	if (g_cli_echo_enabled) {
+	if (cli_echo_enabled) {
 		cli_print("%s%s%s\n", cmd, args ? " " : "", args ? args : "");
 	}
 
@@ -536,10 +536,10 @@ static void cli_process_line(char *line)
 
 	if (strcasecmp(cmd, "echo") == 0) {
 		if (args == NULL || strcasecmp(args, "on") == 0) {
-			g_cli_echo_enabled = true;
+			cli_echo_enabled = true;
 			cli_print("OK echo=on\n");
 		} else if (strcasecmp(args, "off") == 0) {
-			g_cli_echo_enabled = false;
+			cli_echo_enabled = false;
 			cli_print("OK echo=off\n");
 		} else {
 			cli_print("ERR echo invalid_value\n");
@@ -593,22 +593,22 @@ static void cli_process_line(char *line)
 
 static void cli_init(void)
 {
-	g_cli_echo_enabled = true;
-	g_status_link_push_enabled = false;
-	g_status_audio_push_enabled = false;
-	g_status_link_push_period_ms = 500;
-	g_status_audio_push_period_ms = 500;
-	g_next_status_link_deadline_ms = 0;
-	g_next_status_audio_deadline_ms = 0;
-	k_msgq_purge(&g_cli_msgq);
-	k_msgq_purge(&g_cli_output_msgq);
+	cli_echo_enabled = true;
+	status_link_push_enabled = false;
+	status_audio_push_enabled = false;
+	status_link_push_period_ms = 500;
+	status_audio_push_period_ms = 500;
+	next_status_link_deadline_ms = 0;
+	next_status_audio_deadline_ms = 0;
+	k_msgq_purge(&cli_msgq);
+	k_msgq_purge(&cli_output_msgq);
 }
 
 void cli_set_connected(bool connected)
 {
-	bool announce = connected && !g_cli_connected;
+	bool announce = connected && !cli_connected;
 
-	g_cli_connected = connected;
+	cli_connected = connected;
 
 	if (announce) {
 		static const char welcome[] = "FlexAudioLink CLI\nType 'help' for commands\n";
@@ -630,7 +630,7 @@ void cli_enqueue_command_line(char *line)
 	memcpy(queued_line, line, len);
 	queued_line[len] = '\0';
 	/* Drop on overflow rather than blocking the USB path. */
-	(void)k_msgq_put(&g_cli_msgq, queued_line, K_NO_WAIT);
+	(void)k_msgq_put(&cli_msgq, queued_line, K_NO_WAIT);
 }
 
 void cli_enqueue_print_msg(const char *message)
@@ -645,7 +645,7 @@ void cli_enqueue_print_msg(const char *message)
 	len = cli_strnlen(message, CLI_MAX_OUTPUT_LEN - 1U);
 	memcpy(queued_message, message, len);
 	queued_message[len] = '\0';
-	(void)k_msgq_put(&g_cli_output_msgq, queued_message, K_NO_WAIT);
+	(void)k_msgq_put(&cli_output_msgq, queued_message, K_NO_WAIT);
 }
 
 static void cli_thread(void *arg1, void *arg2, void *arg3)
@@ -664,22 +664,22 @@ static void cli_thread(void *arg1, void *arg2, void *arg3)
 
 	/* Mirrors the old FreeRTOS design: USB input is decoupled from command execution. */
 	while (1) {
-		if (k_msgq_get(&g_cli_msgq, line, K_MSEC(10)) == 0) {
+		if (k_msgq_get(&cli_msgq, line, K_MSEC(10)) == 0) {
 			cli_process_line(line);
 		}
 
-		if (k_msgq_get(&g_cli_output_msgq, message, K_NO_WAIT) == 0) {
+		if (k_msgq_get(&cli_output_msgq, message, K_NO_WAIT) == 0) {
 			cli_write_raw(message, strlen(message));
 		}
 
-		if (g_status_link_push_enabled && g_cli_connected && k_uptime_get() >= g_next_status_link_deadline_ms) {
+		if (status_link_push_enabled && cli_connected && k_uptime_get() >= next_status_link_deadline_ms) {
 			cli_emit_status_link_push();
-			g_next_status_link_deadline_ms = k_uptime_get() + g_status_link_push_period_ms;
+			next_status_link_deadline_ms = k_uptime_get() + status_link_push_period_ms;
 		}
 
-		if (g_status_audio_push_enabled && g_cli_connected && k_uptime_get() >= g_next_status_audio_deadline_ms) {
+		if (status_audio_push_enabled && cli_connected && k_uptime_get() >= next_status_audio_deadline_ms) {
 			cli_emit_status_audio_push();
-			g_next_status_audio_deadline_ms = k_uptime_get() + g_status_audio_push_period_ms;
+			next_status_audio_deadline_ms = k_uptime_get() + status_audio_push_period_ms;
 		}
 	}
 }

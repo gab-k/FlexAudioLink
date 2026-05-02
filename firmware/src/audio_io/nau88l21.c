@@ -86,7 +86,7 @@ BUILD_ASSERT(NAU88L21_I2S_CODEC_CLOCK_MASTER,
  */
 #define NAU88L21_FLL_MAX_RATE_ADJUST_HZ            800
 
-static const struct device *g_nau88l21_i2c_dev;
+static const struct device *nau88l21_i2c_dev;
 
 static uint32_t nau88l21_compute_fll_frac(int32_t target_rate_hz)
 {
@@ -228,7 +228,7 @@ int nau88l21_init(const struct device *i2c_dev)
 		return -EINVAL;
 	}
 
-	g_nau88l21_i2c_dev = i2c_dev;
+	nau88l21_i2c_dev = i2c_dev;
 
 	ret = nau88l21_write_reg(i2c_dev, NAU88L21_REG_RESET, 0x0001);
 	if (ret < 0) {
@@ -489,7 +489,7 @@ int nau88l21_set_fll_target_rate_hz(int32_t target_rate_hz)
 	uint64_t fdco_check;
 	int ret;
 
-	if (g_nau88l21_i2c_dev == NULL) {
+	if (nau88l21_i2c_dev == NULL) {
 		return -ENODEV;
 	}
 
@@ -515,12 +515,12 @@ int nau88l21_set_fll_target_rate_hz(int32_t target_rate_hz)
 	 * let the FLL servo to the new target through its loop filter.
 	 * No clock-domain switch, no control-register toggling.
 	 */
-	ret = nau88l21_write_reg(g_nau88l21_i2c_dev, NAU88L21_REG_FLL7, frac_high);
+	ret = nau88l21_write_reg(nau88l21_i2c_dev, NAU88L21_REG_FLL7, frac_high);
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = nau88l21_write_reg(g_nau88l21_i2c_dev, NAU88L21_REG_FLL8, frac_low);
+	ret = nau88l21_write_reg(nau88l21_i2c_dev, NAU88L21_REG_FLL8, frac_low);
 	if (ret < 0) {
 		return ret;
 	}
