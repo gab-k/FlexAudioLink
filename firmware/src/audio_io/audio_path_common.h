@@ -52,7 +52,6 @@ enum audio_path_state {
 const char *audio_path_get_state_name(enum audio_path_state state);
 
 enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_t level_bytes);
-uint8_t audio_extract_left_to_mono(const uint8_t *stereo, uint8_t stereo_bytes, uint8_t *mono);
 
 /*
  * Shared adaptive codec clock PI controller.

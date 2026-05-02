@@ -3,6 +3,7 @@
 #include "audio_io/nau88l21.h"
 #include "common/tusb_fifo.h"
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <zephyr/device.h>
@@ -112,6 +113,20 @@ static int audio_i2s_tx_block(tu_fifo_t *tx_fifo)
 	return ret;
 }
 
+static uint8_t extract_left_to_mono(const uint8_t *stereo, uint8_t stereo_samples, uint8_t *mono)
+{
+	if (stereo == NULL || mono == NULL) {
+		return 0U;
+	}
+
+	for (uint8_t i = 0U; i < stereo_samples; ++i) {
+		mono[i * 2U] = stereo[i * 4U];
+		mono[i * 2U + 1U] = stereo[i * 4U + 1U];
+	}
+
+	return stereo_samples * 2U;
+}
+
 static int audio_i2s_rx_block(tu_fifo_t *rx_fifo)
 {
 	int ret;
@@ -128,8 +143,15 @@ static int audio_i2s_rx_block(tu_fifo_t *rx_fifo)
 	__ASSERT_NO_MSG(audio_i2s_tx_pending_bytes >= AUDIO_I2S_BLOCK_BYTES);
 	audio_i2s_tx_pending_bytes -= AUDIO_I2S_BLOCK_BYTES;
 
-	tu_fifo_write_n(rx_fifo, slab_block, AUDIO_I2S_BLOCK_BYTES);
-	
+	if (rx_fifo != NULL) {
+		uint8_t mono_bytes = extract_left_to_mono(slab_block,
+								AUDIO_I2S_STEREO_SAMPLES_PER_BLOCK,
+								slab_block);
+		if (mono_bytes > 0U) {
+			tu_fifo_write_n(rx_fifo, slab_block, mono_bytes);
+		}
+	}
+
 	k_mem_slab_free(&audio_i2s_rx_slab, slab_block);
 
 	return ret;

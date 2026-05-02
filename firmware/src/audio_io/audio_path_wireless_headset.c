@@ -168,24 +168,15 @@ static void headset_thread(void *a, void *b, void *c)
 		/* 2. I2S RX → PFSK TX (if session in service) */
 		if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE) {
 			while (1) {
-				uint8_t stereo[AUDIO_PFSK_MIC_PACKET_BYTES * 2U];
 				struct pfsk_packet packet;
-				uint8_t mono_bytes;
 
-				if (tu_fifo_count(&g_headset_mic_fifo) < sizeof(stereo)) {
+				if (tu_fifo_count(&g_headset_mic_fifo) < AUDIO_PFSK_MIC_PACKET_BYTES) {
 					break;
 				}
 
-				uint16_t read = tu_fifo_read_n(&g_headset_mic_fifo, stereo, sizeof(stereo));
-				if (read < sizeof(stereo)) {
+				uint16_t read = tu_fifo_read_n(&g_headset_mic_fifo, packet.payload, AUDIO_PFSK_MIC_PACKET_BYTES);
+				if (read < AUDIO_PFSK_MIC_PACKET_BYTES) {
 					break;
-				}
-
-				memset(&packet, 0, sizeof(packet));
-				mono_bytes = audio_extract_left_to_mono(stereo, sizeof(stereo), packet.payload);
-				if (mono_bytes != AUDIO_PFSK_MIC_PACKET_BYTES) {
-					g_headset_status.overflow_bytes += sizeof(stereo);
-					continue;
 				}
 
 				packet.length = PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES;

@@ -27,43 +27,10 @@ static struct audio_path_wired_status g_wired_status;
 static bool g_wired_fll_fixed;
 static int32_t g_wired_fll_fixed_rate_hz;
 
-/* Mic FIFO: I2S writes stereo blocks here; the wired thread reads,
- * extracts left-mono, and forwards to USB. */
-#define WIRED_RX_FIFO_SIZE  4096
-static uint8_t g_wired_rx_fifo_buf[WIRED_RX_FIFO_SIZE];
-static tu_fifo_t g_wired_rx_fifo;
-static OSAL_MUTEX_DEF(g_wired_rx_mutex_wr);
-static OSAL_MUTEX_DEF(g_wired_rx_mutex_rd);
-
 static K_THREAD_STACK_DEFINE(g_wired_thread_stack, WIRED_THREAD_STACK_SIZE);
 static struct k_thread g_wired_thread;
 
 static void wired_thread(void *a, void *b, void *c);
-
-static void wired_send_i2s_to_mic_ep(void)
-{
-	while (1) {
-		uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
-		uint8_t mono[AUDIO_I2S_BLOCK_BYTES / 2U];
-		uint8_t mono_bytes;
-		size_t pushed;
-
-		if (tu_fifo_read_n(&g_wired_rx_fifo, stereo, AUDIO_I2S_BLOCK_BYTES) < AUDIO_I2S_BLOCK_BYTES) {
-			break;
-		}
-
-		mono_bytes = audio_extract_left_to_mono(stereo, AUDIO_I2S_BLOCK_BYTES, mono);
-		if (mono_bytes == 0U) {
-			g_wired_status.mic_overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
-			continue;
-		}
-
-		pushed = usb_audio_write_microphone_bytes(mono, mono_bytes);
-		if (pushed < mono_bytes) {
-			g_wired_status.mic_overflow_bytes += mono_bytes - pushed;
-		}
-	}
-}
 
 static void wired_update_codec_clock(uint32_t fifo, uint32_t pending)
 {
@@ -103,11 +70,6 @@ void audio_path_wired_init(void)
 {
 	g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 	g_wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
-
-	tu_fifo_config(&g_wired_rx_fifo, g_wired_rx_fifo_buf, WIRED_RX_FIFO_SIZE, 1);
-	tu_fifo_config_mutex(&g_wired_rx_fifo,
-			     osal_mutex_create(&g_wired_rx_mutex_wr),
-			     osal_mutex_create(&g_wired_rx_mutex_rd));
 
 	k_thread_create(&g_wired_thread, g_wired_thread_stack,
 			K_THREAD_STACK_SIZEOF(g_wired_thread_stack),
@@ -152,6 +114,7 @@ static void wired_thread(void *a, void *b, void *c)
 
 	while (1) {
 		tu_fifo_t *spk_ff = tud_audio_get_ep_out_ff();
+		tu_fifo_t *mic_ff = tud_audio_get_ep_in_ff();
 		uint32_t fifo_bytes = (spk_ff != NULL) ? tu_fifo_count(spk_ff) : 0U;
 		uint32_t pending = audio_i2s_tx_get_pending_bytes();
 		uint32_t level = fifo_bytes + pending;
@@ -164,7 +127,7 @@ static void wired_thread(void *a, void *b, void *c)
 			if (level >= AUDIO_START_BYTES) {
 				g_wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
-				audio_i2s_activate(spk_ff, &g_wired_rx_fifo);
+				audio_i2s_activate(spk_ff, mic_ff);
 			}
 		} else if (pending == 0U && fifo_bytes < AUDIO_I2S_BLOCK_BYTES) {
 			g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
@@ -198,7 +161,6 @@ static void wired_thread(void *a, void *b, void *c)
 			wired_update_codec_clock(fifo_bytes, pending);
 		}
 
-		wired_send_i2s_to_mic_ep();
 		g_wired_status.mic_level_bytes = usb_audio_microphone_level_bytes();
 
 		k_sleep(K_MSEC(WIRED_LOOP_SLEEP_MS));

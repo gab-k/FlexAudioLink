@@ -152,7 +152,7 @@ static void cli_emit_status_audio_push(void)
 			  "spk_fifo_bytes=%u spk_pending_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u spk_underruns=%u "
-			  "mic_level_bytes=%u mic_overruns=%u\n",
+			  "mic_level_bytes=%u\n",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
 			  s.spk_fifo_bytes,
@@ -163,8 +163,7 @@ static void cli_emit_status_audio_push(void)
 			  s.spk_fll_target_rate_hz,
 			  s.spk_fll_fails,
 			  s.spk_underrun_events,
-			  s.mic_level_bytes,
-			  s.mic_overflow_bytes);
+			  s.mic_level_bytes);
 		return;
 	}
 	case APP_PROFILE_PFSK_DONGLE: {

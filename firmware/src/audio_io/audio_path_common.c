@@ -58,28 +58,6 @@ enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_
 	return current;
 }
 
-uint8_t audio_extract_left_to_mono(const uint8_t *stereo, uint8_t stereo_bytes, uint8_t *mono)
-{
-	uint8_t stereo_samples;
-	uint8_t mono_bytes;
-
-	if (stereo == NULL || mono == NULL ||
-	    stereo_bytes < AUDIO_BYTES_PER_STEREO_SAMPLE) {
-		return 0U;
-	}
-
-	stereo_samples = stereo_bytes / AUDIO_BYTES_PER_STEREO_SAMPLE;
-	mono_bytes = stereo_samples * sizeof(int16_t);
-
-	for (uint8_t i = 0U; i < stereo_samples; ++i) {
-		memcpy(mono + (i * sizeof(int16_t)),
-		       stereo + (i * AUDIO_BYTES_PER_STEREO_SAMPLE),
-		       sizeof(int16_t));
-	}
-
-	return mono_bytes;
-}
-
 int32_t audio_codec_clock_controller(uint32_t target,
 				     float *filter, float *i_sum,
 				     float gain_mult, float ki,
