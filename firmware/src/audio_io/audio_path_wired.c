@@ -160,9 +160,7 @@ static void wired_thread(void *a, void *b, void *c)
 		if (!g_wired_fll_fixed && g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
 			wired_update_codec_clock(fifo_bytes, pending);
 		}
-
-		g_wired_status.mic_level_bytes = usb_audio_microphone_level_bytes();
-
+		
 		k_sleep(K_MSEC(WIRED_LOOP_SLEEP_MS));
 	}
 }

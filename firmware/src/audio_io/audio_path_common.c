@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(audio_ctrl, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(audio_path_common, LOG_LEVEL_INF);
 
 const char *audio_path_get_state_name(enum audio_path_state state)
 {

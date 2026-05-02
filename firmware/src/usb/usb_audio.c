@@ -233,44 +233,6 @@ void usb_audio_reset(void)
 	}
 }
 
-size_t usb_audio_write_microphone_bytes(const uint8_t *data, size_t bytes)
-{
-	tu_fifo_t *ep_in_ff;
-	uint16_t space;
-	uint16_t want;
-
-	if (data == NULL || bytes == 0U) {
-		return 0U;
-	}
-
-	ep_in_ff = tud_audio_get_ep_in_ff();
-	if (ep_in_ff == NULL) {
-		return 0U;
-	}
-
-	space = tu_fifo_remaining(ep_in_ff);
-	if (space == 0U) {
-		return 0U;
-	}
-
-	want = (bytes > UINT16_MAX) ? UINT16_MAX : (uint16_t)bytes;
-	if (want > space) {
-		want = space;
-	}
-
-	return tu_fifo_write_n(ep_in_ff, data, want);
-}
-
-uint32_t usb_audio_microphone_level_bytes(void)
-{
-	tu_fifo_t *ep_in_ff = tud_audio_get_ep_in_ff();
-
-	if (ep_in_ff == NULL) {
-		return 0U;
-	}
-
-	return tu_fifo_count(ep_in_ff);
-}
 
 bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *p_request)
 {

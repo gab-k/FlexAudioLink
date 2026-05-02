@@ -18,7 +18,7 @@
 #define HEADSET_SPK_FIFO_SIZE      4096
 #define HEADSET_MIC_FIFO_SIZE      4096
 
-static struct audio_path_wireless_status g_headset_status;
+static struct audio_path_wireless_headset_status g_headset_status;
 static bool g_headset_fll_fixed;
 static int32_t g_headset_fll_fixed_rate_hz;
 
@@ -38,7 +38,7 @@ static void headset_thread(void *a, void *b, void *c);
 
 void audio_path_wireless_headset_init(void)
 {
-	g_headset_status = (struct audio_path_wireless_status){
+	g_headset_status = (struct audio_path_wireless_headset_status){
 		.stream_state = AUDIO_PATH_STATE_BUFFERING,
 		.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ,
 	};
@@ -62,7 +62,7 @@ void audio_path_wireless_headset_init(void)
 			HEADSET_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
-void audio_path_wireless_headset_get_status(struct audio_path_wireless_status *out)
+void audio_path_wireless_headset_get_status(struct audio_path_wireless_headset_status *out)
 {
 	if (out != NULL) {
 		*out = g_headset_status;

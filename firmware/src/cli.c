@@ -4,7 +4,6 @@
 #include "audio_io/i2s.h"
 #include "audio_io/audio_path_common.h"
 #include "audio_io/audio_path_wired.h"
-#include "audio_io/audio_path_wireless.h"
 #include "audio_io/audio_path_wireless_dongle.h"
 #include "audio_io/audio_path_wireless_headset.h"
 #include "audio_io/nau88l21.h"
@@ -167,40 +166,28 @@ static void cli_emit_status_audio_push(void)
 		return;
 	}
 	case APP_PROFILE_PFSK_DONGLE: {
-		struct audio_path_wireless_status s;
+		struct audio_path_wireless_dongle_status s;
 
 		audio_path_wireless_dongle_get_status(&s);
-		cli_print("#A state=%s spk_level_bytes=%u "
-			  "spk_underruns=%u overruns=%u spk_silence_bytes=%u "
-			  "spk_dropped_oldest_bytes=%u spk_usb_level_bytes=%u mic_usb_level_bytes=%u\n",
-			  audio_path_get_state_name(s.stream_state),
-			  s.spk_level_bytes,
-			  s.spk_underrun_bytes,
-			  s.overflow_bytes,
-			  s.spk_silence_inserted_bytes,
-			  s.spk_dropped_oldest_bytes,
-			  s.spk_usb_level_bytes,
-			  s.mic_usb_level_bytes);
+		cli_print("#A overflow_bytes=%u\n",
+			  s.overflow_bytes);
 		return;
 	}
 	case APP_PROFILE_PFSK_HEADSET: {
-		struct audio_path_wireless_status s;
+		struct audio_path_wireless_headset_status s;
 
 		audio_path_wireless_headset_get_status(&s);
 		cli_print("#A state=%s spk_level_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_p_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u "
-			  "spk_underruns=%u overruns=%u spk_silence_bytes=%u "
-			  "spk_dropped_oldest_bytes=%u\n",
+			  "overruns=%u spk_dropped_oldest_bytes=%u\n",
 			  audio_path_get_state_name(s.stream_state),
 			  s.spk_level_bytes,
 			  s.spk_filtered_level_bytes,
 			  s.spk_p_adjust_hz,
 			  s.spk_fll_target_rate_hz,
 			  s.spk_fll_fails,
-			  s.spk_underrun_bytes,
 			  s.overflow_bytes,
-			  s.spk_silence_inserted_bytes,
 			  s.spk_dropped_oldest_bytes);
 		return;
 	}
