@@ -1,11 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-
 #include <zephyr/sys/util.h>
-
-#include "tusb.h"
-
 #include "prop_fsk/radio_core.h"
 
 #define AUDIO_BYTES_PER_STEREO_SAMPLE      4U
@@ -24,12 +20,6 @@ BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES) <=
 	     PFSK_PACKET_MAX_LEN,
 	     "mic PFSK frame length must fit packet");
 
-/* Start threshold kept equal to target so BUFFERING->PLAYING fires exactly at
- * the nominal operating level. Both defines retained for future tuning. */
-#define AUDIO_START_BYTES                  480U
-#define AUDIO_TARGET_BYTES                 480U
-#define AUDIO_PANIC_LOW_BYTES              192U
-
 #define AUDIO_FILTER_ALPHA_NUM             1
 #define AUDIO_FILTER_ALPHA_DEN             5
 #define AUDIO_P_GAIN                       (1.25f)
@@ -38,8 +28,9 @@ BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES) <=
 #define AUDIO_P_KI                         (0.005f)
 #define AUDIO_I_MAX_HZ                     400
 
-/* Uncomment to enable controller debug log every ~1 second. */
 #define AUDIO_CTRL_DEBUG_LOG
+#define WARN_SPK_LVL
+#define WARN_COOLDOWN_MS	2000
 
 /* Shared FLL update throttling parameters. */
 #define AUDIO_FLL_UPDATE_INTERVAL_MS       100
@@ -50,8 +41,6 @@ enum audio_path_state {
 };
 
 const char *audio_path_get_state_name(enum audio_path_state state);
-
-enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_t level_bytes);
 
 /*
  * Shared adaptive codec clock PI controller.
@@ -71,3 +60,5 @@ int32_t audio_codec_clock_controller(uint32_t target,
 				     float *filter, float *i_sum,
 				     float gain_mult, float ki,
 				     uint32_t fifo, uint32_t pending);
+
+void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);

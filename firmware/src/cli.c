@@ -6,7 +6,6 @@
 #include "audio_io/audio_path_wired.h"
 #include "audio_io/audio_path_wireless_dongle.h"
 #include "audio_io/audio_path_wireless_headset.h"
-#include "audio_io/nau88l21.h"
 #include "prop_fsk/session.h"
 #include "prop_fsk/test_mode.h"
 
@@ -21,7 +20,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 
-#include "tusb.h"
 
 #define APP_FW_VERSION "0.1.0-nrf54" // TODO: auto-generate from git tag/commit
 #define CLI_QUEUE_DEPTH 4
@@ -147,22 +145,17 @@ static void cli_emit_status_audio_push(void)
 		struct audio_path_wired_status s;
 
 		audio_path_wired_get_status(&s);
-		cli_print("#A state=%s spk_level_bytes=%u "
-			  "spk_fifo_bytes=%u spk_pending_bytes=%u "
+		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
-			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u spk_underruns=%u "
-			  "mic_level_bytes=%u\n",
+			  "spk_fll_target_rate_hz=%d spk_underruns=%u\n",
 			  audio_path_get_state_name(s.stream_state),
-			  s.spk_level_bytes,
 			  s.spk_fifo_bytes,
 			  s.spk_pending_bytes,
 			  s.spk_filtered_level_bytes,
 			  s.spk_error_bytes,
 			  s.spk_p_adjust_hz,
 			  s.spk_fll_target_rate_hz,
-			  s.spk_fll_fails,
-			  s.spk_underrun_events,
-			  s.mic_level_bytes);
+			  s.spk_underrun_events);
 		return;
 	}
 	case APP_PROFILE_PFSK_DONGLE: {
@@ -177,18 +170,17 @@ static void cli_emit_status_audio_push(void)
 		struct audio_path_wireless_headset_status s;
 
 		audio_path_wireless_headset_get_status(&s);
-		cli_print("#A state=%s spk_level_bytes=%u "
-			  "spk_filtered_level_bytes=%u spk_p_adjust_hz=%d "
-			  "spk_fll_target_rate_hz=%d spk_fll_fails=%u "
-			  "overruns=%u spk_dropped_oldest_bytes=%u\n",
+		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
+			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
+			  "spk_fll_target_rate_hz=%d spk_underruns=%u\n",
 			  audio_path_get_state_name(s.stream_state),
-			  s.spk_level_bytes,
+			  s.spk_fifo_bytes,
+			  s.spk_pending_bytes,
 			  s.spk_filtered_level_bytes,
+			  s.spk_error_bytes,
 			  s.spk_p_adjust_hz,
 			  s.spk_fll_target_rate_hz,
-			  s.spk_fll_fails,
-			  s.overflow_bytes,
-			  s.spk_dropped_oldest_bytes);
+			  s.spk_underrun_events);
 		return;
 	}
 	default:

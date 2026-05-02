@@ -1,9 +1,9 @@
 #include "audio_io/audio_path_common.h"
 
-#include <string.h>
+#include <stdint.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(audio_path_common, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(audio_path_cmn, LOG_LEVEL_INF);
 
 const char *audio_path_get_state_name(enum audio_path_state state)
 {
@@ -45,17 +45,24 @@ static int32_t audio_p_controller_step(int32_t error_bytes)
 	return error_bytes;
 }
 
-enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_t level_bytes)
+void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high)
 {
-	if (current == AUDIO_PATH_STATE_BUFFERING) {
-		if (level_bytes >= AUDIO_START_BYTES) {
-			return AUDIO_PATH_STATE_PLAYING;
-		}
-	} else if (level_bytes == 0U) {
-		return AUDIO_PATH_STATE_BUFFERING;
-	}
+	static uint32_t last_low_warn_ms;
+	static uint32_t last_high_warn_ms;
 
-	return current;
+	if (level <= warn_low) {
+		uint32_t now = k_uptime_get();
+		if (now - last_low_warn_ms >= WARN_COOLDOWN_MS) {
+			LOG_WRN("speaker level LOW %u B (fifo=%u pending=%u)", level, fifo_bytes, pending_bytes);
+			last_low_warn_ms = now;
+		}
+	} else if (level >= warn_high) {
+		uint32_t now = k_uptime_get();
+		if (now - last_high_warn_ms >= WARN_COOLDOWN_MS) {
+			LOG_WRN("speaker level HIGH %u B (fifo=%u pending=%u)", level, fifo_bytes, pending_bytes);
+			last_high_warn_ms = now;
+		}
+	}
 }
 
 int32_t audio_codec_clock_controller(uint32_t target,

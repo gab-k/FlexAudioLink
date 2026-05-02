@@ -6,16 +6,13 @@
 
 struct audio_path_wired_status {
 	enum audio_path_state stream_state;
-	uint32_t spk_level_bytes;
 	uint32_t spk_fifo_bytes;
 	uint32_t spk_pending_bytes;
 	uint32_t spk_filtered_level_bytes;
 	int32_t spk_error_bytes;
 	int32_t spk_p_adjust_hz;
 	int32_t spk_fll_target_rate_hz;
-	uint32_t spk_fll_fails;
 	uint32_t spk_underrun_events;
-	uint32_t mic_level_bytes;
 };
 
 void audio_path_wired_init(void);

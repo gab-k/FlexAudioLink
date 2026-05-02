@@ -6,14 +6,13 @@
 
 struct audio_path_wireless_headset_status {
 	enum audio_path_state stream_state;
-	uint32_t spk_level_bytes;
+	uint32_t spk_fifo_bytes;
+	uint32_t spk_pending_bytes;
 	uint32_t spk_filtered_level_bytes;
-	uint32_t overflow_bytes;
-	uint32_t spk_dropped_oldest_bytes;
-	uint32_t mic_usb_level_bytes;
+	int32_t spk_error_bytes;
 	int32_t spk_p_adjust_hz;
 	int32_t spk_fll_target_rate_hz;
-	uint32_t spk_fll_fails;
+	uint32_t spk_underrun_events;
 };
 
 void audio_path_wireless_headset_init(void);

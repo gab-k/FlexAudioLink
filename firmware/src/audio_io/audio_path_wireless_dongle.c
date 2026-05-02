@@ -1,15 +1,11 @@
 #include "audio_io/audio_path_wireless_dongle.h"
 
 #include <string.h>
-
 #include <zephyr/kernel.h>
-
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(audio_path_pfsk_dongle, LOG_LEVEL_INF);
 #include "tusb.h"
-
 #include "prop_fsk/session.h"
-#include "usb/usb_audio.h"
-#include "zephyr/logging/log.h"
-LOG_MODULE_REGISTER(audio_path_wireless_dongle, LOG_LEVEL_INF);
 
 #define DONGLE_THREAD_STACK_SIZE  3072
 #define DONGLE_THREAD_PRIORITY    6
@@ -43,7 +39,12 @@ static void dongle_thread(void *a, void *b, void *c)
 	ARG_UNUSED(b);
 	ARG_UNUSED(c);
 
-	while (tud_audio_get_ep_out_ff() == NULL || tud_audio_get_ep_in_ff() == NULL) {
+	tu_fifo_t *ep_out_ff = NULL;
+	tu_fifo_t *ep_in_ff = NULL;
+
+	while (ep_out_ff == NULL || ep_in_ff == NULL) {
+		ep_out_ff = tud_audio_get_ep_out_ff();
+		ep_in_ff = tud_audio_get_ep_in_ff();
 		k_sleep(K_MSEC(DONGLE_LOOP_SLEEP_MS));
 	}
 
@@ -53,7 +54,7 @@ static void dongle_thread(void *a, void *b, void *c)
 			struct pfsk_packet packet;
 			uint8_t payload_bytes;
 
-			uint16_t ep_in_remaining = tu_fifo_remaining(tud_audio_get_ep_in_ff());
+			uint16_t ep_in_remaining = tu_fifo_remaining(ep_in_ff);
 			if(ep_in_remaining < AUDIO_PFSK_MIC_PACKET_BYTES) {
 				break;
 			}
@@ -68,7 +69,7 @@ static void dongle_thread(void *a, void *b, void *c)
 				break;
 			}
 
-			uint16_t written = tu_fifo_write_n(tud_audio_get_ep_in_ff(), packet.payload, payload_bytes);
+			uint16_t written = tu_fifo_write_n(ep_in_ff, packet.payload, payload_bytes);
 			if (written != payload_bytes) {
 				LOG_ERR("Invalid bytes written to USB EP IN FIFO! Expected %d bytes, wrote %d bytes", payload_bytes, written);
 				break;
@@ -80,13 +81,13 @@ static void dongle_thread(void *a, void *b, void *c)
 			struct pfsk_packet packet;
 			uint32_t payload_bytes;
 
-			uint16_t ep_out_count = tu_fifo_count(tud_audio_get_ep_out_ff());
+			uint16_t ep_out_count = tu_fifo_count(ep_out_ff);
 			if(ep_out_count < AUDIO_PFSK_SPK_PACKET_BYTES) {
 				break;
 			}
 			
 			memset(&packet, 0, sizeof(packet));
-			payload_bytes = tu_fifo_read_n(tud_audio_get_ep_out_ff(), packet.payload, AUDIO_PFSK_SPK_PACKET_BYTES);
+			payload_bytes = tu_fifo_read_n(ep_out_ff, packet.payload, AUDIO_PFSK_SPK_PACKET_BYTES);
 
 			if (payload_bytes != AUDIO_PFSK_SPK_PACKET_BYTES) {
 				LOG_ERR("Invalid payload size from USB EP OUT! Expected %d bytes, got %d bytes", AUDIO_PFSK_SPK_PACKET_BYTES, payload_bytes);
