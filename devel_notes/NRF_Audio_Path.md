@@ -78,7 +78,8 @@ From `audio_path_common.h` and `i2s.h`:
 - `AUDIO_BYTES_PER_STEREO_SAMPLE = 4`
 - `AUDIO_I2S_BYTES_PER_MS = 192` (48 kHz, 16-bit stereo)
 - `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / 2 = 96` (0.5 ms stereo)
-- `AUDIO_STEP_BYTES = 192` (1 ms stereo)
+- `AUDIO_PFSK_SPK_PACKET_BYTES = 192` (1 ms stereo speaker payload)
+- `AUDIO_PFSK_MIC_PACKET_BYTES = 96` (1 ms mono mic payload)
 - `AUDIO_DMA_MAX_BYTES = 384`
 
 Watermarks:
@@ -122,6 +123,7 @@ Stereo-to-mono extraction (`audio_extract_left_to_mono`):
 
 - capture uses left channel only
 - one `AUDIO_I2S_BLOCK_BYTES` stereo block (`96` bytes) -> `48` mono bytes
+- two `AUDIO_I2S_BLOCK_BYTES` stereo blocks (`192` bytes) -> one `AUDIO_PFSK_MIC_PACKET_BYTES` mono wireless mic packet
 
 ## Wired Path (`audio_path_wired.c`)
 
@@ -171,15 +173,16 @@ Local ring:
 - TinyUSB FIFO configured in overwrite mode
 - `audio_ring_push()` returns evicted-oldest bytes for accounting
 
-PFSK audio payload map (inside `pfsk_frame.payload`):
+PFSK audio payload map:
 
-- bytes `0..1`: `peer_meta`, little-endian uint16
-- bytes `2..`: audio payload (length = `frame.len - 2`)
+- session queues `pfsk_packet` directly
+- `pfsk_packet.length` is metadata plus payload bytes
+- `pfsk_packet.payload` contains only the audio bytes after the 2-byte PFSK metadata
+- audio producers add `PFSK_PACKET_METADATA_LEN` when enqueueing frames
+- audio consumers subtract `PFSK_PACKET_METADATA_LEN` after dequeueing frames
 
 Direction is implicit from the device role; there is no stream id byte.
-Audio byte count is not duplicated in the audio header — the session layer
-already carries the total payload length. A frame shorter than the 2-byte
-header is dropped and counted in `rx_malformed_frames`.
+Audio byte count is not duplicated in the audio payload.
 
 `peer_meta` layout is direction-dependent:
 
@@ -203,7 +206,7 @@ so the receiver uses the value directly with no further smoothing.
 
 - ingest USB speaker bytes (up to `AUDIO_DMA_MAX_BYTES=384` per pull) into ring
 - parse received capture frames, push audio to USB mic FIFO, latch peer ring level from `peer_meta`
-- once `PLAYING`, send playback from ring to PFSK in `AUDIO_STEP_BYTES=96` chunks; outbound `peer_meta` is zero (reserved)
+- once `PLAYING`, send playback from ring to PFSK in `AUDIO_PFSK_SPK_PACKET_BYTES` chunks; outbound `peer_meta` is zero (reserved)
 - update USB feedback from the latched peer (headset) ring level
 
 ### Headset role behavior

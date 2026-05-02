@@ -41,10 +41,10 @@ static struct pfsk_session_runtime g_session = {
 	.mutex_lock = Z_MUTEX_INITIALIZER(g_session.mutex_lock),
 };
 
-static bool pfsk_session_copy_to_radio_ring(void);
+static bool pfsk_session_copy_to_radio_rb(void);
 
-K_MSGQ_DEFINE(g_pfsk_tx_queue, sizeof(struct pfsk_frame),PFSK_SESSION_QUEUE_DEPTH, 4);
-K_MSGQ_DEFINE(g_pfsk_rx_queue, sizeof(struct pfsk_frame),PFSK_SESSION_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(g_pfsk_tx_queue, sizeof(struct pfsk_packet), PFSK_SESSION_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(g_pfsk_rx_queue, sizeof(struct pfsk_packet), PFSK_SESSION_QUEUE_DEPTH, 4);
 
 static K_THREAD_STACK_DEFINE(g_pfsk_session_thread_stack, PFSK_SESSION_THREAD_STACK_SIZE);
 static struct k_thread g_pfsk_session_thread;
@@ -101,7 +101,7 @@ static bool pfsk_session_abort_enable(void)
 static bool pfsk_session_start_radio(void)
 {
 	pfsk_radio_start();
-	while (pfsk_session_copy_to_radio_ring()) {
+	while (pfsk_session_copy_to_radio_rb()) {
 	}
 
 	return true;
@@ -174,29 +174,10 @@ static void pfsk_session_record_in_service_rx(uint16_t seq)
 	g_session.have_last_rx_seq = true;
 }
 
-static void pfsk_session_queue_rx_frame(const struct pfsk_packet *packet, int16_t rssi_dbm)
+static bool pfsk_session_packet_len_is_valid(uint8_t packet_len)
 {
-	struct pfsk_frame frame;
-	size_t payload_len;
-
-	if (packet == NULL) {
-		__ASSERT_NO_MSG(0);
-		return;
-	}
-
-	if (packet->length < PFSK_PACKET_METADATA_LEN ||
-	    (packet->length - PFSK_PACKET_METADATA_LEN) > PFSK_PAYLOAD_MAX_LEN) {
-		return;
-	}
-
-	payload_len = packet->length - PFSK_PACKET_METADATA_LEN;
-	frame = (struct pfsk_frame){
-		.seq = packet->seq,
-		.len = payload_len,
-		.rssi_dbm = rssi_dbm,
-	};
-	memcpy(frame.payload, packet->data, payload_len);
-	(void)k_msgq_put(&g_pfsk_rx_queue, &frame, K_NO_WAIT);
+	return packet_len > PFSK_PACKET_METADATA_LEN &&
+	       packet_len <= PFSK_PACKET_MAX_LEN;
 }
 
 static bool pfsk_session_is_keepalive_packet(const struct pfsk_packet *packet)
@@ -209,24 +190,31 @@ static bool pfsk_session_is_keepalive_packet(const struct pfsk_packet *packet)
 	return packet->length == PFSK_KEEPALIVE_LEN && packet->seq == PFSK_KEEPALIVE_SEQ;
 }
 
-static bool pfsk_session_copy_to_radio_ring(void)
+static bool pfsk_session_copy_to_radio_rb(void)
 {
-	struct pfsk_packet *packet;
-	struct pfsk_frame frame;
+	struct pfsk_packet *radio_packet;
+	struct pfsk_packet queued_packet;
+	uint8_t payload_bytes;
 
-	packet = pfsk_radio_tx_get_wr_ptr();
-	if (packet == NULL) {
+	radio_packet = pfsk_radio_tx_get_wr_ptr();
+	if (radio_packet == NULL) {
 		return false;
 	}
 
-	if (k_msgq_get(&g_pfsk_tx_queue, &frame, K_NO_WAIT) != 0) {
+	if (k_msgq_get(&g_pfsk_tx_queue, &queued_packet, K_NO_WAIT) != 0) {
 		return false;
 	}
 
-	memset(packet, 0, sizeof(*packet));
-	packet->length = PFSK_PACKET_METADATA_LEN + frame.len;
-	packet->seq = g_session.next_tx_seq;
-	memcpy(packet->data, frame.payload, frame.len);
+	if (!pfsk_session_packet_len_is_valid(queued_packet.length)) {
+		LOG_ERR("copy_to_radio_rb packet length is invalid!");
+		return false;
+	}
+
+	payload_bytes = queued_packet.length - PFSK_PACKET_METADATA_LEN;
+	memset(radio_packet, 0, sizeof(*radio_packet));
+	radio_packet->length = queued_packet.length;
+	radio_packet->seq = g_session.next_tx_seq;
+	memcpy(radio_packet->payload, queued_packet.payload, payload_bytes);
 
 	pfsk_radio_tx_advance_wr_idx();
 	g_session.next_tx_seq = pfsk_session_next_payload_seq(g_session.next_tx_seq);
@@ -250,9 +238,8 @@ static void pfsk_session_handle_rx_ok(const struct pfsk_radio_event *event)
 	}
 
 	is_keepalive = pfsk_session_is_keepalive_packet(packet);
-	if (packet->length < PFSK_PACKET_METADATA_LEN ||
-	    (packet->length - PFSK_PACKET_METADATA_LEN) > PFSK_PAYLOAD_MAX_LEN ||
-	    (!is_keepalive && packet->length == PFSK_PACKET_METADATA_LEN)) {
+	if (!pfsk_session_packet_len_is_valid(packet->length)) {
+		LOG_ERR("rx_handle_ok packet length is invalid!");
 		pfsk_radio_rx_advance_rd_idx();
 		return;
 	}
@@ -261,7 +248,7 @@ static void pfsk_session_handle_rx_ok(const struct pfsk_radio_event *event)
 	pfsk_session_enter_in_service();
 
 	if (!is_keepalive) {
-		pfsk_session_queue_rx_frame(packet, event->rssi_dbm);
+		(void)k_msgq_put(&g_pfsk_rx_queue, packet, K_NO_WAIT);
 		pfsk_session_record_in_service_rx(packet->seq);
 	}
 
@@ -286,7 +273,7 @@ static void pfsk_session_handle_tx_end(const struct pfsk_radio_event *event)
 		return;
 	}
 
-	while (pfsk_session_copy_to_radio_ring()) {
+	while (pfsk_session_copy_to_radio_rb()) {
 	}
 }
 
@@ -387,22 +374,29 @@ void pfsk_session_get_report(struct pfsk_session_report *report)
 	};
 }
 
-bool pfsk_session_tx_enqueue(const struct pfsk_frame *frame, k_timeout_t timeout)
+bool pfsk_session_tx_enqueue(const struct pfsk_packet *packet, k_timeout_t timeout)
 {
-	if (frame == NULL || frame->len == 0U || frame->len > PFSK_PAYLOAD_MAX_LEN) {
+	if (packet == NULL) {
+		LOG_ERR("tx_enqueue packet pointer is NULL!");
 		return false;
 	}
 
-	return k_msgq_put(&g_pfsk_tx_queue, frame, timeout) == 0;
+	if (!pfsk_session_packet_len_is_valid(packet->length)) {
+		LOG_ERR("tx_enqueue packet length is invalid!");
+		return false;
+	}
+
+	return k_msgq_put(&g_pfsk_tx_queue, packet, timeout) == 0;
 }
 
-bool pfsk_session_rx_dequeue(struct pfsk_frame *frame, k_timeout_t timeout)
+bool pfsk_session_rx_dequeue(struct pfsk_packet *packet, k_timeout_t timeout)
 {
-	if (frame == NULL) {
+	if (packet == NULL) {
+		LOG_ERR("rx_dequeue packet pointer is NULL!");
 		return false;
 	}
 
-	return k_msgq_get(&g_pfsk_rx_queue, frame, timeout) == 0;
+	return k_msgq_get(&g_pfsk_rx_queue, packet, timeout) == 0;
 }
 
 static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)

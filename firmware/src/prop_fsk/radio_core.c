@@ -38,10 +38,11 @@ BUILD_ASSERT(PFSK_RADIO_RX_RING_DEPTH > 1U, "RX ring must leave one slot unused"
 BUILD_ASSERT(PFSK_RADIO_TX_RING_DEPTH <= UINT8_MAX, "TX ring indices are uint8_t");
 BUILD_ASSERT(PFSK_RADIO_RX_RING_DEPTH <= UINT8_MAX, "RX ring indices are uint8_t");
 BUILD_ASSERT(PFSK_KEEPALIVE_PAYLOAD_LEN <= PFSK_PAYLOAD_MAX_LEN, "keepalive doesn't fit packet");
+BUILD_ASSERT(PFSK_PACKET_MAX_LEN <= UINT8_MAX, "packet length must fit LFLEN");
 BUILD_ASSERT(PFSK_KEEPALIVE_LEN <= UINT8_MAX, "keepalive length must fit LFLEN");
 BUILD_ASSERT(offsetof(struct pfsk_packet, seq) == 1U, "seq must follow length byte");
-BUILD_ASSERT(offsetof(struct pfsk_packet, data) == 1U + PFSK_PACKET_METADATA_LEN,
-	     "data offset inconsistent with METADATA_LEN");
+BUILD_ASSERT(offsetof(struct pfsk_packet, payload) == 1U + PFSK_PACKET_METADATA_LEN,
+	     "payload offset inconsistent with METADATA_LEN");
 
 static struct pfsk_packet g_tx_ring[PFSK_RADIO_TX_RING_DEPTH];
 static struct pfsk_packet g_rx_ring[PFSK_RADIO_RX_RING_DEPTH];

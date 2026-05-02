@@ -1,5 +1,6 @@
 #include "audio_io/audio_path_wireless_headset.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include <zephyr/kernel.h>
@@ -130,55 +131,68 @@ static void headset_thread(void *a, void *b, void *c)
 	ARG_UNUSED(c);
 
 	while (1) {
+		if (pfsk_test_mode_is_running()) {
+			if (g_headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+				audio_i2s_deactivate();
+			}
+			g_headset_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+			g_headset_status.spk_level_bytes = 0U;
+			g_headset_status.mic_usb_level_bytes = 0U;
+			k_sleep(K_MSEC(HEADSET_LOOP_SLEEP_MS));
+			continue;
+		}
+
 		/* 1. PFSK RX → speaker FIFO */
 		while (1) {
-			struct pfsk_frame frame;
+			struct pfsk_packet packet;
+			uint8_t payload_bytes;
 
-			if (!pfsk_session_rx_dequeue(&frame, K_NO_WAIT)) {
+			if (!pfsk_session_rx_dequeue(&packet, K_NO_WAIT)) {
 				break;
 			}
 
-			if (frame.len < AUDIO_I2S_BLOCK_BYTES) {
-				g_headset_status.spk_silence_inserted_bytes += AUDIO_I2S_BLOCK_BYTES - frame.len;
+			payload_bytes = packet.length - PFSK_PACKET_METADATA_LEN;
+			if (payload_bytes != AUDIO_PFSK_SPK_PACKET_BYTES) {
+				g_headset_status.overflow_bytes += packet.length;
 				continue;
 			}
 
 			uint16_t remaining = tu_fifo_remaining(&g_headset_spk_fifo);
-			if (remaining < AUDIO_I2S_BLOCK_BYTES) {
-				g_headset_status.spk_dropped_oldest_bytes +=
-					AUDIO_I2S_BLOCK_BYTES - remaining;
+			if (remaining < payload_bytes) {
+				g_headset_status.spk_dropped_oldest_bytes += payload_bytes - remaining;
 			}
 
-			(void)tu_fifo_write_n(&g_headset_spk_fifo, frame.payload, AUDIO_I2S_BLOCK_BYTES);
+			(void)tu_fifo_write_n(&g_headset_spk_fifo, packet.payload, payload_bytes);
 		}
 
 		/* 2. I2S RX → PFSK TX (if session in service) */
 		if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE) {
 			while (1) {
-				uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
-				struct pfsk_frame frame;
-				size_t mono_bytes;
+				uint8_t stereo[AUDIO_PFSK_MIC_PACKET_BYTES * 2U];
+				struct pfsk_packet packet;
+				uint8_t mono_bytes;
 
-				if (tu_fifo_read_n(&g_headset_mic_fifo, stereo, AUDIO_I2S_BLOCK_BYTES) < AUDIO_I2S_BLOCK_BYTES) {
+				if (tu_fifo_count(&g_headset_mic_fifo) < sizeof(stereo)) {
 					break;
 				}
 
-				memset(&frame, 0, sizeof(frame));
-				mono_bytes = audio_extract_left_to_mono(
-					stereo,
-					AUDIO_I2S_BLOCK_BYTES,
-					frame.payload,
-					PFSK_PAYLOAD_MAX_LEN);
-				if (mono_bytes == 0U) {
-					g_headset_status.overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
+				uint16_t read = tu_fifo_read_n(&g_headset_mic_fifo, stereo, sizeof(stereo));
+				if (read < sizeof(stereo)) {
+					break;
+				}
+
+				memset(&packet, 0, sizeof(packet));
+				mono_bytes = audio_extract_left_to_mono(stereo, sizeof(stereo), packet.payload);
+				if (mono_bytes != AUDIO_PFSK_MIC_PACKET_BYTES) {
+					g_headset_status.overflow_bytes += sizeof(stereo);
 					continue;
 				}
 
-				frame.len = mono_bytes;
+				packet.length = PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES;
 
-				if (!pfsk_session_tx_enqueue(&frame, K_NO_WAIT)) {
+				if (!pfsk_session_tx_enqueue(&packet, K_NO_WAIT)) {
 					if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE) {
-						g_headset_status.overflow_bytes += mono_bytes;
+						g_headset_status.overflow_bytes += AUDIO_PFSK_MIC_PACKET_BYTES;
 					}
 				}
 			}

@@ -52,18 +52,23 @@ static void dongle_thread(void *a, void *b, void *c)
 		} else {
 			/* 1. PFSK RX → USB mic EP IN */
 			while (1) {
-				struct pfsk_frame frame;
+				struct pfsk_packet packet;
+				uint8_t payload_bytes;
 				size_t pushed;
 
-				if (!pfsk_session_rx_dequeue(&frame, K_NO_WAIT)) {
+				if (!pfsk_session_rx_dequeue(&packet, K_NO_WAIT)) {
 					break;
 				}
 
-				pushed = usb_audio_write_microphone_bytes(
-					frame.payload, frame.len);
-				if (pushed < frame.len) {
-					g_dongle_status.overflow_bytes +=
-						frame.len - pushed;
+				payload_bytes = packet.length - PFSK_PACKET_METADATA_LEN;
+				if (payload_bytes != AUDIO_PFSK_MIC_PACKET_BYTES) {
+					g_dongle_status.overflow_bytes += packet.length;
+					continue;
+				}
+
+				pushed = usb_audio_write_microphone_bytes(packet.payload, payload_bytes);
+				if (pushed < payload_bytes) {
+					g_dongle_status.overflow_bytes += payload_bytes - pushed;
 				}
 			}
 
@@ -85,20 +90,20 @@ static void dongle_thread(void *a, void *b, void *c)
 				tu_fifo_t *usb_ff = tud_audio_get_ep_out_ff();
 
 				if (pfsk_session_get_state() == PFSK_SESSION_STATE_IN_SERVICE && usb_ff != NULL) {
-					while (tu_fifo_count(usb_ff) >= AUDIO_STEP_BYTES) {
-						struct pfsk_frame frame;
+					while (tu_fifo_count(usb_ff) >= AUDIO_PFSK_SPK_PACKET_BYTES) {
+						struct pfsk_packet packet;
 						uint32_t got;
 
-						memset(&frame, 0, sizeof(frame));
-						got = tu_fifo_read_n( usb_ff, frame.payload, AUDIO_STEP_BYTES);
+						memset(&packet, 0, sizeof(packet));
+						got = tu_fifo_read_n(usb_ff, packet.payload, AUDIO_PFSK_SPK_PACKET_BYTES);
 
-						if (got != AUDIO_STEP_BYTES) {
+						if (got != AUDIO_PFSK_SPK_PACKET_BYTES) {
 							break;
 						}
 
-						frame.len = got;
+						packet.length = PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_SPK_PACKET_BYTES;
 
-						if (!pfsk_session_tx_enqueue(&frame, K_NO_WAIT)) {
+						if (!pfsk_session_tx_enqueue(&packet, K_NO_WAIT)) {
 							g_dongle_status.overflow_bytes += got;
 							break;
 						}

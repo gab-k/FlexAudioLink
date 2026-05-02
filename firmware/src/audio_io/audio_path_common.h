@@ -1,12 +1,28 @@
 #pragma once
 
-#include <stddef.h>
 #include <stdint.h>
+
+#include <zephyr/sys/util.h>
 
 #include "tusb.h"
 
+#include "prop_fsk/radio_core.h"
+
 #define AUDIO_BYTES_PER_STEREO_SAMPLE      4U
-#define AUDIO_STEP_BYTES                   192U
+/* Audio bytes stored in pfsk_packet.payload. pfsk_packet.length adds PFSK metadata. */
+#define AUDIO_PFSK_SPK_PACKET_BYTES        192U
+#define AUDIO_PFSK_MIC_PACKET_BYTES        96U
+
+BUILD_ASSERT(AUDIO_PFSK_SPK_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
+	     "speaker PFSK packet must fit payload");
+BUILD_ASSERT(AUDIO_PFSK_MIC_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
+	     "mic PFSK packet must fit payload");
+BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_SPK_PACKET_BYTES) <=
+	     PFSK_PACKET_MAX_LEN,
+	     "speaker PFSK frame length must fit packet");
+BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES) <=
+	     PFSK_PACKET_MAX_LEN,
+	     "mic PFSK frame length must fit packet");
 
 /* Start threshold kept equal to target so BUFFERING->PLAYING fires exactly at
  * the nominal operating level. Both defines retained for future tuning. */
@@ -36,7 +52,7 @@ enum audio_path_state {
 const char *audio_path_get_state_name(enum audio_path_state state);
 
 enum audio_path_state audio_state_advance(enum audio_path_state current, uint32_t level_bytes);
-size_t audio_extract_left_to_mono(const uint8_t *stereo, size_t stereo_bytes, uint8_t *mono, size_t mono_max_bytes);
+uint8_t audio_extract_left_to_mono(const uint8_t *stereo, uint8_t stereo_bytes, uint8_t *mono);
 
 /*
  * Shared adaptive codec clock PI controller.

@@ -19,6 +19,7 @@
 /* Packet layout */
 #define PFSK_PAYLOAD_MAX_LEN           252
 #define PFSK_PACKET_METADATA_LEN       2U   /* seq(2) */
+#define PFSK_PACKET_MAX_LEN            (PFSK_PACKET_METADATA_LEN + PFSK_PAYLOAD_MAX_LEN)
 
 #define PFSK_KEEPALIVE_PAYLOAD_LEN     16U
 #define PFSK_KEEPALIVE_SEQ             UINT16_MAX
@@ -66,7 +67,7 @@
 struct pfsk_packet {
 	uint8_t  length;
 	uint16_t seq;
-	uint8_t  data[PFSK_PAYLOAD_MAX_LEN];
+	uint8_t  payload[PFSK_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 
 enum pfsk_radio_event_type {

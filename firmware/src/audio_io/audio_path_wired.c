@@ -45,14 +45,14 @@ static void wired_send_i2s_to_mic_ep(void)
 	while (1) {
 		uint8_t stereo[AUDIO_I2S_BLOCK_BYTES];
 		uint8_t mono[AUDIO_I2S_BLOCK_BYTES / 2U];
-		size_t mono_bytes;
+		uint8_t mono_bytes;
 		size_t pushed;
 
 		if (tu_fifo_read_n(&g_wired_rx_fifo, stereo, AUDIO_I2S_BLOCK_BYTES) < AUDIO_I2S_BLOCK_BYTES) {
 			break;
 		}
 
-		mono_bytes = audio_extract_left_to_mono(stereo, AUDIO_I2S_BLOCK_BYTES, mono, sizeof(mono));
+		mono_bytes = audio_extract_left_to_mono(stereo, AUDIO_I2S_BLOCK_BYTES, mono);
 		if (mono_bytes == 0U) {
 			g_wired_status.mic_overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
 			continue;
