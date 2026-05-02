@@ -48,14 +48,11 @@ static void wired_send_i2s_to_mic_ep(void)
 		size_t mono_bytes;
 		size_t pushed;
 
-		if (tu_fifo_read_n(&g_wired_rx_fifo, stereo,
-				   AUDIO_I2S_BLOCK_BYTES) <
-		    AUDIO_I2S_BLOCK_BYTES) {
+		if (tu_fifo_read_n(&g_wired_rx_fifo, stereo, AUDIO_I2S_BLOCK_BYTES) < AUDIO_I2S_BLOCK_BYTES) {
 			break;
 		}
 
-		mono_bytes = audio_extract_left_to_mono(stereo,
-			AUDIO_I2S_BLOCK_BYTES, mono, sizeof(mono));
+		mono_bytes = audio_extract_left_to_mono(stereo, AUDIO_I2S_BLOCK_BYTES, mono, sizeof(mono));
 		if (mono_bytes == 0U) {
 			g_wired_status.mic_overflow_bytes += AUDIO_I2S_BLOCK_BYTES;
 			continue;
@@ -107,8 +104,7 @@ void audio_path_wired_init(void)
 	g_wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
 	g_wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
 
-	tu_fifo_config(&g_wired_rx_fifo, g_wired_rx_fifo_buf,
-		       WIRED_RX_FIFO_SIZE, 1);
+	tu_fifo_config(&g_wired_rx_fifo, g_wired_rx_fifo_buf, WIRED_RX_FIFO_SIZE, 1);
 	tu_fifo_config_mutex(&g_wired_rx_fifo,
 			     osal_mutex_create(&g_wired_rx_mutex_wr),
 			     osal_mutex_create(&g_wired_rx_mutex_rd));
@@ -198,8 +194,7 @@ static void wired_thread(void *a, void *b, void *c)
 		}
 		#endif
 
-		if (!g_wired_fll_fixed &&
-		    g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+		if (!g_wired_fll_fixed && g_wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
 			wired_update_codec_clock(fifo_bytes, pending);
 		}
 
