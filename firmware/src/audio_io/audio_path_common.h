@@ -40,6 +40,11 @@ enum audio_path_state {
 	AUDIO_PATH_STATE_PLAYING,
 };
 
+struct audio_fll_state {
+	bool fixed;
+	int32_t fixed_rate_hz;
+};
+
 const char *audio_path_get_state_name(enum audio_path_state state);
 
 /*
@@ -62,3 +67,9 @@ int32_t audio_codec_clock_controller(uint32_t target,
 				     uint32_t fifo, uint32_t pending);
 
 void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);
+
+extern struct audio_fll_state g_audio_fll;
+
+bool audio_fll_set_fixed(int32_t rate_hz);
+void audio_fll_set_auto(void);
+int32_t audio_fll_get_fixed_rate(void);

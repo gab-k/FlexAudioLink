@@ -18,8 +18,6 @@ LOG_MODULE_REGISTER(audio_path_wired, LOG_LEVEL_INF);
 #define WIRED_WARN_HIGH_BYTES (WIRED_AUDIO_TARGET_BYTES * 90U / 50U )
 
 static struct audio_path_wired_status g_wired_status;
-static bool g_wired_fll_fixed;
-static int32_t g_wired_fll_fixed_rate_hz;
 
 static K_THREAD_STACK_DEFINE(g_wired_thread_stack, WIRED_THREAD_STACK_SIZE);
 static struct k_thread g_wired_thread;
@@ -33,7 +31,7 @@ static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 	static float i_sum;
 	uint32_t now_ms;
 
-	if (g_wired_fll_fixed) {
+	if (g_audio_fll.fixed) {
 		return;
 	}
 
@@ -80,27 +78,11 @@ void audio_path_wired_get_status(struct audio_path_wired_status *out)
 	}
 
 	*out = g_wired_status;
-}
-
-void audio_path_wired_fll_set_fixed(int32_t rate_hz)
-{
-	if (nau88l21_set_fll_target_rate_hz(rate_hz) == 0) {
-		g_wired_status.spk_fll_target_rate_hz = rate_hz;
-		g_wired_fll_fixed = true;
-		g_wired_fll_fixed_rate_hz = rate_hz;
+	if (g_audio_fll.fixed) {
+		out->spk_fll_target_rate_hz = g_audio_fll.fixed_rate_hz;
 	}
 }
 
-void audio_path_wired_fll_set_auto(void)
-{
-	g_wired_fll_fixed = false;
-	g_wired_fll_fixed_rate_hz = 0;
-}
-
-int32_t audio_path_wired_fll_get_fixed_rate(void)
-{
-	return g_wired_fll_fixed ? g_wired_fll_fixed_rate_hz : 0;
-}
 
 static void wired_thread(void *a, void *b, void *c)
 {

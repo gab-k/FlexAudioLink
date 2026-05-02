@@ -25,8 +25,6 @@ LOG_MODULE_REGISTER(audio_path_pfsk_headset, LOG_LEVEL_INF);
 #define HEADSET_MIC_FIFO_SIZE      4096
 
 static struct audio_path_wireless_headset_status g_headset_status;
-static bool g_headset_fll_fixed;
-static int32_t g_headset_fll_fixed_rate_hz;
 
 static uint8_t g_headset_spk_fifo_buf[HEADSET_SPK_FIFO_SIZE];
 static uint8_t g_headset_mic_fifo_buf[HEADSET_MIC_FIFO_SIZE];
@@ -48,8 +46,7 @@ void audio_path_wireless_headset_init(void)
 		.stream_state = AUDIO_PATH_STATE_BUFFERING,
 		.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ,
 	};
-	g_headset_fll_fixed = false;
-	g_headset_fll_fixed_rate_hz = 0;
+	audio_fll_set_auto();
 
 	tu_fifo_config(&g_headset_spk_fifo, g_headset_spk_fifo_buf,
 		       HEADSET_SPK_FIFO_SIZE, true);
@@ -72,32 +69,16 @@ void audio_path_wireless_headset_get_status(struct audio_path_wireless_headset_s
 {
 	if (out != NULL) {
 		*out = g_headset_status;
+		if (g_audio_fll.fixed) {
+			out->spk_fll_target_rate_hz = g_audio_fll.fixed_rate_hz;
+		}
 	}
 }
 
-void audio_path_wireless_headset_fll_set_fixed(int32_t rate_hz)
-{
-	if (nau88l21_set_fll_target_rate_hz(rate_hz) == 0) {
-		g_headset_status.spk_fll_target_rate_hz = rate_hz;
-		g_headset_fll_fixed = true;
-		g_headset_fll_fixed_rate_hz = rate_hz;
-	}
-}
-
-void audio_path_wireless_headset_fll_set_auto(void)
-{
-	g_headset_fll_fixed = false;
-	g_headset_fll_fixed_rate_hz = 0;
-}
-
-int32_t audio_path_wireless_headset_fll_get_fixed_rate(void)
-{
-	return g_headset_fll_fixed ? g_headset_fll_fixed_rate_hz : 0;
-}
 
 static void headset_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 {
-	if (g_headset_fll_fixed) {
+	if (g_audio_fll.fixed) {
 		return;
 	}
 

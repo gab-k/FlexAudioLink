@@ -467,37 +467,25 @@ static void cli_cmd_fll(char *args)
 	int32_t lo, hi;
 	enum app_profile profile = app_control_get_current_profile();
 
+	if (profile == APP_PROFILE_PFSK_DONGLE) {
+		cli_print("ERR fll not available for dongle profile\n");
+		return;
+	}
+
 	if (args == NULL || *args == '\0' || strcasecmp(args, "auto") == 0) {
-		switch (profile) {
-		case APP_PROFILE_USB:
-			audio_path_wired_fll_set_auto();
-			break;
-		case APP_PROFILE_PFSK_HEADSET:
-			audio_path_wireless_headset_fll_set_auto();
-			break;
-		default:
-			cli_print("ERR fll not available for current profile\n");
-			return;
-		}
+		audio_fll_set_auto();
 		cli_print("OK fll=auto (P-controller running)\n");
 		return;
 	}
 
 	if (strcasecmp(args, "status") == 0) {
-		int32_t fixed = (profile == APP_PROFILE_PFSK_HEADSET)
-			? audio_path_wireless_headset_fll_get_fixed_rate()
-			: audio_path_wired_fll_get_fixed_rate();
+		int32_t fixed = audio_fll_get_fixed_rate();
 
 		if (fixed != 0) {
 			cli_print("OK fll=fixed target_rate=%d\n", fixed);
 		} else {
 			cli_print("OK fll=auto\n");
 		}
-		return;
-	}
-
-	if (profile == APP_PROFILE_PFSK_DONGLE) {
-		cli_print("ERR fll not available for dongle profile\n");
 		return;
 	}
 
@@ -510,20 +498,10 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	if (profile == APP_PROFILE_PFSK_HEADSET) {
-		audio_path_wireless_headset_fll_set_fixed((int32_t)rate);
-		if (audio_path_wireless_headset_fll_get_fixed_rate() == 0) {
-			cli_print("ERR fll driver rejected rate %ld\n", rate);
-		} else {
-			cli_print("OK fll=fixed target_rate=%ld (P-controller paused)\n", rate);
-		}
+	if (audio_fll_set_fixed((int32_t)rate)) {
+		cli_print("OK fll=fixed target_rate=%ld (P-controller paused)\n", rate);
 	} else {
-		audio_path_wired_fll_set_fixed((int32_t)rate);
-		if (audio_path_wired_fll_get_fixed_rate() == 0) {
-			cli_print("ERR fll driver rejected rate %ld\n", rate);
-		} else {
-			cli_print("OK fll=fixed target_rate=%ld (P-controller paused)\n", rate);
-		}
+		cli_print("ERR fll driver rejected rate %ld\n", rate);
 	}
 }
 
