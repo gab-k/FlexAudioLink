@@ -1,4 +1,4 @@
-# nRF PFSK Ping-Pong TDD Spec
+# PFSK Time Division Duplex Spec
 
 Implementation reference: `firmware/src/prop_fsk/`.
 
@@ -6,14 +6,24 @@ Implementation reference: `firmware/src/prop_fsk/`.
 is authoritative for service state, app queues, payload sequencing, and loss
 accounting.
 
+## RADIO Peripheral Events
+
+Reference: https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html
+
+| Event | Meaning |
+|---|---|
+| `ADDRESS` | Address field sent or matched on air. |
+| `PHYEND` | Full packet (including CRC) transmitted or received on air. |
+| `CRCOK` | Received packet CRC matched. |
+| `CRCERROR` | Received packet CRC failed. |
+| `DISABLED` | Radio has fully ramped down. |
+
 ## Protocol
 
 - Both peers run identical half-duplex ping-pong logic.
-- `ADDRESS` is the only early RX-start gate.
-- `PHYEND` is the packet-end timing anchor.
-- `FRAMESTART` and `SYNC` are not used for core state transitions.
 - No role-specific slot timing exists.
 - A TX turn always sends either one queued payload packet or one keepalive.
+- Before service acquisition each peer tries to listen, sends a random timing probe TX packet on Timeout.
 
 ## Radio Turn State
 
@@ -77,7 +87,7 @@ Packet struct:
 struct pfsk_packet {
 	uint8_t  length;
 	uint16_t seq;
-	uint8_t  data[PFSK_PAYLOAD_MAX_LEN];
+	uint8_t  payload[PFSK_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 ```
 
@@ -98,9 +108,9 @@ Constants:
 `radio_core.c` owns the packet buffers:
 
 ```c
-g_tx_ring[PFSK_RADIO_TX_RING_DEPTH]
-g_rx_ring[PFSK_RADIO_RX_RING_DEPTH]
-g_keepalive_packet
+tx_ring[PFSK_RADIO_TX_RING_DEPTH]
+rx_ring[PFSK_RADIO_RX_RING_DEPTH]
+keepalive_packet
 ```
 
 Ring ownership:
@@ -124,7 +134,7 @@ TX ring rules:
 
 RX ring rules:
 
-- RADIO DMA writes to `g_rx_ring[g_rx_wr_idx]`.
+- RADIO DMA writes to `rx_ring[rx_wr_idx]`.
 - `CRCOK`/`CRCERROR` queues a metadata-only event.
 - RX write index advances only if the RX ring has room and event queueing
   succeeds.
@@ -153,14 +163,14 @@ The active shortcut set is:
 RX programming:
 
 ```text
-PACKETPTR = &g_rx_ring[g_rx_wr_idx]
+PACKETPTR = &rx_ring[rx_wr_idx]
 ```
 
 TX programming:
 
 ```text
-PACKETPTR = &g_tx_ring[g_tx_rd_idx] if TX ring non-empty
-PACKETPTR = &g_keepalive_packet     if TX ring empty
+PACKETPTR = &tx_ring[tx_rd_idx]   if TX ring non-empty
+PACKETPTR = &keepalive_packet     if TX ring empty
 ```
 
 Programming points:
