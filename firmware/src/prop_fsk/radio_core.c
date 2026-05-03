@@ -16,7 +16,7 @@
 
 LOG_MODULE_REGISTER(pfsk_radio_core, CONFIG_LOG_DEFAULT_LEVEL);
 
-#define PFSK_RADIO_EVENT_QUEUE_DEPTH 8
+#define PFSK_RADIO_SESSION_EVENT_QUEUE_DEPTH 8
 #define PFSK_RADIO_TX_RING_DEPTH     8U
 #define PFSK_RADIO_RX_RING_DEPTH     8
 #define PFSK_RADIO_LISTEN_TIMEOUT_BASE_US    1000U
@@ -55,7 +55,7 @@ static volatile uint8_t tx_rd_idx;
 static volatile uint8_t rx_wr_idx;
 static volatile uint8_t rx_rd_idx;
 
-K_MSGQ_DEFINE(radio_event_queue, sizeof(struct pfsk_radio_event), PFSK_RADIO_EVENT_QUEUE_DEPTH, 4);
+K_MSGQ_DEFINE(session_event_queue, sizeof(struct pfsk_session_event), PFSK_RADIO_SESSION_EVENT_QUEUE_DEPTH, 4);
 
 enum pfsk_radio_turn_state {
 	PFSK_RADIO_TURN_DISABLED = 0,
@@ -222,13 +222,13 @@ static uint32_t capture_timer_tick(void)
 	return nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_NOW);
 }
 
-static bool queue_radio_event(const struct pfsk_radio_event *event)
+static bool queue_session_event(const struct pfsk_session_event *event)
 {
 	if (event == NULL) {
 		return false;
 	}
 
-	if (k_msgq_put(&radio_event_queue, event, K_NO_WAIT) != 0) {
+	if (k_msgq_put(&session_event_queue, event, K_NO_WAIT) != 0) {
 		LOG_ERR("PFSK radio event queue full, dropping event type %d", event->type);
 		return false;
 	}
@@ -393,7 +393,7 @@ static void radio_program_address_table(void)
 
 static void timer_isr(const void *arg)
 {
-	struct pfsk_radio_event event;
+	struct pfsk_session_event event;
 	uint32_t deadline_tick;
 
 	ARG_UNUSED(arg);
@@ -409,18 +409,18 @@ static void timer_isr(const void *arg)
 			event.tick = deadline_tick;
 
 			if (radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
-				event.type = PFSK_RADIO_EVENT_RX_INCOMPLETE;
-				(void)queue_radio_event(&event);
+				event.type = PFSK_RADIO_SESSION_EVENT_RX_INCOMPLETE;
+				(void)queue_session_event(&event);
 			} else if (radio.turn_state == PFSK_RADIO_TURN_LISTEN) {
-				event.type = PFSK_RADIO_EVENT_LISTEN_TIMEOUT;
-				(void)queue_radio_event(&event);
+				event.type = PFSK_RADIO_SESSION_EVENT_LISTEN_TIMEOUT;
+				(void)queue_session_event(&event);
 			} else {
 				return;
 			}
 
 			if (!trigger_prepared_tx()) {
-				event.type = PFSK_RADIO_EVENT_TX_TRIGGER_FAILED;
-				(void)queue_radio_event(&event);
+				event.type = PFSK_RADIO_SESSION_EVENT_TX_TRIGGER_FAILED;
+				(void)queue_session_event(&event);
 			}
 		}
 	}
@@ -448,7 +448,7 @@ static void radio_isr(const void *arg)
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCOK)) {
-		struct pfsk_radio_event event;
+		struct pfsk_session_event event;
 		int16_t rssi_dbm;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCOK);
@@ -457,7 +457,7 @@ static void radio_isr(const void *arg)
 		    radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
-			event.type = PFSK_RADIO_EVENT_RX_OK;
+			event.type = PFSK_RADIO_SESSION_EVENT_RX_OK;
 			event.tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
 			event.rssi_dbm = rssi_dbm;
 			note_rx_ok(rssi_dbm);
@@ -465,14 +465,14 @@ static void radio_isr(const void *arg)
 
 			if (rx_ring_write_would_fill()) {
 				LOG_ERR("PFSK RX ring full, dropping RX_OK");
-			} else if (queue_radio_event(&event)) {
+			} else if (queue_session_event(&event)) {
 				advance_rx_wr_idx();
 			}
 		}
 	}
 
 	if (nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR)) {
-		struct pfsk_radio_event event;
+		struct pfsk_session_event event;
 		int16_t rssi_dbm;
 
 		nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_CRCERROR);
@@ -481,7 +481,7 @@ static void radio_isr(const void *arg)
 		    radio.turn_state == PFSK_RADIO_TURN_IN_RX) {
 			rssi_dbm = -(int16_t)nrf_radio_rssi_sample_get(NRF_RADIO);
 			memset(&event, 0, sizeof(event));
-			event.type = PFSK_RADIO_EVENT_RX_BAD;
+			event.type = PFSK_RADIO_SESSION_EVENT_RX_BAD;
 			event.tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
 			event.rssi_dbm = rssi_dbm;
 			note_rx_bad(rssi_dbm);
@@ -489,7 +489,7 @@ static void radio_isr(const void *arg)
 
 			if (rx_ring_write_would_fill()) {
 				LOG_ERR("PFSK RX ring full, dropping RX_BAD");
-			} else if (queue_radio_event(&event)) {
+			} else if (queue_session_event(&event)) {
 				advance_rx_wr_idx();
 			}
 		}
@@ -503,7 +503,7 @@ static void radio_isr(const void *arg)
 			radio.turn_state = PFSK_RADIO_TURN_IN_TX;
 		} else if (radio.turn_state == PFSK_RADIO_TURN_IN_TX) {
 			uint32_t tx_phyend_tick = nrf_timer_cc_get(PFSK_TIMER, PFSK_TIMER_CC_PHYEND_TS);
-			struct pfsk_radio_event event;
+			struct pfsk_session_event event;
 
 			if (radio.tx_packet_from_ring) {
 				advance_tx_rd_idx();
@@ -514,9 +514,9 @@ static void radio_isr(const void *arg)
 			note_tx_end();
 
 			memset(&event, 0, sizeof(event));
-			event.type = PFSK_RADIO_EVENT_TX_END;
+			event.type = PFSK_RADIO_SESSION_EVENT_TX_END;
 			event.tick = tx_phyend_tick;
-			(void)queue_radio_event(&event);
+			(void)queue_session_event(&event);
 		}
 	}
 }
@@ -571,7 +571,7 @@ void pfsk_radio_start(void)
 {
 	unsigned int irq_key;
 
-	k_msgq_purge(&radio_event_queue);
+	k_msgq_purge(&session_event_queue);
 	reset_stats();
 
 	irq_key = irq_lock();
@@ -650,7 +650,7 @@ void pfsk_radio_stop(void)
 
 	irq_unlock(irq_key);
 
-	k_msgq_purge(&radio_event_queue);
+	k_msgq_purge(&session_event_queue);
 }
 
 void pfsk_radio_get_stats(struct pfsk_radio_stats *s)
@@ -704,11 +704,11 @@ void pfsk_radio_rx_advance_rd_idx(void)
 	}
 }
 
-bool pfsk_radio_dequeue_event(struct pfsk_radio_event *event, k_timeout_t timeout)
+bool pfsk_radio_dequeue_session_event(struct pfsk_session_event *event, k_timeout_t timeout)
 {
 	if (event == NULL) {
 		return false;
 	}
 
-	return k_msgq_get(&radio_event_queue, event, timeout) == 0;
+	return k_msgq_get(&session_event_queue, event, timeout) == 0;
 }

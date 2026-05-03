@@ -49,13 +49,13 @@ Implementation sentinel:
 | `DISABLED` | Radio path stopped; not a protocol turn. |
 
 
-## Radio Events
+## Session Events
 
-`radio_core` emits one ordered metadata-only event stream to `session.c`.
+`radio_core` emits one ordered event stream to `session.c`.
 
 ```c
-struct pfsk_radio_event {
-	enum pfsk_radio_event_type type;
+struct pfsk_session_event {
+	enum pfsk_session_event_type type;
 	uint32_t tick;
 	int16_t rssi_dbm;
 };
@@ -336,7 +336,7 @@ On service loss:
 - `PACKETPTR` and shorts
 - RX/TX rings
 - keepalive fallback packet
-- metadata-only radio event queue
+- session event queue
 - hardware stats
 
 `session.c` owns:
@@ -362,4 +362,4 @@ On service loss:
 10. Payload sequence generation skips `PFSK_KEEPALIVE_SEQ`.
 11. Session-thread TX publication does not program `PACKETPTR`.
 12. Listen timeout is a hard turn boundary.
-13. Stop purges stale radio events and leaves radio state disabled.
+13. Stop purges stale session events and leaves radio state disabled.

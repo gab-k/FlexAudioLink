@@ -70,17 +70,17 @@ struct pfsk_packet {
 	uint8_t  payload[PFSK_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 
-enum pfsk_radio_event_type {
-	PFSK_RADIO_EVENT_RX_OK = 0,
-	PFSK_RADIO_EVENT_RX_BAD,
-	PFSK_RADIO_EVENT_TX_END,
-	PFSK_RADIO_EVENT_RX_INCOMPLETE,
-	PFSK_RADIO_EVENT_LISTEN_TIMEOUT,
-	PFSK_RADIO_EVENT_TX_TRIGGER_FAILED,
+enum pfsk_session_event_type {
+	PFSK_RADIO_SESSION_EVENT_RX_OK = 0,
+	PFSK_RADIO_SESSION_EVENT_RX_BAD,
+	PFSK_RADIO_SESSION_EVENT_TX_END,
+	PFSK_RADIO_SESSION_EVENT_RX_INCOMPLETE,
+	PFSK_RADIO_SESSION_EVENT_LISTEN_TIMEOUT,
+	PFSK_RADIO_SESSION_EVENT_TX_TRIGGER_FAILED,
 };
 
-struct pfsk_radio_event {
-	enum pfsk_radio_event_type type;
+struct pfsk_session_event {
+	enum pfsk_session_event_type type;
 	uint32_t tick;
 	int16_t rssi_dbm;
 };
@@ -104,4 +104,4 @@ struct pfsk_packet *pfsk_radio_tx_get_wr_ptr(void);
 void pfsk_radio_tx_advance_wr_idx(void);
 const struct pfsk_packet *pfsk_radio_rx_get_rd_ptr(void);
 void pfsk_radio_rx_advance_rd_idx(void);
-bool pfsk_radio_dequeue_event(struct pfsk_radio_event *event, k_timeout_t timeout);
+bool pfsk_radio_dequeue_session_event(struct pfsk_session_event *event, k_timeout_t timeout);

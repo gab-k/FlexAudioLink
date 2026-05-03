@@ -221,7 +221,7 @@ static bool pfsk_session_copy_to_radio_rb(void)
 	return true;
 }
 
-static void pfsk_session_handle_rx_ok(const struct pfsk_radio_event *event)
+static void pfsk_session_handle_rx_ok(const struct pfsk_session_event *event)
 {
 	const struct pfsk_packet *packet;
 	bool is_keepalive;
@@ -255,7 +255,7 @@ static void pfsk_session_handle_rx_ok(const struct pfsk_radio_event *event)
 	pfsk_radio_rx_advance_rd_idx();
 }
 
-static void pfsk_session_handle_rx_bad(const struct pfsk_radio_event *event)
+static void pfsk_session_handle_rx_bad(const struct pfsk_session_event *event)
 {
 	if (event == NULL) {
 		__ASSERT_NO_MSG(0);
@@ -266,7 +266,7 @@ static void pfsk_session_handle_rx_bad(const struct pfsk_radio_event *event)
 	pfsk_radio_rx_advance_rd_idx();
 }
 
-static void pfsk_session_handle_tx_end(const struct pfsk_radio_event *event)
+static void pfsk_session_handle_tx_end(const struct pfsk_session_event *event)
 {
 	if (event == NULL) {
 		__ASSERT_NO_MSG(0);
@@ -401,36 +401,36 @@ bool pfsk_session_rx_dequeue(struct pfsk_packet *packet, k_timeout_t timeout)
 
 static void pfsk_session_thread(void *arg1, void *arg2, void *arg3)
 {
-	struct pfsk_radio_event event;
+	struct pfsk_session_event event;
 
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
 	while (1) {
-		if (!pfsk_radio_dequeue_event(&event, K_FOREVER)) {
+		if (!pfsk_radio_dequeue_session_event(&event, K_FOREVER)) {
 			continue;
 		}
 
 		k_mutex_lock(&session.mutex_lock, K_FOREVER);
 		switch (event.type) {
-		case PFSK_RADIO_EVENT_RX_OK:
+		case PFSK_RADIO_SESSION_EVENT_RX_OK:
 			pfsk_session_handle_rx_ok(&event);
 			break;
-		case PFSK_RADIO_EVENT_RX_BAD:
+		case PFSK_RADIO_SESSION_EVENT_RX_BAD:
 			pfsk_session_handle_rx_bad(&event);
 			break;
-		case PFSK_RADIO_EVENT_TX_END:
+		case PFSK_RADIO_SESSION_EVENT_TX_END:
 			pfsk_session_handle_tx_end(&event);
 			break;
-		case PFSK_RADIO_EVENT_RX_INCOMPLETE:
+		case PFSK_RADIO_SESSION_EVENT_RX_INCOMPLETE:
 			session.stats.rx_incomplete_count++;
 			session.consecutive_rx_misses = 0U;
 			break;
-		case PFSK_RADIO_EVENT_LISTEN_TIMEOUT:
+		case PFSK_RADIO_SESSION_EVENT_LISTEN_TIMEOUT:
 			pfsk_session_handle_listen_timeout();
 			break;
-		case PFSK_RADIO_EVENT_TX_TRIGGER_FAILED:
+		case PFSK_RADIO_SESSION_EVENT_TX_TRIGGER_FAILED:
 			session.stats.tx_trigger_fail_count++;
 			pfsk_session_mark_no_service();
 			LOG_ERR("failed to trigger prepared TX");
