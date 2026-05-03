@@ -28,6 +28,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Getting Started: getting-started.md
   - Firmware:
       - firmware/index.md
       - PFSK TDD: firmware/pfsk-tdd.md

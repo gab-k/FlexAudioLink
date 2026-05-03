@@ -1,4 +1,4 @@
-# HW Spec — Wireless Headset Retrofit
+# Hardware Notes
 
 ## ICs
 - **SoC** nRF54LM20A-PAAA (CSP47)
@@ -89,3 +89,19 @@
 - Headphone out: HPL/HPR ground-referenced, cap-free
 - Mic in: MICL+/− or MICR+/− AC-coupled differential
 - Digital mic alt: MICR−/DMCLK + MICL−/DMDATA
+
+---
+
+## Analog Multiplexing
+
+To support arbitrary Source/Sink configurations on the 3.5 mm jack, the physical connector needs to be routable to either the codec's DAC output (headphone driver) or ADC input (mic stage) under firmware control.
+
+### Option 1 — Cable adapter (early prototyping)
+- Route the source's headphone out to the codec's mic input via a custom cable.
+- No hardware changes required.
+- Caveats: shifts burden to the user, mic input impedance/gain is not ideal for line-level signals, inconsistent with the "same hardware, different roles" design goal.
+
+### Option 2 — Analog switch IC (production)
+- Add analog multiplexer between the 3.5 mm jack and the codec's audio pins.
+- Firmware controls the switch via GPIO to swap the jack between HPL/HPR (DAC out) and MICL+/MICR+ (ADC in).
+- Combined with I2S stream routing in firmware, any audio endpoint becomes reconfigurable as source or sink.
