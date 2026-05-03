@@ -1,10 +1,10 @@
-#include "audio_io/audio_path_common.h"
+#include "audio/audio_path_common.h"
 
 #include <stdint.h>
 
 #include <zephyr/logging/log.h>
 
-#include "audio_io/nau88l21.h"
+#include "audio/nau88l21.h"
 LOG_MODULE_REGISTER(audio_path_cmn, LOG_LEVEL_INF);
 
 const char *audio_path_get_state_name(enum audio_path_state state)

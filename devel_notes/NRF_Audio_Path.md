@@ -26,18 +26,18 @@ Profile orchestration and route selection:
 
 Shared audio-path helpers/constants:
 
-- `firmware/src/audio_io/audio_path_common.c`
-- `firmware/src/audio_io/audio_path_common.h`
+- `firmware/src/audio/audio_path_common.c`
+- `firmware/src/audio/audio_path_common.h`
 
 Route implementations:
 
-- `firmware/src/audio_io/audio_path_wired.c`
-- `firmware/src/audio_io/audio_path_wireless.c`
+- `firmware/src/audio/audio_path_wired.c`
+- `firmware/src/audio/audio_path_wireless.c`
 
 I2S/codec pipeline:
 
-- `firmware/src/audio_io/i2s.c`
-- `firmware/src/audio_io/i2s.h`
+- `firmware/src/audio/i2s.c`
+- `firmware/src/audio/i2s.h`
 
 USB audio FIFO adapter:
 

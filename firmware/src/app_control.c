@@ -1,8 +1,8 @@
 #include "app_control.h"
 
-#include "audio_io/audio_path_wired.h"
-#include "audio_io/audio_path_wireless_dongle.h"
-#include "audio_io/audio_path_wireless_headset.h"
+#include "audio/audio_path_wired.h"
+#include "audio/audio_path_wireless_dongle.h"
+#include "audio/audio_path_wireless_headset.h"
 #include "prop_fsk/session.h"
 
 #include <stdint.h>

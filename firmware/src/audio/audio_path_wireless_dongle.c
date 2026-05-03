@@ -1,4 +1,4 @@
-#include "audio_io/audio_path_wireless_dongle.h"
+#include "audio/audio_path_wireless_dongle.h"
 
 #include <string.h>
 #include <zephyr/kernel.h>

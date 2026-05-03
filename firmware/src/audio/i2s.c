@@ -1,6 +1,6 @@
-#include "audio_io/i2s.h"
+#include "audio/i2s.h"
 
-#include "audio_io/nau88l21.h"
+#include "audio/nau88l21.h"
 #include "common/tusb_fifo.h"
 #include <errno.h>
 #include <stdint.h>

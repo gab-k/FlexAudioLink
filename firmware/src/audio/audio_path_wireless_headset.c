@@ -1,4 +1,4 @@
-#include "audio_io/audio_path_wireless_headset.h"
+#include "audio/audio_path_wireless_headset.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -7,9 +7,9 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_path_pfsk_headset, LOG_LEVEL_INF);
 
-#include "audio_io/audio_path_common.h"
-#include "audio_io/i2s.h"
-#include "audio_io/nau88l21.h"
+#include "audio/audio_path_common.h"
+#include "audio/i2s.h"
+#include "audio/nau88l21.h"
 #include "prop_fsk/session.h"
 
 #define HEADSET_THREAD_STACK_SIZE  3072
