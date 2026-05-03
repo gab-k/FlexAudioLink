@@ -2,28 +2,35 @@
 
 Implementation reference: `firmware/src/prop_fsk/`.
 
-`radio_core.c` is authoritative for radio timing and DMA ownership. `session.c`
-is authoritative for service state, app queues, payload sequencing, and loss
-accounting.
+- `radio_core.c`:
 
-## RADIO Peripheral Events
+	authoritative for radio timing and DMA ownership.
+	Its entirely Timer/[DPPI](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/dppi.html) and ISR based.
 
-Reference: https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html
+- `session.c`:
 
-| Event | Meaning |
-|---|---|
-| `ADDRESS` | Address field sent or matched on air. |
-| `PHYEND` | Full packet (including CRC) transmitted or received on air. |
-| `CRCOK` | Received packet CRC matched. |
-| `CRCERROR` | Received packet CRC failed. |
-| `DISABLED` | Radio has fully ramped down. |
+	is authoritative for service state, app queues, payload sequencing, and loss accounting.
 
 ## Protocol
 
 - Both peers run identical half-duplex ping-pong logic.
 - No role-specific slot timing exists.
+- Device waits for RX to be done then sends itself, then listens again.
 - A TX turn always sends either one queued payload packet or one keepalive.
-- Before service acquisition each peer tries to listen, sends a random timing probe TX packet on Timeout.
+- Listen timeouts include random jitter; the first peer to time out transmits, breaking deadlock.
+
+## Relevant RADIO Peripheral Events
+
+Reference: https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html
+
+| Event | Meaning |
+|---|---|
+| `ADDRESS` | Address field sent or matched |
+| `PHYEND` | Full packet (including CRC) transmitted or received |
+| `CRCOK` | Received packet CRC matched |
+| `CRCERROR` | Received packet CRC failed |
+
+Handled inside `radio_isr`.
 
 ## Radio Turn State
 
@@ -41,7 +48,6 @@ Implementation sentinel:
 |---|---|
 | `DISABLED` | Radio path stopped; not a protocol turn. |
 
-`session.c` must not duplicate this state machine.
 
 ## Radio Events
 
@@ -55,8 +61,6 @@ struct pfsk_radio_event {
 };
 ```
 
-Events never carry packets. RX packets are read from the RX ring.
-
 | Event | Tick | Notes |
 |---|---|---|
 | `RX_OK` | RX `PHYEND` | RSSI valid. |
@@ -68,19 +72,6 @@ Events never carry packets. RX packets are read from the RX ring.
 
 ## Packet Format
 
-RADIO config:
-
-- `lflen = 8`
-- `s0len = 0`
-- `s1len = 0`
-
-DMA buffer:
-
-```text
-offset 0:    LENGTH byte
-offset 1..N: PAYLOAD bytes, N = LENGTH
-```
-
 Packet struct:
 
 ```c
@@ -91,21 +82,22 @@ struct pfsk_packet {
 } __packed __aligned(4);
 ```
 
-Constants:
+- packets never use `seq = PFSK_KEEPALIVE_SEQ = UINT16_MAX` unless they are keepalive packets.
+- zero-length app TX frames are invalid
 
+Constants:
 - `PFSK_PACKET_METADATA_LEN = 2U`
 - `PFSK_PAYLOAD_MAX_LEN = 252`
-- max transmitted `length = 254`
 - `PFSK_KEEPALIVE_PAYLOAD_LEN = 16U`
 - `PFSK_KEEPALIVE_SEQ = UINT16_MAX`
-- `PFSK_KEEPALIVE_LEN = PFSK_PACKET_METADATA_LEN + PFSK_KEEPALIVE_PAYLOAD_LEN`
-- keepalive `length = PFSK_KEEPALIVE_LEN`
-- payload packets never use `PFSK_KEEPALIVE_SEQ`
-- zero-length app TX frames are invalid
+
+Note: Do not confuse `payload` inside `struct pfsk_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
 
 ## Buffers
 
-`radio_core.c` owns the packet buffers:
+`radio_core.c` owns the packet buffers. `PACKETPTR` always points to the
+current read/write slot in these rings. The RADIO peripheral DMA transfers
+directly to/from the pointed-to ring entry.
 
 ```c
 tx_ring[PFSK_RADIO_TX_RING_DEPTH]
@@ -122,15 +114,15 @@ Ring ownership:
 | RX write | radio ISR |
 | RX read | session thread |
 
-Rings are SPSC. One slot remains unused to distinguish full from empty.
+Rings are Single Producer Single Consumer (SPSC). One slot remains unused to distinguish full from empty.
 
 TX ring rules:
 
 - TX ring contains payload packets only.
 - Keepalives are never queued in the TX ring.
-- Session publishes a payload by filling `pfsk_radio_tx_get_wr_ptr()` and then
-  calling `pfsk_radio_tx_advance_wr_idx()`.
-- Session-thread publication does not touch `PACKETPTR`.
+- Session gets a pointer to the next TX slot via `pfsk_radio_tx_get_wr_ptr()`,
+  copies into it, then commits with `pfsk_radio_tx_advance_wr_idx()`.
+- Session-thread does not touch `PACKETPTR`.
 
 RX ring rules:
 
@@ -365,7 +357,7 @@ On service loss:
 5. `session.c` does not own radio turn state.
 6. RX events do not carry packet payloads.
 7. TX ring entries are payload-only.
-8. Empty TX ring means transmit `g_keepalive_packet`.
+8. Empty TX ring means transmit `keepalive_packet`.
 9. Keepalive does not consume payload sequence numbers.
 10. Payload sequence generation skips `PFSK_KEEPALIVE_SEQ`.
 11. Session-thread TX publication does not program `PACKETPTR`.
