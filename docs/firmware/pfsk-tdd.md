@@ -1,15 +1,11 @@
-# PFSK Time Division Duplex Spec
+# PFSK Time Division Duplex
 
-Implementation reference: `firmware/src/prop_fsk/`.
+PFSK — proprietary 2.4 GHz FSK link layer. TDD half-duplex: both peers share one channel, alternating TX/RX. No fixed slot assignment; listen timeout with random jitter resolves contention. Idle peer transmits keepalive or queued payload on timeout.
 
-- `radio_core.c`:
+Implementation reference: `firmware/src/prop_fsk/`
 
-	authoritative for radio timing and DMA ownership.
-	Its entirely Timer/[DPPI](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/dppi.html) and ISR based.
-
-- `session.c`:
-
-	is authoritative for service state, app queues, payload sequencing, and loss accounting.
+- `radio_core.c` — authoritative for radio timing and DMA ownership. Entirely Timer/[DPPI](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/dppi.html) and ISR based.
+- `session.c` — authoritative for service state, app queues, payload sequencing, and loss accounting.
 
 ## Protocol
 
@@ -19,20 +15,12 @@ Implementation reference: `firmware/src/prop_fsk/`.
 - A TX turn always sends either one queued payload packet or one keepalive.
 - Listen timeouts include random jitter; the first peer to time out transmits, breaking deadlock.
 
-## Relevant RADIO Peripheral Events
-
-Reference: [nRF RADIO peripheral docs](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html)
-
-| Event | Meaning |
-|---|---|
-| `ADDRESS` | Address field sent or matched |
-| `PHYEND` | Full packet (including CRC) transmitted or received |
-| `CRCOK` | Received packet CRC matched |
-| `CRCERROR` | Received packet CRC failed |
-
-Handled inside `radio_isr`.
-
 ## Radio Turn State
+
+<figure markdown>
+  ![](hw_turn_states_pfsk_tdd.drawio.svg){ loading=lazy style="max-width:100%;width:800px" }
+  <figcaption>Radio turn state machine</figcaption>
+</figure>
 
 Active protocol states:
 
@@ -48,6 +36,18 @@ Implementation sentinel:
 |---|---|
 | `DISABLED` | Radio path stopped; not a protocol turn. |
 
+## RADIO Peripheral Events
+
+Reference: [nRF RADIO peripheral docs](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html)
+
+| Event | Meaning |
+|---|---|
+| `ADDRESS` | Address field sent or matched |
+| `PHYEND` | Full packet (including CRC) transmitted or received |
+| `CRCOK` | Received packet CRC matched |
+| `CRCERROR` | Received packet CRC failed |
+
+Handled inside `radio_isr`.
 
 ## Session Events
 
@@ -55,9 +55,9 @@ Implementation sentinel:
 
 ```c
 struct pfsk_session_event {
-	enum pfsk_session_event_type type;
-	uint32_t tick;
-	int16_t rssi_dbm;
+    enum pfsk_session_event_type type;
+    uint32_t tick;
+    int16_t rssi_dbm;
 };
 ```
 
@@ -72,13 +72,11 @@ struct pfsk_session_event {
 
 ## Packet Format
 
-Packet struct:
-
 ```c
 struct pfsk_packet {
-	uint8_t  length;
-	uint16_t seq;
-	uint8_t  payload[PFSK_PAYLOAD_MAX_LEN];
+    uint8_t  length;
+    uint16_t seq;
+    uint8_t  payload[PFSK_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 ```
 
@@ -86,12 +84,16 @@ struct pfsk_packet {
 - zero-length app TX frames are invalid
 
 Constants:
-- `PFSK_PACKET_METADATA_LEN = 2U`
-- `PFSK_PAYLOAD_MAX_LEN = 252`
-- `PFSK_KEEPALIVE_PAYLOAD_LEN = 16U`
-- `PFSK_KEEPALIVE_SEQ = UINT16_MAX`
 
-Note: Do not confuse `payload` inside `struct pfsk_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs -> Packet configuration](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
+| Constant | Value |
+|---|---|
+| `PFSK_PACKET_METADATA_LEN` | 2 |
+| `PFSK_PAYLOAD_MAX_LEN` | 252 |
+| `PFSK_KEEPALIVE_PAYLOAD_LEN` | 16 |
+| `PFSK_KEEPALIVE_SEQ` | `UINT16_MAX` |
+
+!!! warning
+    Do not confuse `payload` inside `struct pfsk_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs → Packet configuration](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
 
 ## Buffers
 
@@ -133,21 +135,21 @@ RX ring rules:
 
 ## RADIO Shortcuts
 
-Reference: [nRF RADIO peripheral docs -> SHORTS register](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title112)
+Reference: [nRF RADIO peripheral docs → SHORTS register](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title112)
 
 Base shorts (always active):
 
-- `READY_START` - READY -> START: begin TX/RX as soon as ramp-up completes.
-- `PHYEND_DISABLE` - PHYEND -> DISABLE: shut down radio after every packet.
-- `ADDRESS_RSSISTART` - ADDRESS -> RSSISTART: sample signal strength on peer packet arrival.
+- `READY_START` — READY → START: begin TX/RX as soon as ramp-up completes.
+- `PHYEND_DISABLE` — PHYEND → DISABLE: shut down radio after every packet.
+- `ADDRESS_RSSISTART` — ADDRESS → RSSISTART: sample signal strength on peer packet arrival.
 
 Turn-selection shorts (one active at a time):
 
-- `DISABLED_RXEN` - DISABLED -> RXEN: after disable, ramp back into RX.
-- `DISABLED_TXEN` - DISABLED -> TXEN: after disable, ramp into TX.
+- `DISABLED_RXEN` — DISABLED → RXEN: after disable, ramp back into RX.
+- `DISABLED_TXEN` — DISABLED → TXEN: after disable, ramp into TX.
 
 `PHYEND_DISABLE` + a turn-selection short chains the whole turnaround in hardware:
-packet ends -> radio disables -> radio re-enables in the next direction, no ISR needed.
+packet ends → radio disables → radio re-enables in the next direction, no ISR needed.
 
 The active shortcut set prepares the *next* direction:
 
@@ -168,7 +170,7 @@ TX programming:
 
 ```text
 PACKETPTR = &tx_ring[tx_rd_idx]   if TX ring non-empty
-PACKETPTR = &keepalive_packet     if TX ring empty
+PACKETPTR = &keepalive_packet       if TX ring empty
 ```
 
 Programming points:
@@ -190,18 +192,21 @@ Timer:
 - CC[4] captures `PHYEND`.
 
 Constants:
-- `PFSK_RADIO_LISTEN_TIMEOUT_BASE_US` — fixed listen window before timeout.
-- `PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US` — max random offset added to listen timeout. Determined by xorshift PRNG seeded from device ID and cycle counter.
-- `PFSK_RADIO_MAX_PACKET_AIRTIME_US` — worst-case packet duration on air.
-- `PFSK_RADIO_DEADLINE_MIN_LEAD_US` — minimum time a deadline must be in the future.
+
+| Constant | Meaning |
+|---|---|
+| `PFSK_RADIO_LISTEN_TIMEOUT_BASE_US` | Fixed listen window before timeout. |
+| `PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US` | Max random offset added to listen timeout. Determined by xorshift PRNG seeded from device ID and cycle counter. |
+| `PFSK_RADIO_MAX_PACKET_AIRTIME_US` | Worst-case packet duration on air. |
+| `PFSK_RADIO_DEADLINE_MIN_LEAD_US` | Minimum time a deadline must be in the future. |
 
 Deadline rules:
 
 | Entry | Deadline |
 |---|---|
-| start -> `LISTEN` | `now + BASE_US + jitter` |
-| `ADDRESS` -> `IN_RX` | `address_tick + MAX_PACKET_AIRTIME_US` |
-| TX `PHYEND` -> `LISTEN` | `tx_phyend_tick + MAX_PACKET_AIRTIME_US + jitter` |
+| start → `LISTEN` | `now + BASE_US + jitter` |
+| `ADDRESS` → `IN_RX` | `address_tick + MAX_PACKET_AIRTIME_US` |
+| TX `PHYEND` → `LISTEN` | `tx_phyend_tick + MAX_PACKET_AIRTIME_US + jitter` |
 
 If a deadline is too close, `radio_core` clamps it forward by
 `DEADLINE_MIN_LEAD_US` and increments `deadline_late_count`.
@@ -210,7 +215,7 @@ TX ring publication never changes deadlines.
 
 ## State Transitions
 
-### `LISTEN -> IN_RX`
+### `LISTEN` → `IN_RX`
 
 Trigger: RADIO `ADDRESS`.
 
@@ -220,7 +225,7 @@ Actions:
 - arm RX deadline
 - program TX `PACKETPTR` to TX ring head or keepalive
 
-### `LISTEN -> IN_TX`
+### `LISTEN` → `IN_TX`
 
 Trigger: listen timeout deadline.
 
@@ -234,7 +239,7 @@ Actions:
 - trigger RADIO `DISABLE`
 - if trigger fails, queue `TX_TRIGGER_FAILED`
 
-### `IN_RX -> IN_TX`
+### `IN_RX` → `IN_TX`
 
 Triggers:
 
@@ -258,7 +263,7 @@ RX timeout deadline actions:
 - trigger RADIO `DISABLE`
 - if trigger fails, queue `TX_TRIGGER_FAILED`
 
-### `IN_TX -> LISTEN`
+### `IN_TX` → `LISTEN`
 
 Trigger: TX `PHYEND`.
 

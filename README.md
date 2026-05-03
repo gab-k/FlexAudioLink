@@ -109,40 +109,4 @@ The UI communicates with the device over USB CDC ACM using:
 
 `webui/spec.md` is broader than the currently implemented firmware surface and should be read as intent rather than as a statement of completed firmware behavior.
 
-## Diagram Draft 1
 
-```mermaid
-flowchart LR
-    Source[Audio Source / Sink<br/>USB Host]
-    Dongle[FlexAudioLink Node<br/>USB Device]
-    Headset[FlexAudioLink Node]
-    Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
-
-    Source <-->|USB Audio / CDC| Dongle
-    Dongle <-->|Proprietary FSK| Headset
-    Headset <-->|Audio| Endpoint
-```
-
-## Diagram Draft 2
-
-```mermaid
-flowchart LR
-    Source[Audio Source / Sink<br/>USB Host]
-    Node[FlexAudioLink Node<br/>USB Device]
-    Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
-
-    Source <-->|USB Audio / CDC| Node
-    Node <-->|Audio| Endpoint
-```
-
-## Diagram Draft 3
-
-```mermaid
-flowchart LR
-    Source[Audio Source / Sink<br/>BLE Central]
-    Node[FlexAudioLink Node]
-    Endpoint[Audio Source / Sink<br/>Analog Audio via I2S / Codec<br/>or USB Audio]
-
-    Source <-->|BLE Audio / Control| Node
-    Node <-->|Audio| Endpoint
-```
