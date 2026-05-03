@@ -100,9 +100,7 @@ static void usb_device_thread(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	while (!app_control_boot_profile_ready()) {
-		k_sleep(K_MSEC(10));
-	}
+	app_control_await_boot();
 
 	while (!usb_device_low_level_init()) {
 		k_sleep(K_MSEC(100));
