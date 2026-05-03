@@ -21,7 +21,7 @@ Implementation reference: `firmware/src/prop_fsk/`.
 
 ## Relevant RADIO Peripheral Events
 
-Reference: https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html
+Reference: [nRF RADIO peripheral docs](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html)
 
 | Event | Meaning |
 |---|---|
@@ -91,7 +91,7 @@ Constants:
 - `PFSK_KEEPALIVE_PAYLOAD_LEN = 16U`
 - `PFSK_KEEPALIVE_SEQ = UINT16_MAX`
 
-Note: Do not confuse `payload` inside `struct pfsk_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
+Note: Do not confuse `payload` inside `struct pfsk_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs -> Packet configuration](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
 
 ## Buffers
 
@@ -127,30 +127,36 @@ TX ring rules:
 RX ring rules:
 
 - RADIO DMA writes to `rx_ring[rx_wr_idx]`.
-- `CRCOK`/`CRCERROR` queues a metadata-only event.
-- RX write index advances only if the RX ring has room and event queueing
-  succeeds.
+- `CRCOK`/`CRCERROR` queues a session event.
+- RX write index advances only if the RX ring has room and event queueing succeeds.
 - Session releases a consumed RX slot with `pfsk_radio_rx_advance_rd_idx()`.
 
 ## RADIO Shortcuts
 
-Base shorts:
+Reference: [nRF RADIO peripheral docs -> SHORTS register](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title112)
 
-- `READY_START`
-- `PHYEND_DISABLE`
-- `ADDRESS_RSSISTART`
+Base shorts (always active):
 
-Turn-selection shorts:
+- `READY_START` - READY -> START: begin TX/RX as soon as ramp-up completes.
+- `PHYEND_DISABLE` - PHYEND -> DISABLE: shut down radio after every packet.
+- `ADDRESS_RSSISTART` - ADDRESS -> RSSISTART: sample signal strength on peer packet arrival.
 
-- `DISABLED_RXEN`
-- `DISABLED_TXEN`
+Turn-selection shorts (one active at a time):
 
-The active shortcut set is:
+- `DISABLED_RXEN` - DISABLED -> RXEN: after disable, ramp back into RX.
+- `DISABLED_TXEN` - DISABLED -> TXEN: after disable, ramp into TX.
 
-- RX path: `BASE | DISABLED_RXEN`
-- TX path: `BASE | DISABLED_TXEN`
+`PHYEND_DISABLE` + a turn-selection short chains the whole turnaround in hardware:
+packet ends -> radio disables -> radio re-enables in the next direction, no ISR needed.
 
-## PACKETPTR Rules
+The active shortcut set prepares the *next* direction:
+
+- while receiving: `BASE | DISABLED_TXEN` (turnaround into TX)
+- while transmitting: `BASE | DISABLED_RXEN` (turnaround into RX)
+
+## PACKETPTR and Shortcut Programming
+
+PACKETPTR and shortcuts are always set together. Programming an RX pointer selects `DISABLED_TXEN`, programming a TX pointer selects `DISABLED_RXEN`.
 
 RX programming:
 
@@ -183,6 +189,12 @@ Timer:
 - CC[3] is the semantic deadline compare.
 - CC[4] captures `PHYEND`.
 
+Constants:
+- `PFSK_RADIO_LISTEN_TIMEOUT_BASE_US` — fixed listen window before timeout.
+- `PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US` — max random offset added to listen timeout. Determined by xorshift PRNG seeded from device ID and cycle counter.
+- `PFSK_RADIO_MAX_PACKET_AIRTIME_US` — worst-case packet duration on air.
+- `PFSK_RADIO_DEADLINE_MIN_LEAD_US` — minimum time a deadline must be in the future.
+
 Deadline rules:
 
 | Entry | Deadline |
@@ -191,8 +203,8 @@ Deadline rules:
 | `ADDRESS` -> `IN_RX` | `address_tick + MAX_PACKET_AIRTIME_US` |
 | TX `PHYEND` -> `LISTEN` | `tx_phyend_tick + MAX_PACKET_AIRTIME_US + jitter` |
 
-`radio_core` clamps too-late deadlines forward by
-`PFSK_RADIO_DEADLINE_MIN_LEAD_US` and increments `deadline_late_count`.
+If a deadline is too close, `radio_core` clamps it forward by
+`DEADLINE_MIN_LEAD_US` and increments `deadline_late_count`.
 
 TX ring publication never changes deadlines.
 
@@ -207,7 +219,6 @@ Actions:
 - set `turn_state = IN_RX`
 - arm RX deadline
 - program TX `PACKETPTR` to TX ring head or keepalive
-- set shorts to `BASE | DISABLED_TXEN`
 
 ### `LISTEN -> IN_TX`
 
@@ -217,7 +228,8 @@ Actions:
 
 - queue `LISTEN_TIMEOUT`
 - program TX `PACKETPTR` to TX ring head or keepalive
-- clear pending `ADDRESS`
+- set shorts to `DISABLED_TXEN`
+- clear pending `ADDRESS`, RX ADDRESS could arrive between timeout and `DISABLE`
 - set `turn_state = IN_TX`
 - trigger RADIO `DISABLE`
 - if trigger fails, queue `TX_TRIGGER_FAILED`
@@ -239,9 +251,12 @@ RX `PHYEND` actions:
 RX timeout deadline actions:
 
 - queue `RX_INCOMPLETE`
-- program TX pointer
+- program TX `PACKETPTR` to TX ring head or keepalive
+- set shorts to `DISABLED_TXEN`
+- clear pending `ADDRESS`, RX ADDRESS could arrive between timeout and `DISABLE`
 - set `turn_state = IN_TX`
 - trigger RADIO `DISABLE`
+- if trigger fails, queue `TX_TRIGGER_FAILED`
 
 ### `IN_TX -> LISTEN`
 
@@ -263,17 +278,17 @@ already programmed by TX `ADDRESS`.
 `RX_OK`:
 
 - read RX packet from RX ring
-- reject malformed length and release slot
+- reject malformed length and advance RX read index (early return)
 - reset `consecutive_rx_misses`
 - enter `IN_SERVICE`
 - if keepalive marker: no app frame, no seq accounting
 - if payload: queue app RX frame and update seq/loss accounting
-- release RX slot
+- advance RX read index
 
 `RX_BAD`:
 
 - reset `consecutive_rx_misses`
-- release RX slot
+- advance RX ring buffer read index
 - do not enter service from `NO_SERVICE`
 
 `RX_INCOMPLETE`:
@@ -300,7 +315,7 @@ already programmed by TX `ADDRESS`.
 
 ## Service State
 
-External states:
+States:
 
 - `NO_SERVICE`
 - `IN_SERVICE`
@@ -312,6 +327,7 @@ Enter service:
 Stay in service:
 
 - `RX_OK`, `RX_BAD`, and `RX_INCOMPLETE` all reset misses
+- `RX_BAD` and `RX_INCOMPLETE` reset misses but do not enter service on their own
 
 Leave service:
 
@@ -345,7 +361,6 @@ On service loss:
 - app TX/RX queues
 - payload copy into TX ring
 - payload sequence/loss accounting
-- keepalive RX policy
 - user-visible session stats/logs
 
 ## Invariants
@@ -355,11 +370,14 @@ On service loss:
 3. `ADDRESS` is the only peer packet start gate.
 4. `FRAMESTART` and `SYNC` are not protocol inputs.
 5. `session.c` does not own radio turn state.
-6. RX events do not carry packet payloads.
+6. Session events do not carry packet payloads.
 7. TX ring entries are payload-only.
 8. Empty TX ring means transmit `keepalive_packet`.
 9. Keepalive does not consume payload sequence numbers.
 10. Payload sequence generation skips `PFSK_KEEPALIVE_SEQ`.
 11. Session-thread TX publication does not program `PACKETPTR`.
-12. Listen timeout is a hard turn boundary.
-13. Stop purges stale session events and leaves radio state disabled.
+12. `PACKETPTR` and turn-selection shortcut are always programmed together.
+13. `ADDRESS` must program the next-direction `PACKETPTR` before `PHYEND` fires.
+14. Only `RX_OK` can enter service; `RX_BAD` and `RX_INCOMPLETE` cannot.
+15. Listen timeout is a hard turn boundary.
+16. Stop purges stale session events and leaves radio state disabled.
