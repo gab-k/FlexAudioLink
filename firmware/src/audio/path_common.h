@@ -4,48 +4,48 @@
 #include <zephyr/sys/util.h>
 #include "prop_fsk/radio_core.h"
 
-#define AUDIO_BYTES_PER_STEREO_SAMPLE      4U
+#define BYTES_PER_STEREO_SAMPLE      4U
 /* Audio bytes stored in pfsk_packet.payload. pfsk_packet.length adds PFSK metadata. */
-#define AUDIO_PFSK_SPK_PACKET_BYTES        192U
-#define AUDIO_PFSK_MIC_PACKET_BYTES        96U
+#define PFSK_SPK_PACKET_BYTES        192U
+#define PFSK_MIC_PACKET_BYTES        96U
 
-BUILD_ASSERT(AUDIO_PFSK_SPK_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
+BUILD_ASSERT(PFSK_SPK_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
 	     "speaker PFSK packet must fit payload");
-BUILD_ASSERT(AUDIO_PFSK_MIC_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
+BUILD_ASSERT(PFSK_MIC_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
 	     "mic PFSK packet must fit payload");
-BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_SPK_PACKET_BYTES) <=
+BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + PFSK_SPK_PACKET_BYTES) <=
 	     PFSK_PACKET_MAX_LEN,
 	     "speaker PFSK frame length must fit packet");
-BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES) <=
+BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + PFSK_MIC_PACKET_BYTES) <=
 	     PFSK_PACKET_MAX_LEN,
 	     "mic PFSK frame length must fit packet");
 
-#define AUDIO_FILTER_ALPHA_NUM             1
-#define AUDIO_FILTER_ALPHA_DEN             5
-#define AUDIO_P_GAIN                       (1.25f)
-#define AUDIO_P_TERM_MAX_HZ                400
-#define AUDIO_P_ADJUST_MAX_HZ              800
-#define AUDIO_P_KI                         (0.005f)
-#define AUDIO_I_MAX_HZ                     400
+#define FILTER_ALPHA_NUM             1
+#define FILTER_ALPHA_DEN             5
+#define P_GAIN                       (1.25f)
+#define P_TERM_MAX_HZ                400
+#define P_ADJUST_MAX_HZ              800
+#define P_KI                         (0.005f)
+#define I_MAX_HZ                     400
 
-#define AUDIO_CTRL_DEBUG_LOG
+#define CTRL_DEBUG_LOG
 #define WARN_SPK_LVL
 #define WARN_COOLDOWN_MS	2000
 
 /* Shared FLL update throttling parameters. */
-#define AUDIO_FLL_UPDATE_INTERVAL_MS       100
+#define FLL_UPDATE_INTERVAL_MS       100
 
-enum audio_path_state {
-	AUDIO_PATH_STATE_BUFFERING = 0,
-	AUDIO_PATH_STATE_PLAYING,
+enum path_state {
+	PATH_STATE_BUFFERING = 0,
+	PATH_STATE_PLAYING,
 };
 
-struct audio_fll_state {
+struct fll_state {
 	bool fixed;
 	int32_t fixed_rate_hz;
 };
 
-const char *audio_path_get_state_name(enum audio_path_state state);
+const char *path_get_state_name(enum path_state state);
 
 /*
  * Shared adaptive codec clock PI controller.
@@ -61,15 +61,15 @@ const char *audio_path_get_state_name(enum audio_path_state state);
  *
  *   level = fifo + pending is computed internally.
  */
-int32_t audio_codec_clock_controller(uint32_t target,
-				     float *filter, float *i_sum,
-				     float gain_mult, float ki,
-				     uint32_t fifo, uint32_t pending);
+int32_t codec_clock_controller(uint32_t target,
+				float *filter, float *i_sum,
+				float gain_mult, float ki,
+				uint32_t fifo, uint32_t pending);
 
 void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);
 
-extern struct audio_fll_state audio_fll;
+extern struct fll_state fll;
 
-bool audio_fll_set_fixed(int32_t rate_hz);
-void audio_fll_set_auto(void);
-int32_t audio_fll_get_fixed_rate(void);
+bool fll_set_fixed(int32_t rate_hz);
+void fll_set_auto(void);
+int32_t fll_get_fixed_rate(void);

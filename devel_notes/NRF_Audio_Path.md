@@ -26,13 +26,14 @@ Profile orchestration and route selection:
 
 Shared audio-path helpers/constants:
 
-- `firmware/src/audio/audio_path_common.c`
-- `firmware/src/audio/audio_path_common.h`
+- `firmware/src/audio/path_common.c`
+- `firmware/src/audio/path_common.h`
 
 Route implementations:
 
-- `firmware/src/audio/audio_path_wired.c`
-- `firmware/src/audio/audio_path_wireless.c`
+- `firmware/src/audio/path_wired.c`
+- `firmware/src/audio/path_dongle.c`
+- `firmware/src/audio/path_headset.c`
 
 I2S/codec pipeline:
 

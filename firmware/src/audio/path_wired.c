@@ -1,10 +1,10 @@
-#include "audio/audio_path_wired.h"
+#include "audio/path_wired.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(audio_path_wired, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
 
-#include "audio/audio_path_common.h"
+#include "audio/path_common.h"
 #include "audio/i2s.h"
 #include "audio/nau88l21.h"
 
@@ -12,12 +12,12 @@ LOG_MODULE_REGISTER(audio_path_wired, LOG_LEVEL_INF);
 #define WIRED_THREAD_PRIORITY          7
 #define WIRED_LOOP_SLEEP_MS            1
 
-#define WIRED_AUDIO_START_BYTES            480U
-#define WIRED_AUDIO_TARGET_BYTES           480U
-#define WIRED_WARN_LOW_BYTES  (WIRED_AUDIO_TARGET_BYTES * 10U / 50U )
-#define WIRED_WARN_HIGH_BYTES (WIRED_AUDIO_TARGET_BYTES * 90U / 50U )
+#define WIRED_START_BYTES            480U
+#define WIRED_TARGET_BYTES           480U
+#define WIRED_WARN_LOW_BYTES  (WIRED_TARGET_BYTES * 10U / 50U )
+#define WIRED_WARN_HIGH_BYTES (WIRED_TARGET_BYTES * 90U / 50U )
 
-static struct audio_path_wired_status wired_status;
+static struct path_wired_status wired_status;
 
 static K_THREAD_STACK_DEFINE(wired_thread_stack, WIRED_THREAD_STACK_SIZE);
 static struct k_thread wired_thread_data;
@@ -31,23 +31,23 @@ static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 	static float i_sum;
 	uint32_t now_ms;
 
-	if (audio_fll.fixed) {
+	if (fll.fixed) {
 		return;
 	}
 
 	now_ms = k_uptime_get();
-	if (now_ms - last_ms < AUDIO_FLL_UPDATE_INTERVAL_MS) {
+	if (now_ms - last_ms < FLL_UPDATE_INTERVAL_MS) {
 		return;
 	}
 	last_ms = now_ms;
 
-	int32_t adjust_hz = audio_codec_clock_controller(WIRED_AUDIO_TARGET_BYTES,
-							  &filter, &i_sum,
-							  AUDIO_P_GAIN, AUDIO_P_KI,
-							  fifo_lvl, pending);
+	int32_t adjust_hz = codec_clock_controller(WIRED_TARGET_BYTES,
+						    &filter, &i_sum,
+						    P_GAIN, P_KI,
+						    fifo_lvl, pending);
 
 	wired_status.spk_filtered_level_bytes = (uint32_t)filter;
-	wired_status.spk_error_bytes = (int32_t)WIRED_AUDIO_TARGET_BYTES - (int32_t)wired_status.spk_filtered_level_bytes;
+	wired_status.spk_error_bytes = (int32_t)WIRED_TARGET_BYTES - (int32_t)wired_status.spk_filtered_level_bytes;
 	wired_status.spk_p_adjust_hz = adjust_hz;
 
 	int32_t target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
@@ -60,9 +60,9 @@ static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 	}
 }
 
-void audio_path_wired_init(void)
+void path_wired_init(void)
 {
-	wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+	wired_status.stream_state = PATH_STATE_BUFFERING;
 	wired_status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
 
 	k_thread_create(&wired_thread_data, wired_thread_stack,
@@ -71,15 +71,15 @@ void audio_path_wired_init(void)
 			WIRED_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
-void audio_path_wired_get_status(struct audio_path_wired_status *out)
+void path_wired_get_status(struct path_wired_status *out)
 {
 	if (out == NULL) {
 		return;
 	}
 
 	*out = wired_status;
-	if (audio_fll.fixed) {
-		out->spk_fll_target_rate_hz = audio_fll.fixed_rate_hz;
+	if (fll.fixed) {
+		out->spk_fll_target_rate_hz = fll.fixed_rate_hz;
 	}
 }
 
@@ -107,20 +107,20 @@ static void wired_thread(void *a, void *b, void *c)
 		wired_status.spk_fifo_bytes = ep_out_ff_bytes;
 		wired_status.spk_pending_bytes = pending;
 
-		if (wired_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
-			if (level >= WIRED_AUDIO_START_BYTES) {
-				wired_status.stream_state = AUDIO_PATH_STATE_PLAYING;
+		if (wired_status.stream_state == PATH_STATE_BUFFERING) {
+			if (level >= WIRED_START_BYTES) {
+				wired_status.stream_state = PATH_STATE_PLAYING;
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
 				audio_i2s_activate(ep_out_ff, ep_in_ff);
 			}
 		} else if (pending == 0U && ep_out_ff_bytes < AUDIO_I2S_BLOCK_BYTES) {
-			wired_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+			wired_status.stream_state = PATH_STATE_BUFFERING;
 			LOG_INF("switching to BUFFERING, notifying i2s thread...");
 			audio_i2s_deactivate();
 			wired_status.spk_underrun_events++;
 		}
 
-		if (wired_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+		if (wired_status.stream_state == PATH_STATE_PLAYING) {
 			wired_update_codec_clock(ep_out_ff_bytes, pending);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, ep_out_ff_bytes, pending, WIRED_WARN_LOW_BYTES, WIRED_WARN_HIGH_BYTES);

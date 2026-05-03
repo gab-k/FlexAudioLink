@@ -1,13 +1,13 @@
-#include "audio/audio_path_wireless_headset.h"
+#include "audio/path_headset.h"
 
 #include <stdint.h>
 #include <string.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(audio_path_pfsk_headset, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(path_headset, LOG_LEVEL_INF);
 
-#include "audio/audio_path_common.h"
+#include "audio/path_common.h"
 #include "audio/i2s.h"
 #include "audio/nau88l21.h"
 #include "prop_fsk/session.h"
@@ -16,15 +16,15 @@ LOG_MODULE_REGISTER(audio_path_pfsk_headset, LOG_LEVEL_INF);
 #define HEADSET_THREAD_PRIORITY    6
 #define HEADSET_LOOP_SLEEP_MS      1
 
-#define HEADSET_AUDIO_TARGET_BYTES           HEADSET_SPK_FIFO_SIZE/2
-#define HEADSET_AUDIO_START_BYTES            HEADSET_AUDIO_TARGET_BYTES
+#define HEADSET_TARGET_BYTES  	(HEADSET_SPK_FIFO_SIZE/2)
+#define HEADSET_START_BYTES  	(HEADSET_TARGET_BYTES)
 #define HEADSET_WARN_LOW_BYTES  (HEADSET_SPK_FIFO_SIZE * 10U / 100U )
 #define HEADSET_WARN_HIGH_BYTES (HEADSET_SPK_FIFO_SIZE * 90U / 100U )
 
 #define HEADSET_SPK_FIFO_SIZE      1920U
 #define HEADSET_MIC_FIFO_SIZE      960U
 
-static struct audio_path_wireless_headset_status headset_status;
+static struct path_headset_status headset_status;
 
 static uint8_t headset_spk_fifo_buf[HEADSET_SPK_FIFO_SIZE];
 static uint8_t headset_mic_fifo_buf[HEADSET_MIC_FIFO_SIZE];
@@ -40,13 +40,13 @@ static struct k_thread headset_thread_data;
 
 static void headset_thread(void *a, void *b, void *c);
 
-void audio_path_wireless_headset_init(void)
+void path_headset_init(void)
 {
-	headset_status = (struct audio_path_wireless_headset_status){
-		.stream_state = AUDIO_PATH_STATE_BUFFERING,
+	headset_status = (struct path_headset_status){
+		.stream_state = PATH_STATE_BUFFERING,
 		.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ,
 	};
-	audio_fll_set_auto();
+	fll_set_auto();
 
 	tu_fifo_config(&headset_spk_fifo, headset_spk_fifo_buf,
 		       HEADSET_SPK_FIFO_SIZE, true);
@@ -65,12 +65,12 @@ void audio_path_wireless_headset_init(void)
 			HEADSET_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
-void audio_path_wireless_headset_get_status(struct audio_path_wireless_headset_status *out)
+void path_headset_get_status(struct path_headset_status *out)
 {
 	if (out != NULL) {
 		*out = headset_status;
-		if (audio_fll.fixed) {
-			out->spk_fll_target_rate_hz = audio_fll.fixed_rate_hz;
+		if (fll.fixed) {
+			out->spk_fll_target_rate_hz = fll.fixed_rate_hz;
 		}
 	}
 }
@@ -78,7 +78,7 @@ void audio_path_wireless_headset_get_status(struct audio_path_wireless_headset_s
 
 static void headset_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 {
-	if (audio_fll.fixed) {
+	if (fll.fixed) {
 		return;
 	}
 
@@ -88,18 +88,18 @@ static void headset_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
 	uint32_t now_ms;
 
 	now_ms = k_uptime_get();
-	if (now_ms - last_update_uptime_ms < AUDIO_FLL_UPDATE_INTERVAL_MS) {
+	if (now_ms - last_update_uptime_ms < FLL_UPDATE_INTERVAL_MS) {
 		return;
 	}
 	last_update_uptime_ms = now_ms;
 
-	int32_t adjust_hz = audio_codec_clock_controller(
-		HEADSET_AUDIO_TARGET_BYTES, &filter, &i_sum,
-		AUDIO_P_GAIN, AUDIO_P_KI,
+	int32_t adjust_hz = codec_clock_controller(
+		HEADSET_TARGET_BYTES, &filter, &i_sum,
+		P_GAIN, P_KI,
 		fifo_lvl, pending);
 
 	headset_status.spk_filtered_level_bytes = (uint32_t)filter;
-	headset_status.spk_error_bytes = (int32_t)HEADSET_AUDIO_TARGET_BYTES - (int32_t)headset_status.spk_filtered_level_bytes;
+	headset_status.spk_error_bytes = (int32_t)HEADSET_TARGET_BYTES - (int32_t)headset_status.spk_filtered_level_bytes;
 	headset_status.spk_p_adjust_hz = adjust_hz;
 
 	int32_t target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
@@ -129,14 +129,14 @@ static void headset_thread(void *a, void *b, void *c)
 		headset_status.spk_fifo_bytes = spk_ff_bytes;
 		headset_status.spk_pending_bytes = pending;
 
-		if (headset_status.stream_state == AUDIO_PATH_STATE_BUFFERING) {
-			if (level >= HEADSET_AUDIO_START_BYTES) {
-				headset_status.stream_state = AUDIO_PATH_STATE_PLAYING;
+		if (headset_status.stream_state == PATH_STATE_BUFFERING) {
+			if (level >= HEADSET_START_BYTES) {
+				headset_status.stream_state = PATH_STATE_PLAYING;
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
 				audio_i2s_activate(spk_ff, mic_ff);
 			}
 		} else if (pending == 0U && spk_ff_bytes < AUDIO_I2S_BLOCK_BYTES) {
-			headset_status.stream_state = AUDIO_PATH_STATE_BUFFERING;
+			headset_status.stream_state = PATH_STATE_BUFFERING;
 			LOG_INF("switching to BUFFERING, notifying i2s thread...");
 			audio_i2s_deactivate();
 			headset_status.spk_underrun_events++;
@@ -148,7 +148,7 @@ static void headset_thread(void *a, void *b, void *c)
 			uint8_t payload_bytes;
 
 			uint16_t spk_ff_remaining = tu_fifo_remaining(spk_ff);
-			if(spk_ff_remaining < AUDIO_PFSK_SPK_PACKET_BYTES) {
+			if(spk_ff_remaining < PFSK_SPK_PACKET_BYTES) {
 				break;
 			}
 
@@ -157,8 +157,8 @@ static void headset_thread(void *a, void *b, void *c)
 			}
 
 			payload_bytes = packet.length - PFSK_PACKET_METADATA_LEN;
-			if (payload_bytes != AUDIO_PFSK_SPK_PACKET_BYTES) {
-				LOG_ERR("Invalid payload size! Expected %d bytes, got %d bytes", AUDIO_PFSK_SPK_PACKET_BYTES, payload_bytes);
+			if (payload_bytes != PFSK_SPK_PACKET_BYTES) {
+				LOG_ERR("Invalid payload size! Expected %d bytes, got %d bytes", PFSK_SPK_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
@@ -175,19 +175,19 @@ static void headset_thread(void *a, void *b, void *c)
 			uint32_t payload_bytes;
 
 			uint16_t mic_ff_count = tu_fifo_count(mic_ff);
-			if(mic_ff_count < AUDIO_PFSK_MIC_PACKET_BYTES) {
+			if(mic_ff_count < PFSK_MIC_PACKET_BYTES) {
 				break;
 			}
 			
 			memset(&packet, 0, sizeof(packet));
-			payload_bytes = tu_fifo_read_n(mic_ff, packet.payload, AUDIO_PFSK_MIC_PACKET_BYTES);
+			payload_bytes = tu_fifo_read_n(mic_ff, packet.payload, PFSK_MIC_PACKET_BYTES);
 
-			if (payload_bytes != AUDIO_PFSK_MIC_PACKET_BYTES) {
-				LOG_ERR("Invalid payload size from microphone FIFO! Expected %d bytes, got %d bytes", AUDIO_PFSK_MIC_PACKET_BYTES, payload_bytes);
+			if (payload_bytes != PFSK_MIC_PACKET_BYTES) {
+				LOG_ERR("Invalid payload size from microphone FIFO! Expected %d bytes, got %d bytes", PFSK_MIC_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
-			packet.length = PFSK_PACKET_METADATA_LEN + AUDIO_PFSK_MIC_PACKET_BYTES;
+			packet.length = PFSK_PACKET_METADATA_LEN + PFSK_MIC_PACKET_BYTES;
 
 			if (!pfsk_session_tx_enqueue(&packet, K_NO_WAIT)) {
 				LOG_WRN_RATELIMIT_RATE(10000, "Failed to enqueue PFSK packet for transmission!");
@@ -196,7 +196,7 @@ static void headset_thread(void *a, void *b, void *c)
 		}
 
 		/* FLL controller */
-		if (headset_status.stream_state == AUDIO_PATH_STATE_PLAYING) {
+		if (headset_status.stream_state == PATH_STATE_PLAYING) {
 			headset_update_codec_clock(spk_ff_bytes, pending);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, spk_ff_bytes, pending, HEADSET_WARN_LOW_BYTES, HEADSET_WARN_HIGH_BYTES);

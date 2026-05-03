@@ -1,8 +1,8 @@
 #include "app_control.h"
 
-#include "audio/audio_path_wired.h"
-#include "audio/audio_path_wireless_dongle.h"
-#include "audio/audio_path_wireless_headset.h"
+#include "audio/path_wired.h"
+#include "audio/path_dongle.h"
+#include "audio/path_headset.h"
 #include "prop_fsk/session.h"
 
 #include <stdint.h>
@@ -79,19 +79,19 @@ void app_control_boot(void)
 
 	switch (current_profile) {
 	case APP_PROFILE_USB:
-		audio_path_wired_init();
+		path_wired_init();
 		break;
 	case APP_PROFILE_PFSK_DONGLE:
 		if (!pfsk_session_start_dongle()) {
 			printk("app_control: failed to start PFSK dongle session\n");
 		}
-		audio_path_wireless_dongle_init();
+		path_dongle_init();
 		break;
 	case APP_PROFILE_PFSK_HEADSET:
 		if (!pfsk_session_start_headset()) {
 			printk("app_control: failed to start PFSK headset session\n");
 		}
-		audio_path_wireless_headset_init();
+		path_headset_init();
 		break;
 	default:
 		break;

@@ -2,10 +2,10 @@
 
 #include "app_control.h"
 #include "audio/i2s.h"
-#include "audio/audio_path_common.h"
-#include "audio/audio_path_wired.h"
-#include "audio/audio_path_wireless_dongle.h"
-#include "audio/audio_path_wireless_headset.h"
+#include "audio/path_common.h"
+#include "audio/path_wired.h"
+#include "audio/path_dongle.h"
+#include "audio/path_headset.h"
 #include "prop_fsk/session.h"
 #include "prop_fsk/test_mode.h"
 
@@ -142,13 +142,13 @@ static void cli_emit_status_audio_push(void)
 
 	switch (profile) {
 	case APP_PROFILE_USB: {
-		struct audio_path_wired_status s;
+		struct path_wired_status s;
 
-		audio_path_wired_get_status(&s);
+		path_wired_get_status(&s);
 		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_underruns=%u\n",
-			  audio_path_get_state_name(s.stream_state),
+			  path_get_state_name(s.stream_state),
 			  s.spk_fifo_bytes,
 			  s.spk_pending_bytes,
 			  s.spk_filtered_level_bytes,
@@ -159,21 +159,21 @@ static void cli_emit_status_audio_push(void)
 		return;
 	}
 	case APP_PROFILE_PFSK_DONGLE: {
-		struct audio_path_wireless_dongle_status s;
+		struct path_dongle_status s;
 
-		audio_path_wireless_dongle_get_status(&s);
+		path_dongle_get_status(&s);
 		cli_print("#A overflow_bytes=%u\n",
 			  s.overflow_bytes);
 		return;
 	}
 	case APP_PROFILE_PFSK_HEADSET: {
-		struct audio_path_wireless_headset_status s;
+		struct path_headset_status s;
 
-		audio_path_wireless_headset_get_status(&s);
+		path_headset_get_status(&s);
 		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
 			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_underruns=%u\n",
-			  audio_path_get_state_name(s.stream_state),
+			  path_get_state_name(s.stream_state),
 			  s.spk_fifo_bytes,
 			  s.spk_pending_bytes,
 			  s.spk_filtered_level_bytes,
@@ -473,13 +473,13 @@ static void cli_cmd_fll(char *args)
 	}
 
 	if (args == NULL || *args == '\0' || strcasecmp(args, "auto") == 0) {
-		audio_fll_set_auto();
+		fll_set_auto();
 		cli_print("OK fll=auto (P-controller running)\n");
 		return;
 	}
 
 	if (strcasecmp(args, "status") == 0) {
-		int32_t fixed = audio_fll_get_fixed_rate();
+		int32_t fixed = fll_get_fixed_rate();
 
 		if (fixed != 0) {
 			cli_print("OK fll=fixed target_rate=%d\n", fixed);
@@ -489,8 +489,8 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	lo = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - AUDIO_P_ADJUST_MAX_HZ);
-	hi = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + AUDIO_P_ADJUST_MAX_HZ);
+	lo = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - P_ADJUST_MAX_HZ);
+	hi = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + P_ADJUST_MAX_HZ);
 
 	rate = strtol(args, NULL, 10);
 	if (rate < lo || rate > hi) {
@@ -498,7 +498,7 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	if (audio_fll_set_fixed((int32_t)rate)) {
+	if (fll_set_fixed((int32_t)rate)) {
 		cli_print("OK fll=fixed target_rate=%ld (P-controller paused)\n", rate);
 	} else {
 		cli_print("ERR fll driver rejected rate %ld\n", rate);

@@ -14,10 +14,10 @@ target_sources(app PRIVATE
     src/main.c
     src/app_control.c
     src/cli.c
-    src/audio/audio_path_common.c
-    src/audio/audio_path_wired.c
-    src/audio/audio_path_wireless_dongle.c
-    src/audio/audio_path_wireless_headset.c
+    src/audio/path_common.c
+    src/audio/path_wired.c
+    src/audio/path_dongle.c
+    src/audio/path_headset.c
     src/audio/i2s.c
     src/audio/nau88l21.c
     src/prop_fsk/radio_core.c
