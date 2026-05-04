@@ -9,44 +9,9 @@ temp
 **/*.pyc
 **/*.pyo
 
-# Temporary files
-temp/
-
-
-# Local build outputs
-/build/
-
-# NXP / MCUXpresso build outputs (CMake preset dirs)
-firmware/flash_debug/
-firmware/flash_release/
-
-# Zephyr / NCS build outputs
-firmware/**/build/
+# firmware build outputs abd Kconfig backup
+/firmware/build
+/firmware/Kconfig.bak
 
 # Machine-local CMake preset overrides
 CMakeUserPresets.json
-
-# Zephyr generated files that shouldn't be committed
-firmware/**/.west/
-/webui/__pycache__/
-
-# nRF firmware local tooling files
-/firmware/.clangd
-/firmware/.claude/
-/firmware/.vscode/
-/firmware/Kconfig.bak
-
-# Compiled objects and binaries
-**/*.o
-**/*.a
-**/*.elf
-**/*.bin
-**/*.hex
-**/*.map
-**/*.lst
-
-# CMake
-**/CMakeCache.txt
-**/CMakeFiles/
-**/cmake_install.cmake
-**/compile_commands.json
