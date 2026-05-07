@@ -45,13 +45,13 @@
       desc: 'Direct wired USB Audio Class device. The radio path is not started.',
     },
     {
-      value: 'pfsk_dongle',
-      label: 'PFSK Dongle',
+      value: 'prop_dongle',
+      label: 'PROP Dongle',
       desc: 'USB audio bridge for the PC side of the proprietary 2.4 GHz link.',
     },
     {
-      value: 'pfsk_headset',
-      label: 'PFSK Headset',
+      value: 'prop_headset',
+      label: 'PROP Headset',
       desc: 'Codec/I2S audio bridge for the headset side of the proprietary 2.4 GHz link.',
     },
   ];
@@ -81,9 +81,9 @@
       USB mode disables the wireless radio. Audio and Radio settings panels are not applicable.
     </div>
   {/if}
-  {#if localConfig.operatingMode === 'pfsk_dongle' || localConfig.operatingMode === 'pfsk_headset'}
+  {#if localConfig.operatingMode === 'prop_dongle' || localConfig.operatingMode === 'prop_headset'}
     <div class="banner info">
-      PFSK modes use the proprietary 2.4 GHz path and the role is part of the selected boot mode.
+      PROP modes use the proprietary 2.4 GHz path and the role is part of the selected boot mode.
     </div>
   {/if}
 

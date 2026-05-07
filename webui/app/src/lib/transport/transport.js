@@ -157,8 +157,8 @@ export class WebSocketTransport extends TransportEvent {
 export class DemoTransport extends TransportEvent {
   static MODE_AUDIO_IO = {
     usb: 'wired',
-    pfsk_dongle: 'usb',
-    pfsk_headset: 'codec',
+    prop_dongle: 'usb',
+    prop_headset: 'codec',
   };
 
   static DEFAULT_STATE = {
@@ -168,7 +168,7 @@ export class DemoTransport extends TransportEvent {
     codec_mic: 'pcm', mic_gain: '12', mic_mute: 'off',
     phy_rate: '4', tx_power: '0', fhss_exclusion: 'none',
     payload_ms_dl: '1', payload_ms_ul: '1', jitter_buffer_ms: '10',
-    mode: 'pfsk_dongle',
+    mode: 'prop_dongle',
     audio_io: 'usb', device_addr: 'D0D0D0D0', peer_addr: 'A1A1A1A1',
     auto_sleep: '10', low_battery_threshold: '10',
     eq0: '100,0', eq1: '400,0', eq2: '1000,0', eq3: '4000,0', eq4: '10000,0',

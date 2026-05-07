@@ -97,8 +97,8 @@ class MockDevice:
 
     MODE_AUDIO_IO = {
         'usb': 'wired',
-        'pfsk_dongle': 'usb',
-        'pfsk_headset': 'codec',
+        'prop_dongle': 'usb',
+        'prop_headset': 'codec',
     }
 
     DEFAULT_STATE = {
@@ -114,7 +114,7 @@ class MockDevice:
         'phy_rate': '4', 'tx_power': '0', 'fhss_exclusion': 'none',
         'payload_ms_dl': '1', 'payload_ms_ul': '1', 'jitter_buffer_ms': '10',
         # Mode
-        'mode': 'pfsk_dongle',
+        'mode': 'prop_dongle',
         # Device
         'audio_io': 'usb', 'device_addr': 'D0D0D0D0', 'peer_addr': 'A1A1A1A1',
         'auto_sleep': '10', 'low_battery_threshold': '10',

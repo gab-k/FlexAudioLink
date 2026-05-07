@@ -134,7 +134,7 @@ function createDeviceStore() {
     payloadMsDl: isNum(0.5, 50),
     payloadMsUl: isNum(0.5, 50),
     jitterBufferMs: isNum(1, 50),
-    operatingMode: oneOf('usb', 'pfsk_dongle', 'pfsk_headset'),
+    operatingMode: oneOf('usb', 'prop_dongle', 'prop_headset'),
     audioIo: oneOf('wired', 'usb', 'codec'),
     deviceAddr: isStr,
     peerAddr: isStr,
@@ -370,8 +370,8 @@ function createDeviceStore() {
   }
 
   function roleForMode(mode) {
-    if (mode === 'pfsk_dongle') return 'dongle';
-    if (mode === 'pfsk_headset') return 'headset';
+    if (mode === 'prop_dongle') return 'dongle';
+    if (mode === 'prop_headset') return 'headset';
     if (mode === 'usb') return 'usb';
     return '';
   }

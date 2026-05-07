@@ -52,9 +52,9 @@
   let dirty = $state(device.dirtyPanels.has('radio'));
   let applying = $state(false);
 
-  const isPfsk = $derived(
-    device.effectiveOperatingMode === 'pfsk_dongle' ||
-    device.effectiveOperatingMode === 'pfsk_headset'
+  const isProp = $derived(
+    device.effectiveOperatingMode === 'prop_dongle' ||
+    device.effectiveOperatingMode === 'prop_headset'
   );
   const txPowerOptions = [-20, -16, -12, -8, -4, 0, 4, 8];
 
@@ -85,7 +85,7 @@
   async function apply() {
     applying = true;
     try {
-      if (isPfsk) {
+      if (isProp) {
         await device.sendCommand('phy_rate', localConfig.phyRate);
         await device.sendCommand('tx_power', localConfig.txPower);
         await device.sendCommand('payload_ms_dl', localConfig.payloadMsDl);
@@ -108,7 +108,7 @@
     <div class="banner info">Connect a device to configure settings.</div>
   {:else if device.effectiveOperatingMode === 'usb'}
     <div class="banner info">USB Audio mode is active. Radio settings do not apply. Change the operating mode in the Mode tab.</div>
-  {:else if isPfsk}
+  {:else if isProp}
     <div class="card">
       <h3>PHY & Power</h3>
         <label class="field">
@@ -170,11 +170,11 @@
     </div>
   {/if}
 
-  {#if device.configLoaded && isPfsk}
+  {#if device.configLoaded && isProp}
     <LinkBudget config={mergedConfig} />
   {/if}
 
-  {#if device.configLoaded && isPfsk}
+  {#if device.configLoaded && isProp}
     <div class="apply-row">
       <button class="btn primary" onclick={apply}
               disabled={!dirty || applying || device.connectionStatus !== 'connected'}>
