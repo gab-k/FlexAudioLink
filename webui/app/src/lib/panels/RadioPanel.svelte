@@ -5,7 +5,6 @@
   const defaultRadioConfig = () => ({
     phyRate: device.config.phyRate,
     txPower: device.config.txPower,
-    blePhy: device.config.blePhy,
     payloadMsDl: device.config.payloadMsDl,
     payloadMsUl: device.config.payloadMsUl,
     jitterBufferMs: device.config.jitterBufferMs,
@@ -53,8 +52,10 @@
   let dirty = $state(device.dirtyPanels.has('radio'));
   let applying = $state(false);
 
-  const isProprietary = $derived(device.effectiveOperatingMode === 'proprietary');
-  const isBle = $derived(device.effectiveOperatingMode === 'ble');
+  const isPfsk = $derived(
+    device.effectiveOperatingMode === 'pfsk_dongle' ||
+    device.effectiveOperatingMode === 'pfsk_headset'
+  );
   const txPowerOptions = [-20, -16, -12, -8, -4, 0, 4, 8];
 
   function markDirty() {
@@ -84,14 +85,12 @@
   async function apply() {
     applying = true;
     try {
-      if (isProprietary) {
+      if (isPfsk) {
         await device.sendCommand('phy_rate', localConfig.phyRate);
         await device.sendCommand('tx_power', localConfig.txPower);
         await device.sendCommand('payload_ms_dl', localConfig.payloadMsDl);
         await device.sendCommand('payload_ms_ul', localConfig.payloadMsUl);
         await device.sendCommand('jitter_buffer_ms', localConfig.jitterBufferMs);
-      } else if (isBle) {
-        await device.sendCommand('ble_phy', localConfig.blePhy);
       }
       Object.assign(device.config, localConfig);
       dirty = false;
@@ -109,7 +108,7 @@
     <div class="banner info">Connect a device to configure settings.</div>
   {:else if device.effectiveOperatingMode === 'usb'}
     <div class="banner info">USB Audio mode is active. Radio settings do not apply. Change the operating mode in the Mode tab.</div>
-  {:else if isProprietary}
+  {:else if isPfsk}
     <div class="card">
       <h3>PHY & Power</h3>
         <label class="field">
@@ -169,26 +168,13 @@
           {#if ulExceedsHw}<span class="hint-warn"> — exceeds hardware limit!</span>{/if}
         </p>
     </div>
-  {:else if isBle}
-    <div class="card">
-      <h3>BLE Settings</h3>
-      <label class="field">
-        <span>BLE PHY</span>
-        <select bind:value={localConfig.blePhy} onchange={markDirty}>
-          <option value="1M">1M PHY</option>
-          <option value="2M">2M PHY</option>
-          <option value="coded">Coded PHY (Long Range)</option>
-        </select>
-      </label>
-      <p class="hint">Most audio parameters are locked in BLE mode due to LC3 constraints.</p>
-    </div>
   {/if}
 
-  {#if device.configLoaded && device.effectiveOperatingMode !== 'usb'}
+  {#if device.configLoaded && isPfsk}
     <LinkBudget config={mergedConfig} />
   {/if}
 
-  {#if device.configLoaded && device.effectiveOperatingMode !== 'usb'}
+  {#if device.configLoaded && isPfsk}
     <div class="apply-row">
       <button class="btn primary" onclick={apply}
               disabled={!dirty || applying || device.connectionStatus !== 'connected'}>

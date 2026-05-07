@@ -95,6 +95,12 @@ def resolve_port(port_arg):
 class MockDevice:
     """Simulated device for GUI testing without real hardware."""
 
+    MODE_AUDIO_IO = {
+        'usb': 'wired',
+        'pfsk_dongle': 'usb',
+        'pfsk_headset': 'codec',
+    }
+
     DEFAULT_STATE = {
         # Audio — Speaker
         'sample_rate_spk': '48000', 'bit_width_spk': '16',
@@ -106,10 +112,9 @@ class MockDevice:
         'mic_gain': '12', 'mic_mute': 'off',
         # Radio
         'phy_rate': '4', 'tx_power': '0', 'fhss_exclusion': 'none',
-        'ble_phy': '2M',
         'payload_ms_dl': '1', 'payload_ms_ul': '1', 'jitter_buffer_ms': '10',
         # Mode
-        'role': 'dongle', 'mode': 'proprietary',
+        'mode': 'pfsk_dongle',
         # Device
         'audio_io': 'usb', 'device_addr': 'D0D0D0D0', 'peer_addr': 'A1A1A1A1',
         'auto_sleep': '10', 'low_battery_threshold': '10',
@@ -123,9 +128,9 @@ class MockDevice:
         ('[audio]', ['sample_rate_spk', 'bit_width_spk', 'channels_spk', 'codec_spk',
                      'volume', 'sidetone', 'sample_rate_mic', 'bit_width_mic',
                      'channels_mic', 'codec_mic', 'mic_gain', 'mic_mute']),
-        ('[radio]', ['phy_rate', 'tx_power', 'fhss_exclusion', 'ble_phy',
+        ('[radio]', ['phy_rate', 'tx_power', 'fhss_exclusion',
                      'payload_ms_dl', 'payload_ms_ul', 'jitter_buffer_ms']),
-        ('[mode]', ['role', 'mode']),
+        ('[mode]', ['mode']),
         ('[device]', ['audio_io', 'device_addr', 'peer_addr', 'auto_sleep',
                       'low_battery_threshold']),
         ('[eq]', ['eq0', 'eq1', 'eq2', 'eq3', 'eq4']),
@@ -184,6 +189,12 @@ class MockDevice:
                 value = ' '.join(parts[2:])
                 if key in ('save_config', 'load_config'):
                     return [f'OK {key}']
+                if key == 'mode':
+                    if value not in self.MODE_AUDIO_IO:
+                        return ['ERR mode invalid_value']
+                    self.state['mode'] = value
+                    self.state['audio_io'] = self.MODE_AUDIO_IO[value]
+                    return [f'OK mode={value}']
                 if key in self.state:
                     self.state[key] = value
                     return [f'OK {key}={value}']

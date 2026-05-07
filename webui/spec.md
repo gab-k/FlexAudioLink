@@ -67,13 +67,12 @@ On page load, the app checks `navigator.serial` availability and selects the app
 
 ## Architecture Assumptions
 
-- The dongle and headset are **identical hardware** running the **same firmware** — the device role (dongle vs headset) is determined entirely by the mode setting
+- The dongle and headset are **identical hardware** running the **same firmware** — the role is determined entirely by the boot mode setting
 - Each device has a **USB-C connector** for firmware updates, configuration, and USB audio mode
 - The connected device communicates with the GUI via USB CDC ACM
 - Firmware is flashed via **nrfutil** over USB serial (DFU bootloader mode); the GUI cannot flash directly but can trigger DFU mode
-- Three operating modes are available: **Proprietary 2.4 GHz**, **BLE Audio**, and **USB Audio** (wired sound card)
+- Three boot modes are available: **USB Audio**, **PFSK Dongle**, and **PFSK Headset**
 - The proprietary 2.4 GHz link uses **FHSS + TDMA** with no retransmission — missed packets are concealed via **PLC (Packet Loss Concealment)**
-- BLE mode is available as an alternative wireless mode but has reduced configurability (LC3 codec constraints apply)
 - USB mode turns the device into a wired USB Audio Class device — radio and codec settings do not apply
 - The GUI communicates over a simple text-based CLI protocol (newline-delimited commands and responses)
 
@@ -93,24 +92,15 @@ Suggested tab or panel structure:
 
 Configures the fundamental operating mode of the connected device. This panel is shown first as it determines the behavior and available options of all other panels.
 
-### Device Role
-
-| Option | Description |
-|---|---|
-| Dongle | Connects to a PC via USB-C. In wireless modes, transmits/receives audio to/from the headset. USB Audio mode is not available for the dongle role |
-| Headset | Worn by the user. In wireless modes, communicates with the dongle. In USB mode, acts as a wired USB headset |
-
-### Operating Mode
-
 | Mode | Description | Effect on Other Panels |
 |---|---|---|
-| Proprietary 2.4 GHz | Low-latency FHSS/TDMA wireless link | Full access to all Audio and Radio settings |
-| BLE Audio | Bluetooth Low Energy Audio | Codec locked to LC3, restricted sample rates/channels |
-| USB Audio | Wired USB Audio Class device (no radio) | Radio panel not applicable, codec settings not applicable |
+| `usb` | Wired USB Audio Class device | Radio panel not applicable, codec settings not applicable |
+| `pfsk_dongle` | PC-side proprietary 2.4 GHz bridge | Full access to applicable Audio and Radio settings |
+| `pfsk_headset` | Headset-side proprietary 2.4 GHz bridge | Full access to applicable Audio and Radio settings |
 
 **Notes:**
-- Changing device role or operating mode requires a device restart — warn the user before applying
-- Both dongle and headset use the same hardware — the role is a firmware configuration, not a hardware distinction
+- Changing boot mode requires a device restart — warn the user before applying
+- Both dongle and headset use the same hardware — the role is part of the persisted firmware mode
 
 ---
 
@@ -167,13 +157,12 @@ Read-only live information. Updated on a polling interval (e.g. every 500ms).
 |---|---|---|---|---|
 | PCM | 1:1 (uncompressed) | 0ms | Perfect | Only viable at lower sample rates / mono on 4Mbps PHY |
 | IMA ADPCM | 4:1 | ~0ms | Good (~78dB DR) | Recommended default, trivial complexity |
-| LC3 | ~8:1 | 2.5–10ms | Excellent | Best choice for BLE mode, Nordic SDK supported |
+| LC3 | ~8:1 | 2.5–10ms | Excellent | Good compressed-audio candidate, Nordic SDK supported |
 | Opus | Variable | 2.5–20ms | Excellent | Heavier CPU, better for music quality |
 
 **Codec constraints enforced by the GUI:**
 - ADPCM: disable bit width options other than 16-bit, cap sample rates at 48 kHz max; (i) tooltip: "ADPCM encodes 16-bit samples only and works best up to 48 kHz. Higher sample rates and other bit depths are not supported."
 - LC3: sample rate locked to LC3-supported rates (8k, 16k, 24k, 32k, 48k Hz)
-- BLE mode: codec locked to LC3, sample rate and channel options restricted by LC3 spec
 - PCM at 48kHz stereo 16-bit: show red budget warning immediately
 
 ### Link Budget Calculator
@@ -240,7 +229,7 @@ Each path is shown as a **color-coded pipeline bar** with proportional segment w
 
 The Radio Settings panel includes a **live Link Budget + Latency Estimate** (same component as the Audio panel) so the user can immediately see throughput and latency implications of radio changes (PHY rate, jitter buffer, payload sizes) without switching tabs.
 
-The operating mode (Proprietary / BLE / USB) is selected in the **Mode panel** — the Radio panel shows the relevant settings for the currently active mode. In USB mode, a message indicates that radio settings do not apply.
+The operating mode (`usb` / `pfsk_dongle` / `pfsk_headset`) is selected in the **Mode panel** — the Radio panel shows the relevant settings for the currently active mode. In USB mode, a message indicates that radio settings do not apply.
 
 ### Proprietary 2.4 GHz Options
 
@@ -258,15 +247,7 @@ The operating mode (Proprietary / BLE / USB) is selected in the **Mode panel** �
 - Both payload size and jitter buffer are specified in **milliseconds of audio**, making them independent of sample rate / bit width / codec changes. The GUI computes and displays the resulting byte count for payload size.
 - **Payload size is clamped to the jitter buffer capacity** — a payload larger than the buffer cannot be absorbed without overflow, causing guaranteed packet loss. The jitter buffer slider is placed above the payload sliders, and reducing the jitter buffer auto-clamps both DL/UL payloads. (i) tooltips explain this constraint on both payload sliders.
 - Switching PHY data rate updates the link budget ceiling dynamically. PHY rate changes require reconnection — warn the user.
-- Payload size and jitter buffer are **not available in BLE mode** — BLE uses fixed PDU sizes and connection intervals.
 - Payload byte limit is constrained by the nRF54LM20 radio hardware: the RADIO LENGTH field is 8 bits, giving a max combined S0+LENGTH+S1+PAYLOAD of 258 bytes. With 2-byte sequence header and packet framing, the usable payload max is **252 bytes**.
-
-### BLE Options
-- BLE PHY: 1M / 2M / Coded (if supported)
-- Connection interval hint (best effort, negotiated with central)
-- Note to user: most audio parameters are locked in BLE mode due to LC3 constraints
-
----
 
 ## 4. Device Settings Panel
 
@@ -275,15 +256,15 @@ The operating mode (Proprietary / BLE / USB) is selected in the **Mode panel** �
 - Low battery warning threshold: `5% / 10% / 15% / 20%`
 
 ### Audio I/O
-- Audio Interface: `USB Audio` / `CODEC (Analog/I2S)` — selects both input and output together
-- Default is set by firmware based on role (typically USB for dongle, CODEC for headset)
+- Audio Interface: `wired` / `usb` / `codec`
+- Default is set by firmware based on mode (`wired` for USB, `usb` for PFSK dongle, `codec` for PFSK headset)
 - Setting both devices to CODEC enables analog-to-analog wireless bridging (e.g. airplane 3.5mm jack → wireless → headset)
 
 ### Radio Addressing (Proprietary 2.4 GHz)
 - Device Address — this device's radio address (read from device on connect, user-editable)
 - Peer Address — the address of the other device in the pair (read from device on connect, user-editable)
 - Default addresses are set by firmware; the GUI reads them via `get all` on connect
-- Only relevant in proprietary mode; BLE uses standard BLE pairing; USB has no addressing
+- Only relevant in PFSK modes; USB has no radio addressing
 - For multiple pairs in the same room, configure unique address pairs to avoid crosstalk
 
 ### Persistence
@@ -341,7 +322,7 @@ Both devices have **USB-C connectors** and are flashed directly over USB. There 
 3. **Apply vs Auto-apply** — audio parameter changes should require an explicit "Apply" button to avoid mid-stream glitches
 4. **Unsaved changes indicator** — show a dot or asterisk in the tab title if there are unapplied or unsaved changes
 5. **Connection loss handling** — if dongle disconnects mid-session, show a clear reconnect banner without crashing
-6. **BLE mode indicator** — when in BLE mode, grey out all parameters that are locked and show a tooltip explaining why
+6. **Mode indicator** — clearly show when USB mode disables radio controls
 7. **No silent failures** — every command sent to the device should have a visible success/failure response in a status bar
 
 ---
@@ -361,7 +342,7 @@ status                   # one-shot status snapshot
 status on [<ms>]         # start periodic status push (default 500ms)
 status off               # stop periodic push
 echo on|off              # enable/disable local echo (GUI sends "echo off" on connect)
-help, reset, scan, mode, linktest  # existing firmware CLI commands, unchanged
+help, reset, scan, linktest  # existing firmware CLI commands, unchanged
 ```
 
 Commands are **case-insensitive**. The `target` concept (dongle/headset) is gone — the firmware knows which subsystem owns each parameter.
@@ -413,15 +394,13 @@ Commands are **case-insensitive**. The `target` concept (dongle/headset) is gone
 | `phy_rate` | radio | int | 1,2,4 |
 | `tx_power` | radio | int | -20..8 |
 | `fhss_exclusion` | radio | list | comma-separated ints or `none` |
-| `ble_phy` | radio | string | 1M,2M,coded |
 | `payload_ms_dl` | radio | float | 0.5..50 |
 | `payload_ms_ul` | radio | float | 0.5..50 |
 | `jitter_buffer_ms` | radio | float | 1..100 |
-| `audio_io` | device | string | usb,codec |
+| `audio_io` | device | string | wired,usb,codec |
 | `device_addr` | radio | hex | 4-byte address, e.g. `0xD0D0D0D0` |
 | `peer_addr` | radio | hex | 4-byte address of peer device |
-| `role` | mode | string | dongle,headset |
-| `mode` | mode | string | usb,raw-dongle,raw-headset,... (delegates to existing mode cmd) |
+| `mode` | mode | string | usb,pfsk_dongle,pfsk_headset |
 | `auto_sleep` | device | int | 0..60 |
 | `low_battery_threshold` | device | int | 0..100 |
 

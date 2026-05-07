@@ -142,6 +142,7 @@
     <label class="field">
       <span>Audio Interface</span>
       <select bind:value={localConfig.audioIo} onchange={markDirty}>
+        <option value="wired">Wired Direct</option>
         <option value="usb">USB Audio</option>
         <option value="codec">CODEC (Analog/I2S)</option>
       </select>

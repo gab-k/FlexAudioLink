@@ -61,9 +61,9 @@ function createDeviceStore() {
     volume: 0, sidetone: 0,
     sampleRateMic: 0, bitWidthMic: 0, channelsMic: '', codecMic: '',
     micGain: 0, micMute: false,
-    phyRate: 0, txPower: 0, fhssExclusion: [], blePhy: '',
+    phyRate: 0, txPower: 0, fhssExclusion: [],
     payloadMsDl: 0, payloadMsUl: 0, jitterBufferMs: 0,
-    deviceRole: '', operatingMode: '',
+    operatingMode: '',
     audioIo: '', deviceAddr: '', peerAddr: '',
     autoSleep: 0, lowBatteryThreshold: 0,
     eq: [
@@ -95,14 +95,12 @@ function createDeviceStore() {
     phy_rate: 'phyRate',
     tx_power: 'txPower',
     fhss_exclusion: 'fhssExclusion',
-    ble_phy: 'blePhy',
     payload_ms_dl: 'payloadMsDl',
     payload_ms_ul: 'payloadMsUl',
     jitter_buffer_ms: 'jitterBufferMs',
     audio_io: 'audioIo',
     device_addr: 'deviceAddr',
     peer_addr: 'peerAddr',
-    role: 'deviceRole',
     mode: 'operatingMode',
     auto_sleep: 'autoSleep',
     low_battery_threshold: 'lowBatteryThreshold',
@@ -133,13 +131,11 @@ function createDeviceStore() {
     phyRate: oneOf(1, 2, 4),
     txPower: oneOf(-20, -16, -12, -8, -4, 0, 4, 8),
     fhssExclusion: (v) => Array.isArray(v) && v.every(n => Number.isInteger(n) && n >= 0 && n < 80),
-    blePhy: oneOf('1M', '2M', 'coded'),
     payloadMsDl: isNum(0.5, 50),
     payloadMsUl: isNum(0.5, 50),
     jitterBufferMs: isNum(1, 50),
-    deviceRole: oneOf('dongle', 'headset'),
-    operatingMode: oneOf('proprietary', 'ble', 'usb'),
-    audioIo: oneOf('usb', 'codec'),
+    operatingMode: oneOf('usb', 'pfsk_dongle', 'pfsk_headset'),
+    audioIo: oneOf('wired', 'usb', 'codec'),
     deviceAddr: isStr,
     peerAddr: isStr,
     autoSleep: oneOf(0, 5, 10, 15, 30, 60),
@@ -373,6 +369,13 @@ function createDeviceStore() {
     return drafts[panel] || null;
   }
 
+  function roleForMode(mode) {
+    if (mode === 'pfsk_dongle') return 'dongle';
+    if (mode === 'pfsk_headset') return 'headset';
+    if (mode === 'usb') return 'usb';
+    return '';
+  }
+
   return {
     get transport() { return transport; },
     get connectionStatus() { return connectionStatus; },
@@ -391,7 +394,7 @@ function createDeviceStore() {
     get drafts() { return drafts; },
     // Effective mode: reflects pending (unsaved) mode draft if one exists
     get effectiveOperatingMode() { return drafts.mode?.operatingMode ?? config.operatingMode; },
-    get effectiveDeviceRole() { return drafts.mode?.deviceRole ?? config.deviceRole; },
+    get effectiveDeviceRole() { return roleForMode(drafts.mode?.operatingMode ?? config.operatingMode); },
     saveDraft,
     getDraft,
     connect,

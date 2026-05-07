@@ -19,9 +19,8 @@
   }
 
   // Codec constraints
-  const isBLE = $derived(device.effectiveOperatingMode === 'ble');
-  const spkCodecOptions = $derived(isBLE ? ['lc3'] : ['pcm', 'adpcm', 'lc3', 'opus']);
-  const micCodecOptions = $derived(isBLE ? ['lc3'] : ['pcm', 'adpcm', 'lc3', 'opus']);
+  const spkCodecOptions = ['pcm', 'adpcm', 'lc3', 'opus'];
+  const micCodecOptions = ['pcm', 'adpcm', 'lc3', 'opus'];
 
   const spkBitWidthOptions = $derived(
     localConfig.codecSpk === 'adpcm' ? [16] : [8, 16, 24, 32]
@@ -155,14 +154,8 @@
       </label>
 
       <label class="field">
-        <span>
-          Compression
-          {#if isBLE}
-            <span class="info-icon" title="In BLE mode, compression is fixed to LC3 as required by the Bluetooth LE Audio standard.">i</span>
-          {/if}
-        </span>
-        <select bind:value={localConfig.codecSpk} onchange={onSpkCodecChange}
-                disabled={isBLE}>
+        <span>Compression</span>
+        <select bind:value={localConfig.codecSpk} onchange={onSpkCodecChange}>
           {#each spkCodecOptions as codec}
             <option value={codec}>{codec.toUpperCase()}</option>
           {/each}
@@ -217,14 +210,8 @@
       </label>
 
       <label class="field">
-        <span>
-          Compression
-          {#if isBLE}
-            <span class="info-icon" title="In BLE mode, compression is fixed to LC3 as required by the Bluetooth LE Audio standard.">i</span>
-          {/if}
-        </span>
-        <select bind:value={localConfig.codecMic} onchange={onMicCodecChange}
-                disabled={isBLE}>
+        <span>Compression</span>
+        <select bind:value={localConfig.codecMic} onchange={onMicCodecChange}>
           {#each micCodecOptions as codec}
             <option value={codec}>{codec.toUpperCase()}</option>
           {/each}

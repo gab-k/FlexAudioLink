@@ -155,14 +155,20 @@ export class WebSocketTransport extends TransportEvent {
 }
 
 export class DemoTransport extends TransportEvent {
+  static MODE_AUDIO_IO = {
+    usb: 'wired',
+    pfsk_dongle: 'usb',
+    pfsk_headset: 'codec',
+  };
+
   static DEFAULT_STATE = {
     sample_rate_spk: '48000', bit_width_spk: '16', channels_spk: 'stereo',
     codec_spk: 'pcm', volume: '80', sidetone: '0',
     sample_rate_mic: '48000', bit_width_mic: '16', channels_mic: 'mono',
     codec_mic: 'pcm', mic_gain: '12', mic_mute: 'off',
-    phy_rate: '4', tx_power: '0', fhss_exclusion: 'none', ble_phy: '2M',
+    phy_rate: '4', tx_power: '0', fhss_exclusion: 'none',
     payload_ms_dl: '1', payload_ms_ul: '1', jitter_buffer_ms: '10',
-    role: 'dongle', mode: 'proprietary',
+    mode: 'pfsk_dongle',
     audio_io: 'usb', device_addr: 'D0D0D0D0', peer_addr: 'A1A1A1A1',
     auto_sleep: '10', low_battery_threshold: '10',
     eq0: '100,0', eq1: '400,0', eq2: '1000,0', eq3: '4000,0', eq4: '10000,0',
@@ -172,9 +178,9 @@ export class DemoTransport extends TransportEvent {
     ['[audio]', ['sample_rate_spk', 'bit_width_spk', 'channels_spk', 'codec_spk',
                  'volume', 'sidetone', 'sample_rate_mic', 'bit_width_mic',
                  'channels_mic', 'codec_mic', 'mic_gain', 'mic_mute']],
-    ['[radio]', ['phy_rate', 'tx_power', 'fhss_exclusion', 'ble_phy',
+    ['[radio]', ['phy_rate', 'tx_power', 'fhss_exclusion',
                  'payload_ms_dl', 'payload_ms_ul', 'jitter_buffer_ms']],
-    ['[mode]', ['role', 'mode']],
+    ['[mode]', ['mode']],
     ['[device]', ['audio_io', 'device_addr', 'peer_addr', 'auto_sleep',
                   'low_battery_threshold']],
     ['[eq]', ['eq0', 'eq1', 'eq2', 'eq3', 'eq4']],
@@ -247,6 +253,14 @@ export class DemoTransport extends TransportEvent {
       }
       if (param === 'save_config' || param === 'load_config') {
         this.emit(`OK ${param}`);
+      } else if (param === 'mode') {
+        if (!(value in DemoTransport.MODE_AUDIO_IO)) {
+          this.emit('ERR mode invalid_value');
+          return;
+        }
+        this.state.mode = value;
+        this.state.audio_io = DemoTransport.MODE_AUDIO_IO[value];
+        this.emit(`OK mode=${value}`);
       } else if (param in this.state) {
         this.state[param] = value;
         this.emit(`OK ${param}=${value}`);
