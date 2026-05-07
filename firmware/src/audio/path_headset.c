@@ -10,7 +10,7 @@ LOG_MODULE_REGISTER(path_headset, LOG_LEVEL_INF);
 #include "audio/path_common.h"
 #include "audio/i2s.h"
 #include "audio/nau88l21.h"
-#include "prop_fsk/session.h"
+#include "prop/session.h"
 
 #define HEADSET_THREAD_STACK_SIZE  3072
 #define HEADSET_THREAD_PRIORITY    6
@@ -142,23 +142,23 @@ static void headset_thread(void *a, void *b, void *c)
 			headset_status.spk_underrun_events++;
 		}
 
-		/* PFSK RX → Speaker FIFO */
+		/* PROP RX → Speaker FIFO */
 		while (1) {
-			struct pfsk_packet packet;
+			struct prop_packet packet;
 			uint8_t payload_bytes;
 
 			uint16_t spk_ff_remaining = tu_fifo_remaining(spk_ff);
-			if(spk_ff_remaining < PFSK_SPK_PACKET_BYTES) {
+			if(spk_ff_remaining < PROP_SPK_PACKET_BYTES) {
 				break;
 			}
 
-			if (!pfsk_session_rx_dequeue(&packet, K_NO_WAIT)) {
+			if (!prop_session_rx_dequeue(&packet, K_NO_WAIT)) {
 				break;
 			}
 
-			payload_bytes = packet.length - PFSK_PACKET_METADATA_LEN;
-			if (payload_bytes != PFSK_SPK_PACKET_BYTES) {
-				LOG_ERR("Invalid payload size! Expected %d bytes, got %d bytes", PFSK_SPK_PACKET_BYTES, payload_bytes);
+			payload_bytes = packet.length - PROP_PACKET_METADATA_LEN;
+			if (payload_bytes != PROP_SPK_PACKET_BYTES) {
+				LOG_ERR("Invalid payload size! Expected %d bytes, got %d bytes", PROP_SPK_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
@@ -169,28 +169,28 @@ static void headset_thread(void *a, void *b, void *c)
 			}
 		}
 
-		/* Microphone FIFO → PFSK TX */
+		/* Microphone FIFO → PROP TX */
 		while(1) {
-			struct pfsk_packet packet;
+			struct prop_packet packet;
 			uint32_t payload_bytes;
 
 			uint16_t mic_ff_count = tu_fifo_count(mic_ff);
-			if(mic_ff_count < PFSK_MIC_PACKET_BYTES) {
+			if(mic_ff_count < PROP_MIC_PACKET_BYTES) {
 				break;
 			}
 			
 			memset(&packet, 0, sizeof(packet));
-			payload_bytes = tu_fifo_read_n(mic_ff, packet.payload, PFSK_MIC_PACKET_BYTES);
+			payload_bytes = tu_fifo_read_n(mic_ff, packet.payload, PROP_MIC_PACKET_BYTES);
 
-			if (payload_bytes != PFSK_MIC_PACKET_BYTES) {
-				LOG_ERR("Invalid payload size from microphone FIFO! Expected %d bytes, got %d bytes", PFSK_MIC_PACKET_BYTES, payload_bytes);
+			if (payload_bytes != PROP_MIC_PACKET_BYTES) {
+				LOG_ERR("Invalid payload size from microphone FIFO! Expected %d bytes, got %d bytes", PROP_MIC_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
-			packet.length = PFSK_PACKET_METADATA_LEN + PFSK_MIC_PACKET_BYTES;
+			packet.length = PROP_PACKET_METADATA_LEN + PROP_MIC_PACKET_BYTES;
 
-			if (!pfsk_session_tx_enqueue(&packet, K_NO_WAIT)) {
-				LOG_WRN_RATELIMIT_RATE(10000, "Failed to enqueue PFSK packet for transmission!");
+			if (!prop_session_tx_enqueue(&packet, K_NO_WAIT)) {
+				LOG_WRN_RATELIMIT_RATE(10000, "Failed to enqueue PROP packet for transmission!");
 				break;
 			}
 		}

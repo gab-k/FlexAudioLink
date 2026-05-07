@@ -2,23 +2,23 @@
 
 #include <stdint.h>
 #include <zephyr/sys/util.h>
-#include "prop_fsk/radio_core.h"
+#include "prop/radio_core.h"
 
 #define BYTES_PER_STEREO_SAMPLE      4U
-/* Audio bytes stored in pfsk_packet.payload. pfsk_packet.length adds PFSK metadata. */
-#define PFSK_SPK_PACKET_BYTES        192U
-#define PFSK_MIC_PACKET_BYTES        96U
+/* Audio bytes stored in prop_packet.payload. prop_packet.length adds PROP metadata. */
+#define PROP_SPK_PACKET_BYTES        192U
+#define PROP_MIC_PACKET_BYTES        96U
 
-BUILD_ASSERT(PFSK_SPK_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
-	     "speaker PFSK packet must fit payload");
-BUILD_ASSERT(PFSK_MIC_PACKET_BYTES <= PFSK_PAYLOAD_MAX_LEN,
-	     "mic PFSK packet must fit payload");
-BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + PFSK_SPK_PACKET_BYTES) <=
-	     PFSK_PACKET_MAX_LEN,
-	     "speaker PFSK frame length must fit packet");
-BUILD_ASSERT((PFSK_PACKET_METADATA_LEN + PFSK_MIC_PACKET_BYTES) <=
-	     PFSK_PACKET_MAX_LEN,
-	     "mic PFSK frame length must fit packet");
+BUILD_ASSERT(PROP_SPK_PACKET_BYTES <= PROP_PAYLOAD_MAX_LEN,
+	     "speaker PROP packet must fit payload");
+BUILD_ASSERT(PROP_MIC_PACKET_BYTES <= PROP_PAYLOAD_MAX_LEN,
+	     "mic PROP packet must fit payload");
+BUILD_ASSERT((PROP_PACKET_METADATA_LEN + PROP_SPK_PACKET_BYTES) <=
+	     PROP_PACKET_MAX_LEN,
+	     "speaker PROP frame length must fit packet");
+BUILD_ASSERT((PROP_PACKET_METADATA_LEN + PROP_MIC_PACKET_BYTES) <=
+	     PROP_PACKET_MAX_LEN,
+	     "mic PROP frame length must fit packet");
 
 #define FILTER_ALPHA_NUM             1
 #define FILTER_ALPHA_DEN             5

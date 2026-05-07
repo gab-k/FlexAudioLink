@@ -5,7 +5,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(path_dongle, LOG_LEVEL_INF);
 #include "tusb.h"
-#include "prop_fsk/session.h"
+#include "prop/session.h"
 
 #define DONGLE_THREAD_STACK_SIZE  3072
 #define DONGLE_THREAD_PRIORITY    6
@@ -49,23 +49,23 @@ static void dongle_thread(void *a, void *b, void *c)
 	}
 
 	while (1) {
-		/* PFSK RX → USB mic EP IN */
+		/* PROP RX → USB mic EP IN */
 		while (1) {
-			struct pfsk_packet packet;
+			struct prop_packet packet;
 			uint8_t payload_bytes;
 
 			uint16_t ep_in_remaining = tu_fifo_remaining(ep_in_ff);
-			if(ep_in_remaining < PFSK_MIC_PACKET_BYTES) {
+			if(ep_in_remaining < PROP_MIC_PACKET_BYTES) {
 				break;
 			}
 
-			if (!pfsk_session_rx_dequeue(&packet, K_NO_WAIT)) {
+			if (!prop_session_rx_dequeue(&packet, K_NO_WAIT)) {
 				break;
 			}
 
-			payload_bytes = packet.length - PFSK_PACKET_METADATA_LEN;
-			if (payload_bytes != PFSK_MIC_PACKET_BYTES) {
-				LOG_ERR("Invalid payload size! Expected %d bytes, got %d bytes", PFSK_MIC_PACKET_BYTES, payload_bytes);
+			payload_bytes = packet.length - PROP_PACKET_METADATA_LEN;
+			if (payload_bytes != PROP_MIC_PACKET_BYTES) {
+				LOG_ERR("Invalid payload size! Expected %d bytes, got %d bytes", PROP_MIC_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
@@ -76,27 +76,27 @@ static void dongle_thread(void *a, void *b, void *c)
 			}
 		}
 
-		/* USB EP OUT FIFO → PFSK TX */
+		/* USB EP OUT FIFO → PROP TX */
 		while(1) {
-			struct pfsk_packet packet;
+			struct prop_packet packet;
 			uint32_t payload_bytes;
 
 			uint16_t ep_out_count = tu_fifo_count(ep_out_ff);
-			if(ep_out_count < PFSK_SPK_PACKET_BYTES) {
+			if(ep_out_count < PROP_SPK_PACKET_BYTES) {
 				break;
 			}
 			
 			memset(&packet, 0, sizeof(packet));
-			payload_bytes = tu_fifo_read_n(ep_out_ff, packet.payload, PFSK_SPK_PACKET_BYTES);
+			payload_bytes = tu_fifo_read_n(ep_out_ff, packet.payload, PROP_SPK_PACKET_BYTES);
 
-			if (payload_bytes != PFSK_SPK_PACKET_BYTES) {
-				LOG_ERR("Invalid payload size from USB EP OUT! Expected %d bytes, got %d bytes", PFSK_SPK_PACKET_BYTES, payload_bytes);
+			if (payload_bytes != PROP_SPK_PACKET_BYTES) {
+				LOG_ERR("Invalid payload size from USB EP OUT! Expected %d bytes, got %d bytes", PROP_SPK_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
-			packet.length = PFSK_PACKET_METADATA_LEN + PFSK_SPK_PACKET_BYTES;
+			packet.length = PROP_PACKET_METADATA_LEN + PROP_SPK_PACKET_BYTES;
 
-			if (!pfsk_session_tx_enqueue(&packet, K_NO_WAIT)) {
+			if (!prop_session_tx_enqueue(&packet, K_NO_WAIT)) {
 				dongle_status.overflow_bytes += payload_bytes;
 				break;
 			}

@@ -10,7 +10,7 @@
 //--------------------------------------------------------------------+
 // PID MAPPING
 //--------------------------------------------------------------------+
-// USB and PFSK dongle enumerate as UAC+CDC. PFSK headset is CDC-only.
+// USB and PROP dongle enumerate as UAC+CDC. PROP headset is CDC-only.
 #define PID_MAP(itf, n)  ((CFG_TUD_##itf) ? (1 << (n)) : 0)
 #define USB_VID          0xCafe
 #define USB_BCD          0x0200
@@ -22,7 +22,7 @@
 
 static bool usb_descriptors_cdc_only(void)
 {
-    return app_control_get_current_mode() == APP_MODE_PFSK_HEADSET;
+    return app_control_get_current_mode() == APP_MODE_PROP_HEADSET;
 }
 
 //--------------------------------------------------------------------+
@@ -364,9 +364,9 @@ static const char *usb_product_string(void)
     switch (app_control_get_current_mode()) {
     case APP_MODE_USB:
         return "FlexAudioLink (Direct USB Audio)";
-    case APP_MODE_PFSK_DONGLE:
+    case APP_MODE_PROP_DONGLE:
         return "FlexAudioLink (Dongle)";
-    case APP_MODE_PFSK_HEADSET:
+    case APP_MODE_PROP_HEADSET:
         return "FlexAudioLink (Headset)";
     default:
         return "FlexAudioLink";

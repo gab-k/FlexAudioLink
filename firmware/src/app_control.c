@@ -3,7 +3,7 @@
 #include "audio/path_wired.h"
 #include "audio/path_dongle.h"
 #include "audio/path_headset.h"
-#include "prop_fsk/session.h"
+#include "prop/session.h"
 
 #include <stdint.h>
 
@@ -31,10 +31,10 @@ const char *app_control_get_mode_name(enum app_mode mode)
 	switch (mode) {
 	case APP_MODE_USB:
 		return "usb";
-	case APP_MODE_PFSK_DONGLE:
-		return "pfsk_dongle";
-	case APP_MODE_PFSK_HEADSET:
-		return "pfsk_headset";
+	case APP_MODE_PROP_DONGLE:
+		return "prop_dongle";
+	case APP_MODE_PROP_HEADSET:
+		return "prop_headset";
 	default:
 		return "unknown";
 	}
@@ -79,15 +79,15 @@ void app_control_boot(void)
 	case APP_MODE_USB:
 		path_wired_init();
 		break;
-	case APP_MODE_PFSK_DONGLE:
-		if (!pfsk_session_start_dongle()) {
-			printk("app_control: failed to start PFSK dongle session\n");
+	case APP_MODE_PROP_DONGLE:
+		if (!prop_session_start_dongle()) {
+			printk("app_control: failed to start PROP dongle session\n");
 		}
 		path_dongle_init();
 		break;
-	case APP_MODE_PFSK_HEADSET:
-		if (!pfsk_session_start_headset()) {
-			printk("app_control: failed to start PFSK headset session\n");
+	case APP_MODE_PROP_HEADSET:
+		if (!prop_session_start_headset()) {
+			printk("app_control: failed to start PROP headset session\n");
 		}
 		path_headset_init();
 		break;

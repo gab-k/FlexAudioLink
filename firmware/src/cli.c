@@ -6,8 +6,8 @@
 #include "audio/path_wired.h"
 #include "audio/path_dongle.h"
 #include "audio/path_headset.h"
-#include "prop_fsk/session.h"
-#include "prop_fsk/test_mode.h"
+#include "prop/session.h"
+#include "prop/test_mode.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -103,10 +103,10 @@ static void cli_print(const char *fmt, ...)
 
 static void cli_emit_status_link_push(void)
 {
-	struct pfsk_session_report stats;
+	struct prop_session_report stats;
 	uint32_t loss_permille = 0U;
 
-	pfsk_session_get_report(&stats);
+	prop_session_get_report(&stats);
 
 	if ((stats.rx_ok_count + stats.packets_lost_in_service) > 0U) {
 		loss_permille = (stats.packets_lost_in_service * 1000U) /
@@ -158,7 +158,7 @@ static void cli_emit_status_audio_push(void)
 			  s.spk_underrun_events);
 		return;
 	}
-	case APP_MODE_PFSK_DONGLE: {
+	case APP_MODE_PROP_DONGLE: {
 		struct path_dongle_status s;
 
 		path_dongle_get_status(&s);
@@ -166,7 +166,7 @@ static void cli_emit_status_audio_push(void)
 			  s.overflow_bytes);
 		return;
 	}
-	case APP_MODE_PFSK_HEADSET: {
+	case APP_MODE_PROP_HEADSET: {
 		struct path_headset_status s;
 
 		path_headset_get_status(&s);
@@ -232,10 +232,10 @@ static void cli_print_device_group(void)
 	case APP_MODE_USB:
 		audio_io = "wired";
 		break;
-	case APP_MODE_PFSK_DONGLE:
+	case APP_MODE_PROP_DONGLE:
 		audio_io = "usb";
 		break;
-	case APP_MODE_PFSK_HEADSET:
+	case APP_MODE_PROP_HEADSET:
 		audio_io = "codec";
 		break;
 	default:
@@ -284,7 +284,7 @@ static void cli_print_help(void)
 	cli_print("  help\n");
 	cli_print("  echo on|off\n");
 	cli_print("  get <group|param>\n");
-	cli_print("  set mode <usb|pfsk_dongle|pfsk_headset>\n");
+	cli_print("  set mode <usb|prop_dongle|prop_headset>\n");
 	cli_print("  i2s tone on|off|status\n");
 	cli_print("  linktest on|off|status\n");
 	cli_print("  status_link on [ms]|off\n");
@@ -352,10 +352,10 @@ static void cli_cmd_set(char *args)
 
 		if (strcasecmp(value, "usb") == 0) {
 			mode = APP_MODE_USB;
-		} else if (strcasecmp(value, "pfsk_dongle") == 0) {
-			mode = APP_MODE_PFSK_DONGLE;
-		} else if (strcasecmp(value, "pfsk_headset") == 0) {
-			mode = APP_MODE_PFSK_HEADSET;
+		} else if (strcasecmp(value, "prop_dongle") == 0) {
+			mode = APP_MODE_PROP_DONGLE;
+		} else if (strcasecmp(value, "prop_headset") == 0) {
+			mode = APP_MODE_PROP_HEADSET;
 		} else {
 			cli_print("ERR mode invalid_value\n");
 			return;
@@ -386,12 +386,12 @@ static void cli_cmd_set(char *args)
 static void cli_cmd_linktest(char *args)
 {
 	if (args == NULL || *args == '\0' || strcasecmp(args, "status") == 0) {
-		cli_print("linktest=%s\n", pfsk_test_mode_is_running() ? "on" : "off");
+		cli_print("linktest=%s\n", prop_test_mode_is_running() ? "on" : "off");
 		return;
 	}
 
 	if (strcasecmp(args, "on") == 0) {
-		if (!pfsk_test_mode_start()) {
+		if (!prop_test_mode_start()) {
 			cli_print("ERR linktest start_failed\n");
 			return;
 		}
@@ -401,7 +401,7 @@ static void cli_cmd_linktest(char *args)
 	}
 
 	if (strcasecmp(args, "off") == 0) {
-		if (!pfsk_test_mode_stop()) {
+		if (!prop_test_mode_stop()) {
 			cli_print("ERR linktest stop_failed\n");
 			return;
 		}
@@ -467,7 +467,7 @@ static void cli_cmd_fll(char *args)
 	int32_t lo, hi;
 	enum app_mode mode = app_control_get_current_mode();
 
-	if (mode == APP_MODE_PFSK_DONGLE) {
+	if (mode == APP_MODE_PROP_DONGLE) {
 		cli_print("ERR fll not available for dongle mode\n");
 		return;
 	}

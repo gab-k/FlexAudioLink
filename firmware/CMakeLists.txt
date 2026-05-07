@@ -20,9 +20,9 @@ target_sources(app PRIVATE
     src/audio/path_headset.c
     src/audio/i2s.c
     src/audio/nau88l21.c
-    src/prop_fsk/radio_core.c
-    src/prop_fsk/session.c
-    src/prop_fsk/test_mode.c
+    src/prop/radio_core.c
+    src/prop/session.c
+    src/prop/test_mode.c
     src/usb/usb_device.c
     src/usb/usb_audio.c
     src/usb/usb_cdc.c
