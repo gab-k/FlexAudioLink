@@ -10,9 +10,9 @@
    Interface:
    USB CDC
    Minimum coverage:
-   `help`, `get`, `status`, `set profile`, `scan`, `linktest`, `reset`, `i2s tone`
+   `help`, `get`, `status`, `set mode`, `scan`, `linktest`, `reset`, `i2s tone`
    Pass criteria:
-   Device enumerates, accepts commands, returns sane status, and rejects invalid profiles.
+   Device enumerates, accepts commands, returns sane status, and rejects invalid modes.
 
 3. Two-board proprietary radio smoke test
    Setup:
@@ -20,28 +20,28 @@
    Interface:
    CLI plus `linktest`
    Pass criteria:
-   PFSK session starts, headset reaches running state, lock is acquired within timeout, RX counters increase, RSSI is plausible, and rebooting into a different profile recovers cleanly.
+   PFSK session starts, headset reaches running state, lock is acquired within timeout, RX counters increase, RSSI is plausible, and rebooting into a different mode recovers cleanly.
 
 4. USB descriptor enumeration stability
    Coverage:
    UAC+CDC descriptor set after booting `usb` and `pfsk_dongle`; CDC-only descriptor set after booting `pfsk_headset`.
    Pass criteria:
-   Device enumerates with the profile-appropriate descriptors and retains functional CDC CLI after rebooting into each profile.
+   Device enumerates with the mode-appropriate descriptors and retains functional CDC CLI after rebooting into each mode.
 
 5. Soak test
    Duration:
    Long-run manual or scripted board test
    Pass criteria:
-   No stalls, deadlocks, watchdog resets, counter corruption, or stuck profile reboot transitions.
+   No stalls, deadlocks, watchdog resets, counter corruption, or stuck mode reboot transitions.
 
 ## Lower Priority
 
 6. Unit tests for isolated logic
    Only add these where there is a clean seam and a real payoff.
    Likely targets:
-   profile validation, status formatting, packet bookkeeping
+   mode validation, status formatting, packet bookkeeping
 
 7. Failure injection
    Only add after a real failure mode is observed.
    Likely targets:
-   profile persistence errors, radio start errors, codec init failures, I2S trigger or write failures
+   mode persistence errors, radio start errors, codec init failures, I2S trigger or write failures

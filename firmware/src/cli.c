@@ -138,10 +138,10 @@ static void cli_emit_status_link_push(void)
 
 static void cli_emit_status_audio_push(void)
 {
-	enum app_profile profile = app_control_get_current_profile();
+	enum app_mode mode = app_control_get_current_mode();
 
-	switch (profile) {
-	case APP_PROFILE_USB: {
+	switch (mode) {
+	case APP_MODE_USB: {
 		struct path_wired_status s;
 
 		path_wired_get_status(&s);
@@ -158,7 +158,7 @@ static void cli_emit_status_audio_push(void)
 			  s.spk_underrun_events);
 		return;
 	}
-	case APP_PROFILE_PFSK_DONGLE: {
+	case APP_MODE_PFSK_DONGLE: {
 		struct path_dongle_status s;
 
 		path_dongle_get_status(&s);
@@ -166,7 +166,7 @@ static void cli_emit_status_audio_push(void)
 			  s.overflow_bytes);
 		return;
 	}
-	case APP_PROFILE_PFSK_HEADSET: {
+	case APP_MODE_PFSK_HEADSET: {
 		struct path_headset_status s;
 
 		path_headset_get_status(&s);
@@ -207,10 +207,10 @@ static uint32_t cli_parse_status_period_ms(char *args_after_on)
 	return (uint32_t)value;
 }
 
-static void cli_print_profile_group(void)
+static void cli_print_mode_group(void)
 {
-	cli_print("[profile]\n");
-	cli_print("profile=%s\n", app_control_get_profile_name(app_control_get_current_profile()));
+	cli_print("[mode]\n");
+	cli_print("mode=%s\n", app_control_get_mode_name(app_control_get_current_mode()));
 }
 
 static void cli_print_radio_group(void)
@@ -228,14 +228,14 @@ static void cli_print_device_group(void)
 {
 	const char *audio_io;
 
-	switch (app_control_get_current_profile()) {
-	case APP_PROFILE_USB:
+	switch (app_control_get_current_mode()) {
+	case APP_MODE_USB:
 		audio_io = "wired";
 		break;
-	case APP_PROFILE_PFSK_DONGLE:
+	case APP_MODE_PFSK_DONGLE:
 		audio_io = "usb";
 		break;
-	case APP_PROFILE_PFSK_HEADSET:
+	case APP_MODE_PFSK_HEADSET:
 		audio_io = "codec";
 		break;
 	default:
@@ -284,7 +284,7 @@ static void cli_print_help(void)
 	cli_print("  help\n");
 	cli_print("  echo on|off\n");
 	cli_print("  get <group|param>\n");
-	cli_print("  set profile <usb|pfsk_dongle|pfsk_headset>\n");
+	cli_print("  set mode <usb|pfsk_dongle|pfsk_headset>\n");
 	cli_print("  i2s tone on|off|status\n");
 	cli_print("  linktest on|off|status\n");
 	cli_print("  status_link on [ms]|off\n");
@@ -299,14 +299,14 @@ static void cli_cmd_get(const char *arg)
 	if (arg == NULL || *arg == '\0' || strcasecmp(arg, "all") == 0) {
 		cli_print_audio_group();
 		cli_print_radio_group();
-		cli_print_profile_group();
+		cli_print_mode_group();
 		cli_print_device_group();
 		cli_print_eq_group();
 		return;
 	}
 
-	if (strcasecmp(arg, "profile") == 0) {
-		cli_print_profile_group();
+	if (strcasecmp(arg, "mode") == 0) {
+		cli_print_mode_group();
 		return;
 	}
 
@@ -347,36 +347,36 @@ static void cli_cmd_set(char *args)
 		++value;
 	}
 
-	if (strcasecmp(param, "profile") == 0) {
-		enum app_profile profile;
+	if (strcasecmp(param, "mode") == 0) {
+		enum app_mode mode;
 
 		if (strcasecmp(value, "usb") == 0) {
-			profile = APP_PROFILE_USB;
+			mode = APP_MODE_USB;
 		} else if (strcasecmp(value, "pfsk_dongle") == 0) {
-			profile = APP_PROFILE_PFSK_DONGLE;
+			mode = APP_MODE_PFSK_DONGLE;
 		} else if (strcasecmp(value, "pfsk_headset") == 0) {
-			profile = APP_PROFILE_PFSK_HEADSET;
+			mode = APP_MODE_PFSK_HEADSET;
 		} else {
-			cli_print("ERR profile invalid_value\n");
+			cli_print("ERR mode invalid_value\n");
 			return;
 		}
 
-		if (profile == app_control_get_current_profile()) {
-			cli_print("OK profile=%s\n", app_control_get_profile_name(profile));
+		if (mode == app_control_get_current_mode()) {
+			cli_print("OK mode=%s\n", app_control_get_mode_name(mode));
 			return;
 		}
 
-		if (!app_control_save_boot_profile(profile)) {
-			cli_print("ERR profile persist_failed\n");
+		if (!app_control_save_boot_mode(mode)) {
+			cli_print("ERR mode persist_failed\n");
 			return;
 		}
 
-		cli_print("OK profile=%s\nrebooting...\n", app_control_get_profile_name(profile));
+		cli_print("OK mode=%s\nrebooting...\n", app_control_get_mode_name(mode));
 		tud_cdc_write_flush();
 		k_sleep(K_MSEC(50));
 		sys_reboot(SYS_REBOOT_COLD);
 		/* sys_reboot does not return; surface error if it does. */
-		cli_print("ERR profile reboot_failed\n");
+		cli_print("ERR mode reboot_failed\n");
 		return;
 	}
 
@@ -465,10 +465,10 @@ static void cli_cmd_fll(char *args)
 {
 	long rate;
 	int32_t lo, hi;
-	enum app_profile profile = app_control_get_current_profile();
+	enum app_mode mode = app_control_get_current_mode();
 
-	if (profile == APP_PROFILE_PFSK_DONGLE) {
-		cli_print("ERR fll not available for dongle profile\n");
+	if (mode == APP_MODE_PFSK_DONGLE) {
+		cli_print("ERR fll not available for dongle mode\n");
 		return;
 	}
 

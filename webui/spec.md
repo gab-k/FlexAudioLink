@@ -444,7 +444,7 @@ This suppresses local echo, starts periodic status pushes at 500ms, and requests
 - Mobile app / BLE configuration (considered v2)
 - Cloud firmware hosting / auto-update checking
 - Multi-device management (more than one headset)
-- Per-application audio profiles (OS-level integration)
+- Per-application audio modes (OS-level integration)
 - Noise cancellation controls (requires DSP firmware support)
 - Native desktop app (Tauri/Electron) — the web app + bridge covers all use cases without the complexity
 

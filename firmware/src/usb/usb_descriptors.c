@@ -22,7 +22,7 @@
 
 static bool usb_descriptors_cdc_only(void)
 {
-    return app_control_get_current_profile() == APP_PROFILE_PFSK_HEADSET;
+    return app_control_get_current_mode() == APP_MODE_PFSK_HEADSET;
 }
 
 //--------------------------------------------------------------------+
@@ -361,12 +361,12 @@ static uint16_t desc_str[32 + 1];
 
 static const char *usb_product_string(void)
 {
-    switch (app_control_get_current_profile()) {
-    case APP_PROFILE_USB:
+    switch (app_control_get_current_mode()) {
+    case APP_MODE_USB:
         return "FlexAudioLink (Direct USB Audio)";
-    case APP_PROFILE_PFSK_DONGLE:
+    case APP_MODE_PFSK_DONGLE:
         return "FlexAudioLink (Dongle)";
-    case APP_PROFILE_PFSK_HEADSET:
+    case APP_MODE_PFSK_HEADSET:
         return "FlexAudioLink (Headset)";
     default:
         return "FlexAudioLink";

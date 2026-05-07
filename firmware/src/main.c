@@ -2,7 +2,7 @@
  * FlexAudioLink nRF54 firmware
  *
  * Subsystems self-initialize via K_THREAD_DEFINE; main runs the boot
- * profile selection that starts the audio path for the persisted profile.
+ * mode selection that starts the audio path for the persisted mode.
  */
 
 #include "app_control.h"

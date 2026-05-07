@@ -2,15 +2,15 @@
 
 #include <zephyr/kernel.h>
 
-enum app_profile {
-	APP_PROFILE_USB,
-	APP_PROFILE_PFSK_DONGLE,
-	APP_PROFILE_PFSK_HEADSET,
-	APP_PROFILE_COUNT,
+enum app_mode {
+	APP_MODE_USB,
+	APP_MODE_PFSK_DONGLE,
+	APP_MODE_PFSK_HEADSET,
+	APP_MODE_COUNT,
 };
 
 void app_control_boot(void);
-enum app_profile app_control_get_current_profile(void);
+enum app_mode app_control_get_current_mode(void);
 void app_control_await_boot(void);
-bool app_control_save_boot_profile(enum app_profile profile);
-const char *app_control_get_profile_name(enum app_profile profile);
+bool app_control_save_boot_mode(enum app_mode mode);
+const char *app_control_get_mode_name(enum app_mode mode);

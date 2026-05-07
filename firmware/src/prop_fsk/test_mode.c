@@ -86,12 +86,12 @@ bool pfsk_test_mode_start(void)
 		return true;
 	}
 
-	switch (app_control_get_current_profile()) {
-	case APP_PROFILE_PFSK_DONGLE:
-	case APP_PROFILE_PFSK_HEADSET:
+	switch (app_control_get_current_mode()) {
+	case APP_MODE_PFSK_DONGLE:
+	case APP_MODE_PFSK_HEADSET:
 		break;
 	default:
-		LOG_WRN("linktest requires a PFSK profile");
+		LOG_WRN("linktest requires a PFSK mode");
 		return false;
 	}
 

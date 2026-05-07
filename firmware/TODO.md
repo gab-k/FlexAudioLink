@@ -4,12 +4,12 @@ Documented here for later follow-up from review feedback on the recent PFSK/CLI 
 
 ## High Priority
 
-### 1. Web UI profile command parsing not updated
+### 1. Web UI mode command parsing not updated
 
 - File: `src/cli.c`
-- Problem: the firmware CLI now uses `set profile <usb|pfsk_dongle|pfsk_headset>` and returns `OK profile=...`.
+- Problem: the firmware CLI now uses `set mode <usb|pfsk_dongle|pfsk_headset>` and returns `OK mode=...`.
 - Impact: the Web UI may still send separate `role` / `mode` commands and track acknowledgements by those old parameter names.
-- Fix direction: update the Web UI protocol/parser to use the single profile command.
+- Fix direction: update the Web UI protocol/parser to use the single mode command.
 
 ## Medium Priority
 

@@ -8,7 +8,7 @@ The nRF firmware exposes a USB CDC CLI in `firmware/src/cli.c`.
 |---------|-------------|
 | `help` | Show available commands |
 | `get` | Get current configuration |
-| `set profile <usb\|pfsk_dongle\|pfsk_headset>` | Set the boot profile |
+| `set mode <usb\|pfsk_dongle\|pfsk_headset>` | Set the boot mode |
 | `status` | Show device status |
 | `status on [ms]` | Enable periodic status output with optional interval |
 | `status off` | Disable periodic status output |

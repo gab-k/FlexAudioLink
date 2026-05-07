@@ -20,7 +20,7 @@ Current implementation constraint:
 
 ## Source of Truth Files
 
-Profile orchestration and route selection:
+Mode orchestration and route selection:
 
 - `firmware/src/app_control.c`
 
@@ -47,30 +47,30 @@ USB audio FIFO adapter:
 
 ## Route Selection and Activation
 
-`app_control_apply()` applies the path implied by the current profile:
+`app_control_apply()` applies the path implied by the current mode:
 
-- `profile=usb` -> wired path
-- `profile=pfsk_dongle` -> wireless path, dongle behavior
-- `profile=pfsk_headset` -> wireless path, headset behavior
+- `mode=usb` -> wired path
+- `mode=pfsk_dongle` -> wireless path, dongle behavior
+- `mode=pfsk_headset` -> wireless path, headset behavior
 
-There is no separate audio-path coordinator or active-path state enum; the active audio path is derived from the `app_control` profile.
+There is no separate audio-path coordinator or active-path state enum; the active audio path is derived from the `app_control` mode.
 
 Concrete route activation owns cross-route shutdown:
 
 - `audio_path_wired_activate()` deactivates wireless before starting wired.
 - `audio_path_wireless_activate()` deactivates wired before starting wireless.
 
-Wireless role behavior is selected from `app_control_get_current_profile()` at runtime; the wireless path does not keep a separate role copy.
+Wireless role behavior is selected from `app_control_get_current_mode()` at runtime; the wireless path does not keep a separate role copy.
 
 ### Effective Runtime Matrix
 
-| Profile | Audio path | Data flow |
+| Mode | Audio path | Data flow |
 |---|---|---|
 | `usb` | `wired` | USB speaker -> I2S TX, I2S RX -> USB mic |
 | `pfsk_dongle` | `wireless` | USB speaker -> PFSK TX, PFSK RX -> USB mic |
 | `pfsk_headset` | `wireless` | PFSK RX -> I2S TX, I2S RX -> PFSK TX |
 
-Special case: changing between PFSK profiles resets the wireless path so role-specific behavior updates immediately.
+Special case: changing between PFSK modes resets the wireless path so role-specific behavior updates immediately.
 
 ## Audio Units and Constants
 
@@ -166,7 +166,7 @@ Status fields (`audio_path_wired_status`):
 
 Purpose:
 
-- profile-dependent bridge using one local playback ring and PFSK session queues
+- mode-dependent bridge using one local playback ring and PFSK session queues
 
 Local ring:
 
@@ -291,7 +291,7 @@ There is currently no dedicated one-shot `status_audio` dump command.
 
 ## Transition and Flush Rules
 
-On profile changes, `app_control` activates the route implied by the new profile. Concrete route activation deactivates the opposing route first.
+On mode changes, `app_control` activates the route implied by the new mode. Concrete route activation deactivates the opposing route first.
 
 Reset/deactivate paths flush local transient state:
 
