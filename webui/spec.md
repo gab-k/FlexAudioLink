@@ -71,7 +71,7 @@ On page load, the app checks `navigator.serial` availability and selects the app
 - Each device has a **USB-C connector** for firmware updates, configuration, and USB audio mode
 - The connected device communicates with the GUI via USB CDC ACM
 - Firmware is flashed via **nrfutil** over USB serial (DFU bootloader mode); the GUI cannot flash directly but can trigger DFU mode
-- Three boot modes are available: **USB Audio**, **PFSK Dongle**, and **PFSK Headset**
+- Three boot modes are available: **USB Audio**, **PROP Dongle**, and **PROP Headset**
 - The proprietary 2.4 GHz link uses **FHSS + TDMA** with no retransmission — missed packets are concealed via **PLC (Packet Loss Concealment)**
 - USB mode turns the device into a wired USB Audio Class device — radio and codec settings do not apply
 - The GUI communicates over a simple text-based CLI protocol (newline-delimited commands and responses)
@@ -95,8 +95,8 @@ Configures the fundamental operating mode of the connected device. This panel is
 | Mode | Description | Effect on Other Panels |
 |---|---|---|
 | `usb` | Wired USB Audio Class device | Radio panel not applicable, codec settings not applicable |
-| `pfsk_dongle` | PC-side proprietary 2.4 GHz bridge | Full access to applicable Audio and Radio settings |
-| `pfsk_headset` | Headset-side proprietary 2.4 GHz bridge | Full access to applicable Audio and Radio settings |
+| `prop_dongle` | PC-side proprietary 2.4 GHz bridge | Full access to applicable Audio and Radio settings |
+| `prop_headset` | Headset-side proprietary 2.4 GHz bridge | Full access to applicable Audio and Radio settings |
 
 **Notes:**
 - Changing boot mode requires a device restart — warn the user before applying
@@ -229,7 +229,7 @@ Each path is shown as a **color-coded pipeline bar** with proportional segment w
 
 The Radio Settings panel includes a **live Link Budget + Latency Estimate** (same component as the Audio panel) so the user can immediately see throughput and latency implications of radio changes (PHY rate, jitter buffer, payload sizes) without switching tabs.
 
-The operating mode (`usb` / `pfsk_dongle` / `pfsk_headset`) is selected in the **Mode panel** — the Radio panel shows the relevant settings for the currently active mode. In USB mode, a message indicates that radio settings do not apply.
+The operating mode (`usb` / `prop_dongle` / `prop_headset`) is selected in the **Mode panel** — the Radio panel shows the relevant settings for the currently active mode. In USB mode, a message indicates that radio settings do not apply.
 
 ### Proprietary 2.4 GHz Options
 
@@ -257,14 +257,14 @@ The operating mode (`usb` / `pfsk_dongle` / `pfsk_headset`) is selected in the *
 
 ### Audio I/O
 - Audio Interface: `wired` / `usb` / `codec`
-- Default is set by firmware based on mode (`wired` for USB, `usb` for PFSK dongle, `codec` for PFSK headset)
+- Default is set by firmware based on mode (`wired` for USB, `usb` for PROP dongle, `codec` for PROP headset)
 - Setting both devices to CODEC enables analog-to-analog wireless bridging (e.g. airplane 3.5mm jack → wireless → headset)
 
 ### Radio Addressing (Proprietary 2.4 GHz)
 - Device Address — this device's radio address (read from device on connect, user-editable)
 - Peer Address — the address of the other device in the pair (read from device on connect, user-editable)
 - Default addresses are set by firmware; the GUI reads them via `get all` on connect
-- Only relevant in PFSK modes; USB has no radio addressing
+- Only relevant in PROP modes; USB has no radio addressing
 - For multiple pairs in the same room, configure unique address pairs to avoid crosstalk
 
 ### Persistence
@@ -400,7 +400,7 @@ Commands are **case-insensitive**. The `target` concept (dongle/headset) is gone
 | `audio_io` | device | string | wired,usb,codec |
 | `device_addr` | radio | hex | 4-byte address, e.g. `0xD0D0D0D0` |
 | `peer_addr` | radio | hex | 4-byte address of peer device |
-| `mode` | mode | string | usb,pfsk_dongle,pfsk_headset |
+| `mode` | mode | string | usb,prop_dongle,prop_headset |
 | `auto_sleep` | device | int | 0..60 |
 | `low_battery_threshold` | device | int | 0..100 |
 

@@ -6,7 +6,7 @@ The FlexAudioLink firmware is a Zephyr application targeting `nrf54lm20dk/nrf54l
 
 - `firmware/src/main.c`: loads the persisted boot mode and starts that mode's audio path
 - `firmware/src/app_control.c`: owns boot mode persistence and startup
-- PFSK modes currently enable the present radio test-mode path; they are not yet the final audio transport
+- PROP modes currently enable the present radio test-mode path; they are not yet the final audio transport
 
 ## Build
 
@@ -25,7 +25,7 @@ For toolchain setup and build steps, see `firmware/README.md`.
 The firmware supports three boot modes:
 
 - **`usb`** — USB audio class device mode
-- **`pfsk_dongle`** — Proprietary 2.4 GHz FSK dongle mode
-- **`pfsk_headset`** — Proprietary 2.4 GHz FSK headset mode
+- **`prop_dongle`** — Proprietary 2.4 GHz FSK dongle mode
+- **`prop_headset`** — Proprietary 2.4 GHz FSK headset mode
 
 Modes are persisted and loaded on boot. Use the [CLI reference](../cli.md) `set mode` command to change modes. Mode change requires reboot!

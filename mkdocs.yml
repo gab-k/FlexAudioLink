@@ -31,7 +31,7 @@ nav:
   - Getting Started: getting-started.md
   - Firmware:
       - firmware/index.md
-      - PFSK TDD: firmware/pfsk-tdd.md
+      - PROP TDD: firmware/prop-tdd.md
   - Hardware: hardware.md
   - Web UI: webui.md
   - CLI Reference: cli.md

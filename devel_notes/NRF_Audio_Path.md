@@ -5,8 +5,8 @@
 Implemented audio bridges:
 
 - USB <-> I2S (wired path)
-- USB <-> PFSK (wireless path, dongle role)
-- PFSK <-> I2S (wireless path, headset role)
+- USB <-> PROP (wireless path, dongle role)
+- PROP <-> I2S (wireless path, headset role)
 
 Planned, not implemented:
 
@@ -50,8 +50,8 @@ USB audio FIFO adapter:
 `app_control_apply()` applies the path implied by the current mode:
 
 - `mode=usb` -> wired path
-- `mode=pfsk_dongle` -> wireless path, dongle behavior
-- `mode=pfsk_headset` -> wireless path, headset behavior
+- `mode=prop_dongle` -> wireless path, dongle behavior
+- `mode=prop_headset` -> wireless path, headset behavior
 
 There is no separate audio-path coordinator or active-path state enum; the active audio path is derived from the `app_control` mode.
 
@@ -67,10 +67,10 @@ Wireless role behavior is selected from `app_control_get_current_mode()` at runt
 | Mode | Audio path | Data flow |
 |---|---|---|
 | `usb` | `wired` | USB speaker -> I2S TX, I2S RX -> USB mic |
-| `pfsk_dongle` | `wireless` | USB speaker -> PFSK TX, PFSK RX -> USB mic |
-| `pfsk_headset` | `wireless` | PFSK RX -> I2S TX, I2S RX -> PFSK TX |
+| `prop_dongle` | `wireless` | USB speaker -> PROP TX, PROP RX -> USB mic |
+| `prop_headset` | `wireless` | PROP RX -> I2S TX, I2S RX -> PROP TX |
 
-Special case: changing between PFSK modes resets the wireless path so role-specific behavior updates immediately.
+Special case: changing between PROP modes resets the wireless path so role-specific behavior updates immediately.
 
 ## Audio Units and Constants
 
@@ -79,8 +79,8 @@ From `audio_path_common.h` and `i2s.h`:
 - `AUDIO_BYTES_PER_STEREO_SAMPLE = 4`
 - `AUDIO_I2S_BYTES_PER_MS = 192` (48 kHz, 16-bit stereo)
 - `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / 2 = 96` (0.5 ms stereo)
-- `AUDIO_PFSK_SPK_PACKET_BYTES = 192` (1 ms stereo speaker payload)
-- `AUDIO_PFSK_MIC_PACKET_BYTES = 96` (1 ms mono mic payload)
+- `AUDIO_PROP_SPK_PACKET_BYTES = 192` (1 ms stereo speaker payload)
+- `AUDIO_PROP_MIC_PACKET_BYTES = 96` (1 ms mono mic payload)
 - `AUDIO_DMA_MAX_BYTES = 384`
 
 Watermarks:
@@ -124,7 +124,7 @@ Stereo-to-mono extraction (`audio_extract_left_to_mono`):
 
 - capture uses left channel only
 - one `AUDIO_I2S_BLOCK_BYTES` stereo block (`96` bytes) -> `48` mono bytes
-- two `AUDIO_I2S_BLOCK_BYTES` stereo blocks (`192` bytes) -> one `AUDIO_PFSK_MIC_PACKET_BYTES` mono wireless mic packet
+- two `AUDIO_I2S_BLOCK_BYTES` stereo blocks (`192` bytes) -> one `AUDIO_PROP_MIC_PACKET_BYTES` mono wireless mic packet
 
 ## Wired Path (`audio_path_wired.c`)
 
@@ -166,7 +166,7 @@ Status fields (`audio_path_wired_status`):
 
 Purpose:
 
-- mode-dependent bridge using one local playback ring and PFSK session queues
+- mode-dependent bridge using one local playback ring and PROP session queues
 
 Local ring:
 
@@ -174,13 +174,13 @@ Local ring:
 - TinyUSB FIFO configured in overwrite mode
 - `audio_ring_push()` returns evicted-oldest bytes for accounting
 
-PFSK audio payload map:
+PROP audio payload map:
 
-- session queues `pfsk_packet` directly
-- `pfsk_packet.length` is metadata plus payload bytes
-- `pfsk_packet.payload` contains only the audio bytes after the 2-byte PFSK metadata
-- audio producers add `PFSK_PACKET_METADATA_LEN` when enqueueing frames
-- audio consumers subtract `PFSK_PACKET_METADATA_LEN` after dequeueing frames
+- session queues `prop_packet` directly
+- `prop_packet.length` is metadata plus payload bytes
+- `prop_packet.payload` contains only the audio bytes after the 2-byte PROP metadata
+- audio producers add `PROP_PACKET_METADATA_LEN` when enqueueing frames
+- audio consumers subtract `PROP_PACKET_METADATA_LEN` after dequeueing frames
 
 Direction is implicit from the device role; there is no stream id byte.
 Audio byte count is not duplicated in the audio payload.
@@ -207,20 +207,20 @@ so the receiver uses the value directly with no further smoothing.
 
 - ingest USB speaker bytes (up to `AUDIO_DMA_MAX_BYTES=384` per pull) into ring
 - parse received capture frames, push audio to USB mic FIFO, latch peer ring level from `peer_meta`
-- once `PLAYING`, send playback from ring to PFSK in `AUDIO_PFSK_SPK_PACKET_BYTES` chunks; outbound `peer_meta` is zero (reserved)
+- once `PLAYING`, send playback from ring to PROP in `AUDIO_PROP_SPK_PACKET_BYTES` chunks; outbound `peer_meta` is zero (reserved)
 - update USB feedback from the latched peer (headset) ring level
 
 ### Headset role behavior
 
 - parse received playback frames, push audio to local ring (inbound `peer_meta` is currently unused)
-- send I2S capture to PFSK as mono; outbound `peer_meta` carries the headset's filtered ring level
+- send I2S capture to PROP as mono; outbound `peer_meta` carries the headset's filtered ring level
 - once `PLAYING`, send playback from ring to I2S in `AUDIO_I2S_BLOCK_BYTES` (`96-byte`) blocks
 - if low panic, inject one silence I2S block and count underrun/silence bytes
 - no USB feedback update path in this role
 
-### PFSK test-mode interaction
+### PROP test-mode interaction
 
-When `pfsk_test_mode_is_running()`:
+When `prop_test_mode_is_running()`:
 
 - ring is cleared each step
 - status is forced to buffering/zeroed level+error+adjust

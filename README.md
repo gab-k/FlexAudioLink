@@ -34,7 +34,7 @@ USB handles audio on the dongle side, I2S/codec on the headset side.
 - USB device (UAC + CDC)
 - Configuration persistence
 - USB CDC CLI
-- PFSK radio test mode
+- PROP radio test mode
 - Audio I2S / codec integration
 - Wireless audio streaming (USB ↔ I2S)
 
@@ -62,7 +62,7 @@ USB handles audio on the dongle side, I2S/codec on the headset side.
 Key pages:
 
 - [**Getting Started**](https://gab-k.github.io/FlexAudioLink/getting-started/) — toolchain setup, build, and flash instructions
-- [**Firmware**](https://gab-k.github.io/FlexAudioLink/firmware/) — architecture, PFSK protocol
+- [**Firmware**](https://gab-k.github.io/FlexAudioLink/firmware/) — architecture, PROP protocol
 - [**Hardware**](https://gab-k.github.io/FlexAudioLink/hardware/) — schematic, PCB, rationale for chosen components
 - [**Web UI**](https://gab-k.github.io/FlexAudioLink/webui/) — setup and configuration
 - [**CLI Reference**](https://gab-k.github.io/FlexAudioLink/cli/) — available CLI commands

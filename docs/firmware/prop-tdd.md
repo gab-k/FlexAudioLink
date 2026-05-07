@@ -1,8 +1,8 @@
-# PFSK Time Division Duplex
+# PROP Time Division Duplex
 
-PFSK — proprietary 2.4 GHz FSK link layer. TDD half-duplex: both peers share one channel, alternating TX/RX. No fixed slot assignment; listen timeout with random jitter resolves contention. Idle peer transmits keepalive or queued payload on timeout.
+PROP — proprietary 2.4 GHz FSK link layer. TDD half-duplex: both peers share one channel, alternating TX/RX. No fixed slot assignment; listen timeout with random jitter resolves contention. Idle peer transmits keepalive or queued payload on timeout.
 
-Implementation reference: `firmware/src/prop_fsk/`
+Implementation reference: `firmware/src/prop/`
 
 - `radio_core.c` — authoritative for radio timing and DMA ownership. Entirely Timer/[DPPI](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/dppi.html) and ISR based.
 - `session.c` — authoritative for service state, app queues, payload sequencing, and loss accounting.
@@ -18,7 +18,7 @@ Implementation reference: `firmware/src/prop_fsk/`
 ## Radio Turn State
 
 <figure markdown>
-  ![](hw_turn_states_pfsk_tdd.drawio.svg){ loading=lazy style="max-width:100%;width:800px" }
+  ![](hw_turn_states_prop_tdd.drawio.svg){ loading=lazy style="max-width:100%;width:800px" }
   <figcaption>Radio turn state machine</figcaption>
 </figure>
 
@@ -54,8 +54,8 @@ Handled inside `radio_isr`.
 `radio_core` emits one ordered event stream to `session.c`.
 
 ```c
-struct pfsk_session_event {
-    enum pfsk_session_event_type type;
+struct prop_session_event {
+    enum prop_session_event_type type;
     uint32_t tick;
     int16_t rssi_dbm;
 };
@@ -73,27 +73,27 @@ struct pfsk_session_event {
 ## Packet Format
 
 ```c
-struct pfsk_packet {
+struct prop_packet {
     uint8_t  length;
     uint16_t seq;
-    uint8_t  payload[PFSK_PAYLOAD_MAX_LEN];
+    uint8_t  payload[PROP_PAYLOAD_MAX_LEN];
 } __packed __aligned(4);
 ```
 
-- packets never use `seq = PFSK_KEEPALIVE_SEQ = UINT16_MAX` unless they are keepalive packets.
+- packets never use `seq = PROP_KEEPALIVE_SEQ = UINT16_MAX` unless they are keepalive packets.
 - zero-length app TX frames are invalid
 
 Constants:
 
 | Constant | Value |
 |---|---|
-| `PFSK_PACKET_METADATA_LEN` | 2 |
-| `PFSK_PAYLOAD_MAX_LEN` | 252 |
-| `PFSK_KEEPALIVE_PAYLOAD_LEN` | 16 |
-| `PFSK_KEEPALIVE_SEQ` | `UINT16_MAX` |
+| `PROP_PACKET_METADATA_LEN` | 2 |
+| `PROP_PAYLOAD_MAX_LEN` | 252 |
+| `PROP_KEEPALIVE_PAYLOAD_LEN` | 16 |
+| `PROP_KEEPALIVE_SEQ` | `UINT16_MAX` |
 
 !!! warning
-    Do not confuse `payload` inside `struct pfsk_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs → Packet configuration](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
+    Do not confuse `payload` inside `struct prop_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs → Packet configuration](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
 
 ## Buffers
 
@@ -102,8 +102,8 @@ current read/write slot in these rings. The RADIO peripheral DMA transfers
 directly to/from the pointed-to ring entry.
 
 ```c
-tx_ring[PFSK_RADIO_TX_RING_DEPTH]
-rx_ring[PFSK_RADIO_RX_RING_DEPTH]
+tx_ring[PROP_RADIO_TX_RING_DEPTH]
+rx_ring[PROP_RADIO_RX_RING_DEPTH]
 keepalive_packet
 ```
 
@@ -122,8 +122,8 @@ TX ring rules:
 
 - TX ring contains payload packets only.
 - Keepalives are never queued in the TX ring.
-- Session gets a pointer to the next TX slot via `pfsk_radio_tx_get_wr_ptr()`,
-  copies into it, then commits with `pfsk_radio_tx_advance_wr_idx()`.
+- Session gets a pointer to the next TX slot via `prop_radio_tx_get_wr_ptr()`,
+  copies into it, then commits with `prop_radio_tx_advance_wr_idx()`.
 - Session-thread does not touch `PACKETPTR`.
 
 RX ring rules:
@@ -131,7 +131,7 @@ RX ring rules:
 - RADIO DMA writes to `rx_ring[rx_wr_idx]`.
 - `CRCOK`/`CRCERROR` queues a session event.
 - RX write index advances only if the RX ring has room and event queueing succeeds.
-- Session releases a consumed RX slot with `pfsk_radio_rx_advance_rd_idx()`.
+- Session releases a consumed RX slot with `prop_radio_rx_advance_rd_idx()`.
 
 ## RADIO Shortcuts
 
@@ -177,7 +177,7 @@ Programming points:
 
 | Point | Action |
 |---|---|
-| `pfsk_radio_start()` | Program initial RX pointer. |
+| `prop_radio_start()` | Program initial RX pointer. |
 | `ADDRESS` while `LISTEN` | Program next TX pointer. |
 | `LISTEN`/`IN_RX` timeout | Program TX pointer directly before switchover to TX. |
 | `ADDRESS` while `IN_TX` | Program next RX pointer. |
@@ -195,10 +195,10 @@ Constants:
 
 | Constant | Meaning |
 |---|---|
-| `PFSK_RADIO_LISTEN_TIMEOUT_BASE_US` | Fixed listen window before timeout. |
-| `PFSK_RADIO_LISTEN_TIMEOUT_JITTER_US` | Max random offset added to listen timeout. Determined by xorshift PRNG seeded from device ID and cycle counter. |
-| `PFSK_RADIO_MAX_PACKET_AIRTIME_US` | Worst-case packet duration on air. |
-| `PFSK_RADIO_DEADLINE_MIN_LEAD_US` | Minimum time a deadline must be in the future. |
+| `PROP_RADIO_LISTEN_TIMEOUT_BASE_US` | Fixed listen window before timeout. |
+| `PROP_RADIO_LISTEN_TIMEOUT_JITTER_US` | Max random offset added to listen timeout. Determined by xorshift PRNG seeded from device ID and cycle counter. |
+| `PROP_RADIO_MAX_PACKET_AIRTIME_US` | Worst-case packet duration on air. |
+| `PROP_RADIO_DEADLINE_MIN_LEAD_US` | Minimum time a deadline must be in the future. |
 
 Deadline rules:
 
@@ -337,7 +337,7 @@ Stay in service:
 Leave service:
 
 - only consecutive `LISTEN_TIMEOUT` events count as missed peer activity
-- threshold is `PFSK_SESSION_SYNC_LOSS_TURNS`
+- threshold is `PROP_SESSION_SYNC_LOSS_TURNS`
 
 On service loss:
 
@@ -379,7 +379,7 @@ On service loss:
 7. TX ring entries are payload-only.
 8. Empty TX ring means transmit `keepalive_packet`.
 9. Keepalive does not consume payload sequence numbers.
-10. Payload sequence generation skips `PFSK_KEEPALIVE_SEQ`.
+10. Payload sequence generation skips `PROP_KEEPALIVE_SEQ`.
 11. Session-thread TX publication does not program `PACKETPTR`.
 12. `PACKETPTR` and turn-selection shortcut are always programmed together.
 13. `ADDRESS` must program the next-direction `PACKETPTR` before `PHYEND` fires.
