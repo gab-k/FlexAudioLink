@@ -30,7 +30,10 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Firmware:
-      - firmware/index.md
+      - Overview: firmware/index.md
+      - Audio Path: firmware/audio-path.md
+      - I2S/TDM: firmware/i2s-tdm.md
+      - NAU88L21 Codec: firmware/nau88l21-codec.md
       - PROP TDD: firmware/prop-tdd.md
   - Hardware: hardware.md
   - Web UI: webui.md
