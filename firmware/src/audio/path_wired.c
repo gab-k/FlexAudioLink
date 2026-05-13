@@ -6,7 +6,6 @@ LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
 
 #include "audio/path_common.h"
 #include "audio/i2s.h"
-#include "audio/nau88l21.h"
 
 #define WIRED_THREAD_STACK_SIZE        3072
 #define WIRED_THREAD_PRIORITY          7
@@ -23,42 +22,6 @@ static K_THREAD_STACK_DEFINE(wired_thread_stack, WIRED_THREAD_STACK_SIZE);
 static struct k_thread wired_thread_data;
 
 static void wired_thread(void *a, void *b, void *c);
-
-static void wired_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
-{
-	static uint32_t last_ms;
-	static float filter = -1.0f;
-	static float i_sum;
-	uint32_t now_ms;
-
-	if (fll.fixed) {
-		return;
-	}
-
-	now_ms = k_uptime_get();
-	if (now_ms - last_ms < FLL_UPDATE_INTERVAL_MS) {
-		return;
-	}
-	last_ms = now_ms;
-
-	int32_t adjust_hz = codec_clock_controller(WIRED_TARGET_BYTES,
-						    &filter, &i_sum,
-						    P_GAIN, P_KI,
-						    fifo_lvl, pending);
-
-	wired_status.spk_filtered_level_bytes = (uint32_t)filter;
-	wired_status.spk_error_bytes = (int32_t)WIRED_TARGET_BYTES - (int32_t)wired_status.spk_filtered_level_bytes;
-	wired_status.spk_p_adjust_hz = adjust_hz;
-
-	int32_t target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
-	int ret = nau88l21_set_fll_target_rate_hz(target_rate);
-
-	if (ret == 0) {
-		wired_status.spk_fll_target_rate_hz = target_rate;
-	} else {
-		LOG_ERR("Failed to set codec FLL target rate to %d Hz", target_rate);
-	}
-}
 
 void path_wired_init(void)
 {
@@ -121,7 +84,12 @@ static void wired_thread(void *a, void *b, void *c)
 		}
 
 		if (wired_status.stream_state == PATH_STATE_PLAYING) {
-			wired_update_codec_clock(ep_out_ff_bytes, pending);
+			update_codec_clock(WIRED_TARGET_BYTES,
+					   ep_out_ff_bytes, pending,
+					   &wired_status.spk_filtered_level_bytes,
+					   &wired_status.spk_error_bytes,
+					   &wired_status.spk_p_adjust_hz,
+					   &wired_status.spk_fll_target_rate_hz);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, ep_out_ff_bytes, pending, WIRED_WARN_LOW_BYTES, WIRED_WARN_HIGH_BYTES);
 			#endif

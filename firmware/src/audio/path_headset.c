@@ -9,7 +9,6 @@ LOG_MODULE_REGISTER(path_headset, LOG_LEVEL_INF);
 
 #include "audio/path_common.h"
 #include "audio/i2s.h"
-#include "audio/nau88l21.h"
 #include "prop/session.h"
 
 #define HEADSET_THREAD_STACK_SIZE  3072
@@ -75,42 +74,6 @@ void path_headset_get_status(struct path_headset_status *out)
 	}
 }
 
-
-static void headset_update_codec_clock(uint32_t fifo_lvl, uint32_t pending)
-{
-	if (fll.fixed) {
-		return;
-	}
-
-	static uint32_t last_update_uptime_ms;
-	static float filter = -1.0f;
-	static float i_sum;
-	uint32_t now_ms;
-
-	now_ms = k_uptime_get();
-	if (now_ms - last_update_uptime_ms < FLL_UPDATE_INTERVAL_MS) {
-		return;
-	}
-	last_update_uptime_ms = now_ms;
-
-	int32_t adjust_hz = codec_clock_controller(
-		HEADSET_TARGET_BYTES, &filter, &i_sum,
-		P_GAIN, P_KI,
-		fifo_lvl, pending);
-
-	headset_status.spk_filtered_level_bytes = (uint32_t)filter;
-	headset_status.spk_error_bytes = (int32_t)HEADSET_TARGET_BYTES - (int32_t)headset_status.spk_filtered_level_bytes;
-	headset_status.spk_p_adjust_hz = adjust_hz;
-
-	int32_t target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
-	int ret = nau88l21_set_fll_target_rate_hz(target_rate);
-
-	if (ret == 0) {
-		headset_status.spk_fll_target_rate_hz = target_rate;
-	} else {
-		LOG_ERR("Failed to set codec FLL target rate to %d Hz", target_rate);
-	}
-}
 
 static void headset_thread(void *a, void *b, void *c)
 {
@@ -197,7 +160,12 @@ static void headset_thread(void *a, void *b, void *c)
 
 		/* FLL controller */
 		if (headset_status.stream_state == PATH_STATE_PLAYING) {
-			headset_update_codec_clock(spk_ff_bytes, pending);
+			update_codec_clock(HEADSET_TARGET_BYTES,
+					   spk_ff_bytes, pending,
+					   &headset_status.spk_filtered_level_bytes,
+					   &headset_status.spk_error_bytes,
+					   &headset_status.spk_p_adjust_hz,
+					   &headset_status.spk_fll_target_rate_hz);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, spk_ff_bytes, pending, HEADSET_WARN_LOW_BYTES, HEADSET_WARN_HIGH_BYTES);
 			#endif

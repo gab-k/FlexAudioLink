@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/sys/util.h>
 #include "prop/radio_core.h"
@@ -47,24 +48,12 @@ struct fll_state {
 
 const char *path_get_state_name(enum path_state state);
 
-/*
- * Shared adaptive codec clock PI controller.
- * Runs EMA filter + proportional + integral control on the
- * given buffer level, returning the recommended FLL adjustment in Hz.
- *   target      desired buffer level in bytes
- *   filter      EMA state pointer (set to -1.0f on reset)
- *   i_sum       integral accumulator pointer (set to 0.0f on reset)
- *   gain_mult   proportional gain multiplier (error_bytes * gain_mult → Hz)
- *   ki          integral gain (fraction of error added per update)
- *   fifo        USB FIFO fill in bytes
- *   pending     I2S pipeline bytes in flight
- *
- *   level = fifo + pending is computed internally.
- */
-int32_t codec_clock_controller(uint32_t target,
-				float *filter, float *i_sum,
-				float gain_mult, float ki,
-				uint32_t fifo, uint32_t pending);
+void update_codec_clock(uint32_t target,
+			uint32_t fifo, uint32_t pending,
+			uint32_t *filtered_level_bytes,
+			int32_t *error_bytes,
+			int32_t *p_adjust_hz,
+			int32_t *fll_target_rate_hz);
 
 void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);
 

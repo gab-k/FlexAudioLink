@@ -93,20 +93,19 @@ implementation.
 
 ## FLL Controller
 
-`codec_clock_controller()` runs a shared EMA + PI loop:
+`update_codec_clock()` runs the shared FLL update loop:
 
 | Input | Use |
 |---|---|
 | `target` | Desired total speaker level in bytes. |
 | `fifo` | Current software speaker FIFO level. |
 | `pending` | Bytes already submitted to the I2S pipeline. |
-| `filter`, `i_sum` | Per-path controller state. |
 
-The active I2S-backed path implementation (`path_wired` or `path_headset`)
-computes `target_rate = AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz` and calls
-`nau88l21_set_fll_target_rate_hz()`. `fll_set_fixed()` pauses automatic path
-updates by setting a global fixed target; `fll_set_auto()` resumes automatic
-control.
+It filters `fifo + pending`, computes the buffer error, passes that error to
+the internal PI controller, computes
+`target_rate = AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz`, and calls
+`nau88l21_set_fll_target_rate_hz()`. `fll_set_fixed()` pauses automatic updates
+by setting a global fixed target; `fll_set_auto()` resumes automatic control.
 
 ## Constraints
 
