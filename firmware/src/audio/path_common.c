@@ -107,11 +107,9 @@ static int32_t codec_clock_controller(int32_t error_bytes)
 }
 
 void update_codec_clock(uint32_t target,
-			uint32_t fifo, uint32_t pending,
-			uint32_t *filtered_level_bytes,
-			int32_t *error_bytes,
-			int32_t *p_adjust_hz,
-			int32_t *fll_target_rate_hz)
+			uint32_t fifo,
+			uint32_t pending,
+			struct codec_path_status *status)
 {
 	static uint32_t last_update_uptime_ms;
 	static float filter = -1.0f;
@@ -122,8 +120,7 @@ void update_codec_clock(uint32_t target,
 	int32_t target_rate;
 	int ret;
 
-	if (fll.fixed || filtered_level_bytes == NULL || error_bytes == NULL ||
-	    p_adjust_hz == NULL || fll_target_rate_hz == NULL) {
+	if (fll.fixed || status == NULL) {
 		return;
 	}
 
@@ -136,15 +133,16 @@ void update_codec_clock(uint32_t target,
 	level = fifo + pending;
 	filtered = filter_update(&filter, level);
 
-	*filtered_level_bytes = filtered;
-	*error_bytes = (int32_t)target - (int32_t)filtered;
-	adjust_hz = codec_clock_controller(*error_bytes);
-	*p_adjust_hz = adjust_hz;
+	status->spk_filtered_level_bytes = filtered;
+	status->spk_error_bytes = (int32_t)target - (int32_t)filtered;
+	adjust_hz = codec_clock_controller(status->spk_error_bytes);
+	status->spk_p_adjust_hz = adjust_hz;
 
 	target_rate = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz;
+
 	ret = nau88l21_set_fll_target_rate_hz(target_rate);
 	if (ret == 0) {
-		*fll_target_rate_hz = target_rate;
+		status->spk_fll_target_rate_hz = target_rate;
 	} else {
 		LOG_ERR("Failed to set codec FLL target rate to %d Hz", target_rate);
 	}
@@ -156,7 +154,7 @@ void update_codec_clock(uint32_t target,
 		if (++log_cnt % 10 == 0U) {
 			LOG_INF("rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d out=%d",
 				target_rate, level, fifo, pending, filtered,
-				*error_bytes, adjust_hz);
+				status->spk_error_bytes, adjust_hz);
 		}
 	}
 	#endif

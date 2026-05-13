@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
 #define WIRED_WARN_LOW_BYTES  (WIRED_TARGET_BYTES * 10U / 50U )
 #define WIRED_WARN_HIGH_BYTES (WIRED_TARGET_BYTES * 90U / 50U )
 
-static struct path_wired_status wired_status;
+static struct codec_path_status wired_status;
 
 static K_THREAD_STACK_DEFINE(wired_thread_stack, WIRED_THREAD_STACK_SIZE);
 static struct k_thread wired_thread_data;
@@ -34,7 +34,7 @@ void path_wired_init(void)
 			WIRED_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
-void path_wired_get_status(struct path_wired_status *out)
+void path_wired_get_status(struct codec_path_status *out)
 {
 	if (out == NULL) {
 		return;
@@ -86,10 +86,7 @@ static void wired_thread(void *a, void *b, void *c)
 		if (wired_status.stream_state == PATH_STATE_PLAYING) {
 			update_codec_clock(WIRED_TARGET_BYTES,
 					   ep_out_ff_bytes, pending,
-					   &wired_status.spk_filtered_level_bytes,
-					   &wired_status.spk_error_bytes,
-					   &wired_status.spk_p_adjust_hz,
-					   &wired_status.spk_fll_target_rate_hz);
+					   &wired_status);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, ep_out_ff_bytes, pending, WIRED_WARN_LOW_BYTES, WIRED_WARN_HIGH_BYTES);
 			#endif

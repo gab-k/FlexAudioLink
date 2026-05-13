@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(path_headset, LOG_LEVEL_INF);
 #define HEADSET_SPK_FIFO_SIZE      1920U
 #define HEADSET_MIC_FIFO_SIZE      960U
 
-static struct path_headset_status headset_status;
+static struct codec_path_status headset_status;
 
 static uint8_t headset_spk_fifo_buf[HEADSET_SPK_FIFO_SIZE];
 static uint8_t headset_mic_fifo_buf[HEADSET_MIC_FIFO_SIZE];
@@ -41,7 +41,7 @@ static void headset_thread(void *a, void *b, void *c);
 
 void path_headset_init(void)
 {
-	headset_status = (struct path_headset_status){
+	headset_status = (struct codec_path_status){
 		.stream_state = PATH_STATE_BUFFERING,
 		.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ,
 	};
@@ -64,7 +64,7 @@ void path_headset_init(void)
 			HEADSET_THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
-void path_headset_get_status(struct path_headset_status *out)
+void path_headset_get_status(struct codec_path_status *out)
 {
 	if (out != NULL) {
 		*out = headset_status;
@@ -162,10 +162,7 @@ static void headset_thread(void *a, void *b, void *c)
 		if (headset_status.stream_state == PATH_STATE_PLAYING) {
 			update_codec_clock(HEADSET_TARGET_BYTES,
 					   spk_ff_bytes, pending,
-					   &headset_status.spk_filtered_level_bytes,
-					   &headset_status.spk_error_bytes,
-					   &headset_status.spk_p_adjust_hz,
-					   &headset_status.spk_fll_target_rate_hz);
+					   &headset_status);
 			#ifdef WARN_SPK_LVL
 			warn_on_level(level, spk_ff_bytes, pending, HEADSET_WARN_LOW_BYTES, HEADSET_WARN_HIGH_BYTES);
 			#endif

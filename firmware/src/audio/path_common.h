@@ -46,14 +46,23 @@ struct fll_state {
 	int32_t fixed_rate_hz;
 };
 
+struct codec_path_status {
+	enum path_state stream_state;
+	uint32_t spk_fifo_bytes;
+	uint32_t spk_pending_bytes;
+	uint32_t spk_filtered_level_bytes;
+	int32_t spk_error_bytes;
+	int32_t spk_p_adjust_hz;
+	int32_t spk_fll_target_rate_hz;
+	uint32_t spk_underrun_events;
+};
+
 const char *path_get_state_name(enum path_state state);
 
 void update_codec_clock(uint32_t target,
-			uint32_t fifo, uint32_t pending,
-			uint32_t *filtered_level_bytes,
-			int32_t *error_bytes,
-			int32_t *p_adjust_hz,
-			int32_t *fll_target_rate_hz);
+			uint32_t fifo,
+			uint32_t pending,
+			struct codec_path_status *status);
 
 void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);
 

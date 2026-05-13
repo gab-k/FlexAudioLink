@@ -142,7 +142,7 @@ static void cli_emit_status_audio_push(void)
 
 	switch (mode) {
 	case APP_MODE_USB: {
-		struct path_wired_status s;
+		struct codec_path_status s;
 
 		path_wired_get_status(&s);
 		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
@@ -167,7 +167,7 @@ static void cli_emit_status_audio_push(void)
 		return;
 	}
 	case APP_MODE_PROP_HEADSET: {
-		struct path_headset_status s;
+		struct codec_path_status s;
 
 		path_headset_get_status(&s);
 		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
