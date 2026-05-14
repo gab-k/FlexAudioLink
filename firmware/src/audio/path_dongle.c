@@ -7,9 +7,63 @@ LOG_MODULE_REGISTER(path_dongle, LOG_LEVEL_INF);
 #include "tusb.h"
 #include "prop/session.h"
 
+#define PATH_DONGLE_LATENCY_MARKER_GPIO
+
 #define DONGLE_THREAD_STACK_SIZE  3072
 #define DONGLE_THREAD_PRIORITY    6
 #define DONGLE_LOOP_SLEEP_MS      1
+
+#ifdef PATH_DONGLE_LATENCY_MARKER_GPIO
+#include <hal/nrf_gpio.h>
+#define DONGLE_LATENCY_MARKER_PIN NRF_GPIO_PIN_MAP(0U, 2U)
+
+static const uint8_t latency_marker_pattern[] = {
+	0xff, 0x7f, 0xff, 0x7f, /* L/R +32767 */
+	0x00, 0x80, 0x00, 0x80, /* L/R -32768 */
+	0xff, 0x7f, 0xff, 0x7f, /* L/R +32767 */
+	0x00, 0x80, 0x00, 0x80, /* L/R -32768 */
+};
+
+static void latency_marker_gpio_init(void)
+{
+	nrf_gpio_cfg_output(DONGLE_LATENCY_MARKER_PIN);
+	nrf_gpio_pin_clear(DONGLE_LATENCY_MARKER_PIN);
+}
+
+static void latency_marker_gpio_toggle(void)
+{
+	nrf_gpio_pin_toggle(DONGLE_LATENCY_MARKER_PIN);
+}
+
+static bool latency_marker_payload_has_pattern(const uint8_t *payload, uint32_t payload_bytes)
+{
+	if (payload == NULL || payload_bytes < sizeof(latency_marker_pattern)) {
+		return false;
+	}
+
+	for (uint32_t i = 0U; i <= payload_bytes - sizeof(latency_marker_pattern); i += 2U) {
+		if (memcmp(&payload[i], latency_marker_pattern,
+			   sizeof(latency_marker_pattern)) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+#else
+static inline void latency_marker_gpio_init(void) {
+}
+
+static inline void latency_marker_gpio_toggle(void) {
+}
+
+static inline bool latency_marker_payload_has_pattern(const uint8_t *payload, uint32_t payload_bytes)
+{
+	ARG_UNUSED(payload);
+	ARG_UNUSED(payload_bytes);
+	return false;
+}
+#endif
 
 static struct path_dongle_status dongle_status;
 
@@ -41,6 +95,8 @@ static void dongle_thread(void *a, void *b, void *c)
 
 	tu_fifo_t *ep_out_ff = NULL;
 	tu_fifo_t *ep_in_ff = NULL;
+
+	latency_marker_gpio_init();
 
 	while (ep_out_ff == NULL || ep_in_ff == NULL) {
 		ep_out_ff = tud_audio_get_ep_out_ff();
@@ -92,6 +148,10 @@ static void dongle_thread(void *a, void *b, void *c)
 			if (payload_bytes != PROP_SPK_PACKET_BYTES) {
 				LOG_ERR("Invalid payload size from USB EP OUT! Expected %d bytes, got %d bytes", PROP_SPK_PACKET_BYTES, payload_bytes);
 				break;
+			}
+
+			if (latency_marker_payload_has_pattern(packet.payload, payload_bytes)) {
+				latency_marker_gpio_toggle();
 			}
 
 			packet.length = PROP_PACKET_METADATA_LEN + PROP_SPK_PACKET_BYTES;
