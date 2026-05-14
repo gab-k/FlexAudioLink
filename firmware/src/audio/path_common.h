@@ -25,14 +25,16 @@ BUILD_ASSERT((PROP_PACKET_METADATA_LEN + PROP_MIC_PACKET_BYTES) <=
 #define FILTER_ALPHA_DEN             5
 #define P_GAIN                       (1.25f)
 #define P_TERM_MAX_HZ                400
-#define P_ADJUST_MAX_HZ              800
+#define FLL_ADJUST_MAX_HZ            800
 #define P_KI                         (0.005f)
 #define I_MAX_HZ                     400
 
 #define CTRL_DEBUG_LOG
+#define CTRL_DEBUG_LOG_INTERVAL_MS	1000
 #define WARN_SPK_LVL
 #define WARN_COOLDOWN_MS	2000
 
+#define EMA_FILTER_UPDATE_INTERVAL_MS       10
 /* Shared FLL update throttling parameters. */
 #define FLL_UPDATE_INTERVAL_MS       100
 
@@ -59,12 +61,10 @@ struct codec_path_status {
 
 const char *path_get_state_name(enum path_state state);
 
-void update_codec_clock(uint32_t target,
-			uint32_t fifo,
-			uint32_t pending,
-			struct codec_path_status *status);
+uint32_t codec_level_filter_update(float *filtered, uint32_t level_bytes);
+int32_t codec_clock_controller(int32_t error_bytes, uint32_t nominal_rate_hz, int32_t *out_fll_target_rate_hz);
 
-void warn_on_level(uint32_t level, uint32_t fifo_bytes, uint32_t pending_bytes, uint32_t warn_low, uint32_t warn_high);
+void monitor_codec_level(const struct codec_path_status *status, uint32_t warn_low, uint32_t warn_high);
 
 extern struct fll_state fll;
 

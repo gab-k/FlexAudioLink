@@ -11,7 +11,7 @@ and codec-clock control:
 
 | File | Ownership |
 |---|---|
-| `firmware/src/audio/path_common.*` | Shared path state names, warning helper, PI controller, global FLL fixed/auto state, PROP audio packet-size symbols. |
+| `firmware/src/audio/path_common.*` | Shared path state names, level monitor helper, PI controller, global FLL fixed/auto state, PROP audio packet-size symbols. |
 | `firmware/src/audio/path_wired.c` | Direct USB audio to codec path. |
 | `firmware/src/audio/path_dongle.c` | USB audio to PROP path for the dongle. |
 | `firmware/src/audio/path_headset.c` | PROP audio to codec path for the headset. |
@@ -84,7 +84,7 @@ implementation.
 
 `path_headset`:
 
-- Creates local TinyUSB FIFOs for speaker and mic buffering.
+- Creates local speaker and mic FIFOs.
 - Starts I2S when speaker FIFO plus pending I2S bytes reaches the headset start
   threshold.
 - Moves PROP speaker packets into the local speaker FIFO.
@@ -93,17 +93,19 @@ implementation.
 
 ## FLL Controller
 
-`update_codec_clock()` runs the shared FLL update loop:
+The I2S-backed path threads monitor speaker level while playing and run the FLL
+controller when automatic FLL mode is active:
 
 | Input | Use |
 |---|---|
-| `target` | Desired total speaker level in bytes. |
-| `fifo` | Current software speaker FIFO level. |
-| `pending` | Bytes already submitted to the I2S pipeline. |
+| Path target | Desired total speaker level in bytes. |
+| Software FIFO level | Current path-owned speaker FIFO level. |
+| I2S pending level | Bytes already submitted to the I2S pipeline. |
 
-It filters `fifo + pending`, computes the buffer error, passes that error to
-the internal PI controller, computes
-`target_rate = AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz`, and calls
+Each path periodically filters `fifo + pending` with
+`codec_level_filter_update()`. On the FLL update interval, it computes the
+buffer error and passes that error to `codec_clock_controller()`. The controller
+computes `target_rate = AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz` and calls
 `nau88l21_set_fll_target_rate_hz()`. `fll_set_fixed()` pauses automatic updates
 by setting a global fixed target; `fll_set_auto()` resumes automatic control.
 

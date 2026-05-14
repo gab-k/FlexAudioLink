@@ -489,8 +489,8 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	lo = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - P_ADJUST_MAX_HZ);
-	hi = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + P_ADJUST_MAX_HZ);
+	lo = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - FLL_ADJUST_MAX_HZ);
+	hi = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + FLL_ADJUST_MAX_HZ);
 
 	rate = strtol(args, NULL, 10);
 	if (rate < lo || rate > hi) {
