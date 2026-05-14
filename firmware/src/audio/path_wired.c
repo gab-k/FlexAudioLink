@@ -1,12 +1,9 @@
 #include "audio/path_wired.h"
-
+#include "audio/path_common.h"
+#include "audio/i2s.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
-
-#include "audio/path_common.h"
-#include "audio/i2s.h"
-#include "audio/nau88l21.h"
 
 #define WIRED_THREAD_STACK_SIZE        3072
 #define WIRED_THREAD_PRIORITY          7

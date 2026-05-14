@@ -1,11 +1,7 @@
 #include "audio/path_common.h"
-
 #include <stdint.h>
-
-#include <zephyr/logging/log.h>
-
-#include "audio/i2s.h"
 #include "audio/nau88l21.h"
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(path_cmn, LOG_LEVEL_INF);
 
 const char *path_get_state_name(enum path_state state)
