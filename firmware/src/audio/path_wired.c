@@ -11,8 +11,6 @@ LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
 
 #define WIRED_START_BYTES            480U
 #define WIRED_TARGET_BYTES           480U
-#define WIRED_WARN_LOW_BYTES  (WIRED_TARGET_BYTES * 10U / 50U )
-#define WIRED_WARN_HIGH_BYTES (WIRED_TARGET_BYTES * 90U / 50U )
 
 static struct codec_path_status status;
 
@@ -98,14 +96,10 @@ static void wired_thread(void *a, void *b, void *c)
 
 			now_ms = k_uptime_get();
 			if (now_ms - last_controller_ms >= FLL_UPDATE_INTERVAL_MS && !fll.fixed) {
-				status.spk_error_bytes = (int32_t)WIRED_TARGET_BYTES - (int32_t)status.spk_filtered_level_bytes;
-				status.spk_p_adjust_hz = codec_clock_controller(status.spk_error_bytes,
-																AUDIO_I2S_SAMPLE_RATE_HZ,
-																&status.spk_fll_target_rate_hz);
+				codec_clock_controller(&status, WIRED_TARGET_BYTES,
+						       AUDIO_I2S_SAMPLE_RATE_HZ);
 				last_controller_ms = now_ms;
 			}
-
-			monitor_codec_level(&status, WIRED_WARN_LOW_BYTES, WIRED_WARN_HIGH_BYTES);
 		}
 
 		k_sem_take(&wired_usb_audio_rx_sem, K_MSEC(WIRED_LOOP_SLEEP_MS));

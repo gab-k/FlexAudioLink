@@ -17,8 +17,6 @@ LOG_MODULE_REGISTER(path_headset, LOG_LEVEL_INF);
 
 #define HEADSET_TARGET_BYTES  	(HEADSET_SPK_FIFO_SIZE/2)
 #define HEADSET_START_BYTES  	(HEADSET_TARGET_BYTES)
-#define HEADSET_WARN_LOW_BYTES  (HEADSET_SPK_FIFO_SIZE * 10U / 100U )
-#define HEADSET_WARN_HIGH_BYTES (HEADSET_SPK_FIFO_SIZE * 90U / 100U )
 
 #define HEADSET_SPK_FIFO_SIZE      1920U
 #define HEADSET_MIC_FIFO_SIZE      960U
@@ -173,14 +171,10 @@ static void headset_thread(void *a, void *b, void *c)
 
 			now_ms = k_uptime_get();
 			if (now_ms - last_controller_ms >= FLL_UPDATE_INTERVAL_MS && !fll.fixed) {
-				status.spk_error_bytes = (int32_t)HEADSET_TARGET_BYTES - (int32_t)status.spk_filtered_level_bytes;
-				status.spk_p_adjust_hz = codec_clock_controller(status.spk_error_bytes,
-										AUDIO_I2S_SAMPLE_RATE_HZ,
-										&status.spk_fll_target_rate_hz);
+				codec_clock_controller(&status, HEADSET_TARGET_BYTES,
+						       AUDIO_I2S_SAMPLE_RATE_HZ);
 				last_controller_ms = now_ms;
 			}
-
-			monitor_codec_level(&status, HEADSET_WARN_LOW_BYTES, HEADSET_WARN_HIGH_BYTES);
 		}
 
 		k_sleep(K_MSEC(HEADSET_LOOP_SLEEP_MS));

@@ -55,6 +55,7 @@ struct codec_path_status {
 	uint32_t spk_filtered_level_bytes;
 	int32_t spk_error_bytes;
 	int32_t spk_p_adjust_hz;
+	int32_t spk_i_adjust_hz;
 	int32_t spk_fll_target_rate_hz;
 	uint32_t spk_underrun_events;
 };
@@ -62,9 +63,8 @@ struct codec_path_status {
 const char *path_get_state_name(enum path_state state);
 
 uint32_t codec_level_filter_update(float *filtered, uint32_t level_bytes);
-int32_t codec_clock_controller(int32_t error_bytes, uint32_t nominal_rate_hz, int32_t *out_fll_target_rate_hz);
-
-void monitor_codec_level(const struct codec_path_status *status, uint32_t warn_low, uint32_t warn_high);
+int32_t codec_clock_controller(struct codec_path_status *status, uint32_t target_bytes,
+			       uint32_t nominal_rate_hz);
 
 extern struct fll_state fll;
 

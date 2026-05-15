@@ -146,7 +146,8 @@ static void cli_emit_status_audio_push(void)
 
 		path_wired_get_status(&s);
 		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
-			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
+			  "spk_filtered_level_bytes=%u spk_error_bytes=%d "
+			  "spk_p_adjust_hz=%d spk_i_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_underruns=%u\n",
 			  path_get_state_name(s.stream_state),
 			  s.spk_fifo_bytes,
@@ -154,6 +155,7 @@ static void cli_emit_status_audio_push(void)
 			  s.spk_filtered_level_bytes,
 			  s.spk_error_bytes,
 			  s.spk_p_adjust_hz,
+			  s.spk_i_adjust_hz,
 			  s.spk_fll_target_rate_hz,
 			  s.spk_underrun_events);
 		return;
@@ -171,7 +173,8 @@ static void cli_emit_status_audio_push(void)
 
 		path_headset_get_status(&s);
 		cli_print("#A state=%s spk_fifo_bytes=%u spk_pending_bytes=%u "
-			  "spk_filtered_level_bytes=%u spk_error_bytes=%d spk_p_adjust_hz=%d "
+			  "spk_filtered_level_bytes=%u spk_error_bytes=%d "
+			  "spk_p_adjust_hz=%d spk_i_adjust_hz=%d "
 			  "spk_fll_target_rate_hz=%d spk_underruns=%u\n",
 			  path_get_state_name(s.stream_state),
 			  s.spk_fifo_bytes,
@@ -179,6 +182,7 @@ static void cli_emit_status_audio_push(void)
 			  s.spk_filtered_level_bytes,
 			  s.spk_error_bytes,
 			  s.spk_p_adjust_hz,
+			  s.spk_i_adjust_hz,
 			  s.spk_fll_target_rate_hz,
 			  s.spk_underrun_events);
 		return;

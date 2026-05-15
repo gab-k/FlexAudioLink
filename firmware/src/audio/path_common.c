@@ -32,26 +32,81 @@ uint32_t codec_level_filter_update(float *filtered, uint32_t level_bytes)
 	return (uint32_t)*filtered;
 }
 
-void monitor_codec_level(const struct codec_path_status *status, uint32_t warn_low, uint32_t warn_high)
+int32_t codec_clock_controller(struct codec_path_status *status, uint32_t target_bytes,
+			       uint32_t nominal_rate_hz)
 {
+	int32_t p_out;
+	int32_t i_out;
+	int32_t output;
 	uint32_t level;
+	uint32_t warn_low;
+	uint32_t warn_high;
+	static float i_sum;
+	int ret;
 
 	if (status == NULL) {
-		return;
+		return 0;
 	}
 
 	level = status->spk_fifo_bytes + status->spk_pending_bytes;
+	warn_low = target_bytes * 20U / 100U;
+	warn_high = target_bytes * 180U / 100U;
+	status->spk_error_bytes = (int32_t)target_bytes - (int32_t)status->spk_filtered_level_bytes;
+
+	p_out = (int32_t)((float)status->spk_error_bytes * P_GAIN);
+	if (p_out > P_TERM_MAX_HZ) {
+		p_out = P_TERM_MAX_HZ;
+	} else if (p_out < -P_TERM_MAX_HZ) {
+		p_out = -P_TERM_MAX_HZ;
+	}
+
+	i_sum += (float)status->spk_error_bytes * P_KI;
+
+	if (i_sum > (float)I_MAX_HZ) {
+		i_sum = (float)I_MAX_HZ;
+	} else if (i_sum < -(float)I_MAX_HZ) {
+		i_sum = -(float)I_MAX_HZ;
+	}
+
+	i_out = (int32_t)i_sum;
+	output = p_out + i_out;
+
+	if (output > FLL_ADJUST_MAX_HZ) {
+		output = FLL_ADJUST_MAX_HZ;
+		if (status->spk_error_bytes < 0) {
+			i_sum = (float)output - (float)p_out;
+			i_out = (int32_t)i_sum;
+		}
+	} else if (output < -FLL_ADJUST_MAX_HZ) {
+		output = -FLL_ADJUST_MAX_HZ;
+		if (status->spk_error_bytes > 0) {
+			i_sum = (float)output - (float)p_out;
+			i_out = (int32_t)i_sum;
+		}
+	}
+
+	ret = nau88l21_set_fll_target_rate_hz(nominal_rate_hz - output);
+	if (ret) {
+		LOG_ERR("Failed to set codec FLL target rate to %d Hz", nominal_rate_hz - output);
+	} else {
+		status->spk_fll_target_rate_hz = nominal_rate_hz - output;
+	}
+
+	status->spk_p_adjust_hz = p_out;
+	status->spk_i_adjust_hz = i_out;
 
 	#ifdef CTRL_DEBUG_LOG
 	LOG_INF_RATELIMIT_RATE(CTRL_DEBUG_LOG_INTERVAL_MS,
-				"rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d out=%d",
+				"rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d P=%d I=%d out=%d",
 				status->spk_fll_target_rate_hz,
 				level,
 				status->spk_fifo_bytes,
 				status->spk_pending_bytes,
 				status->spk_filtered_level_bytes,
 				status->spk_error_bytes,
-				status->spk_p_adjust_hz);
+				status->spk_p_adjust_hz,
+				status->spk_i_adjust_hz,
+				output);
 	#endif
 
 	#ifdef WARN_SPK_LVL
@@ -69,50 +124,6 @@ void monitor_codec_level(const struct codec_path_status *status, uint32_t warn_l
 					status->spk_pending_bytes);
 	}
 	#endif
-}
-
-int32_t codec_clock_controller(int32_t error_bytes, uint32_t nominal_rate_hz, int32_t *out_fll_target_rate_hz)
-{
-	int32_t p_out;
-	int32_t output;
-	static float i_sum;
-	int ret;
-
-	p_out = (int32_t)((float)error_bytes * P_GAIN);
-	if (p_out > P_TERM_MAX_HZ) {
-		p_out = P_TERM_MAX_HZ;
-	} else if (p_out < -P_TERM_MAX_HZ) {
-		p_out = -P_TERM_MAX_HZ;
-	}
-
-	i_sum += (float)error_bytes * P_KI;
-
-	if (i_sum > (float)I_MAX_HZ) {
-		i_sum = (float)I_MAX_HZ;
-	} else if (i_sum < -(float)I_MAX_HZ) {
-		i_sum = -(float)I_MAX_HZ;
-	}
-
-	output = p_out + (int32_t)i_sum;
-
-	if (output > FLL_ADJUST_MAX_HZ) {
-		output = FLL_ADJUST_MAX_HZ;
-		if (error_bytes < 0) {
-			i_sum = (float)output - (float)p_out;
-		}
-	} else if (output < -FLL_ADJUST_MAX_HZ) {
-		output = -FLL_ADJUST_MAX_HZ;
-		if (error_bytes > 0) {
-			i_sum = (float)output - (float)p_out;
-		}
-	}
-
-	ret = nau88l21_set_fll_target_rate_hz(nominal_rate_hz - output);
-	if (ret) {
-		LOG_ERR("Failed to set codec FLL target rate to %d Hz", nominal_rate_hz - output);
-	} else {
-		*out_fll_target_rate_hz = nominal_rate_hz - output;
-	}
 
 	return output;
 }
