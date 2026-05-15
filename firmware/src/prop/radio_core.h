@@ -17,13 +17,13 @@
 #define PROP_RADIO_MAX_PACKET_AIRTIME_US   550U
 
 /* Packet layout */
-#define PROP_PAYLOAD_MAX_LEN           252
+#define PROP_DATA_MAX_LEN              252
 #define PROP_PACKET_METADATA_LEN       2U   /* seq(2) */
-#define PROP_PACKET_MAX_LEN            (PROP_PACKET_METADATA_LEN + PROP_PAYLOAD_MAX_LEN)
+#define PROP_PACKET_MAX_LEN            (PROP_PACKET_METADATA_LEN + PROP_DATA_MAX_LEN)
 
-#define PROP_KEEPALIVE_PAYLOAD_LEN     16U
+#define PROP_KEEPALIVE_DATA_LEN        16U
 #define PROP_KEEPALIVE_SEQ             UINT16_MAX
-#define PROP_KEEPALIVE_LEN  (PROP_PACKET_METADATA_LEN + PROP_KEEPALIVE_PAYLOAD_LEN)
+#define PROP_KEEPALIVE_LEN  (PROP_PACKET_METADATA_LEN + PROP_KEEPALIVE_DATA_LEN)
 
 /*
  * Optional PHYEND scope probes. Enable by defining PROP_RADIO_DEBUG_PHYEND_GPIO.
@@ -67,7 +67,7 @@
 struct prop_packet {
 	uint8_t  length;
 	uint16_t seq;
-	uint8_t  payload[PROP_PAYLOAD_MAX_LEN];
+	uint8_t  data[PROP_DATA_MAX_LEN];
 } __packed __aligned(4);
 
 enum prop_session_event_type {

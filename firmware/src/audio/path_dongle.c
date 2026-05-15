@@ -132,7 +132,7 @@ static void dongle_thread(void *a, void *b, void *c)
 				break;
 			}
 
-			uint16_t written = tu_fifo_write_n(ep_in_ff, packet.payload, payload_bytes);
+			uint16_t written = tu_fifo_write_n(ep_in_ff, packet.data, payload_bytes);
 			if (written != payload_bytes) {
 				LOG_ERR("Invalid bytes written to USB EP IN FIFO! Expected %d bytes, wrote %d bytes", payload_bytes, written);
 				break;
@@ -150,14 +150,14 @@ static void dongle_thread(void *a, void *b, void *c)
 			}
 			
 			memset(&packet, 0, sizeof(packet));
-			payload_bytes = tu_fifo_read_n(ep_out_ff, packet.payload, PROP_SPK_PACKET_BYTES);
+			payload_bytes = tu_fifo_read_n(ep_out_ff, packet.data, PROP_SPK_PACKET_BYTES);
 
 			if (payload_bytes != PROP_SPK_PACKET_BYTES) {
 				LOG_ERR("Invalid payload size from USB EP OUT! Expected %d bytes, got %d bytes", PROP_SPK_PACKET_BYTES, payload_bytes);
 				break;
 			}
 
-			if (latency_marker_payload_has_pattern(packet.payload, payload_bytes)) {
+			if (latency_marker_payload_has_pattern(packet.data, payload_bytes)) {
 				latency_marker_gpio_toggle();
 			}
 

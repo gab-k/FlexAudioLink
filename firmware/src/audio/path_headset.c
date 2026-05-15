@@ -126,7 +126,7 @@ static void headset_thread(void *a, void *b, void *c)
 				break;
 			}
 
-			uint16_t written = tu_fifo_write_n(spk_ff, packet.payload, payload_bytes);
+			uint16_t written = tu_fifo_write_n(spk_ff, packet.data, payload_bytes);
 			if (written != payload_bytes) {
 				LOG_ERR("Invalid bytes written to speaker FIFO! Expected %d bytes, wrote %d bytes", payload_bytes, written);
 				break;
@@ -144,7 +144,7 @@ static void headset_thread(void *a, void *b, void *c)
 			}
 
 			memset(&packet, 0, sizeof(packet));
-			payload_bytes = tu_fifo_read_n(mic_ff, packet.payload, PROP_MIC_PACKET_BYTES);
+			payload_bytes = tu_fifo_read_n(mic_ff, packet.data, PROP_MIC_PACKET_BYTES);
 
 			if (payload_bytes != PROP_MIC_PACKET_BYTES) {
 				LOG_ERR("Invalid payload size from microphone FIFO! Expected %d bytes, got %d bytes", PROP_MIC_PACKET_BYTES, payload_bytes);

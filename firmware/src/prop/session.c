@@ -214,7 +214,7 @@ static bool prop_session_copy_to_radio_rb(void)
 	memset(radio_packet, 0, sizeof(*radio_packet));
 	radio_packet->length = queued_packet.length;
 	radio_packet->seq = session.next_tx_seq;
-	memcpy(radio_packet->payload, queued_packet.payload, payload_bytes);
+	memcpy(radio_packet->data, queued_packet.data, payload_bytes);
 
 	prop_radio_tx_advance_wr_idx();
 	session.next_tx_seq = prop_session_next_payload_seq(session.next_tx_seq);

@@ -54,19 +54,19 @@ static void prop_test_prepare_tx_packet(struct prop_packet *packet)
 	*packet = (struct prop_packet){
 		.length = PROP_PACKET_METADATA_LEN + test_payload_len,
 	};
-	memset(packet->payload, 0xAB, test_payload_len);
+	memset(packet->data, 0xAB, test_payload_len);
 }
 
 static void prop_test_stop_traffic(void)
 {
-	test_payload_len = PROP_PAYLOAD_MAX_LEN;
+	test_payload_len = PROP_DATA_MAX_LEN;
 	k_event_clear(&test_events, PROP_TEST_EVENT_RUNNING);
 }
 
 static void prop_test_start_traffic(size_t payload_len)
 {
-	if (payload_len == 0U || payload_len > PROP_PAYLOAD_MAX_LEN) {
-		test_payload_len = PROP_PAYLOAD_MAX_LEN;
+	if (payload_len == 0U || payload_len > PROP_DATA_MAX_LEN) {
+		test_payload_len = PROP_DATA_MAX_LEN;
 	} else {
 		test_payload_len = payload_len;
 	}

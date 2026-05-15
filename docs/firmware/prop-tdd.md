@@ -76,7 +76,7 @@ struct prop_session_event {
 struct prop_packet {
     uint8_t  length;
     uint16_t seq;
-    uint8_t  payload[PROP_PAYLOAD_MAX_LEN];
+    uint8_t  data[PROP_DATA_MAX_LEN];
 } __packed __aligned(4);
 ```
 
@@ -88,12 +88,9 @@ Constants:
 | Constant | Value |
 |---|---|
 | `PROP_PACKET_METADATA_LEN` | 2 |
-| `PROP_PAYLOAD_MAX_LEN` | 252 |
-| `PROP_KEEPALIVE_PAYLOAD_LEN` | 16 |
+| `PROP_DATA_MAX_LEN` | 252 |
+| `PROP_KEEPALIVE_DATA_LEN` | 16 |
 | `PROP_KEEPALIVE_SEQ` | `UINT16_MAX` |
-
-!!! warning
-    Do not confuse `payload` inside `struct prop_packet` with `PAYLOAD` field inside [nRF RADIO Peripheral docs → Packet configuration](https://docs.nordicsemi.com/bundle/ps_nrf54LM20A/page/radio.html#ariaid-title2)
 
 ## Buffers
 

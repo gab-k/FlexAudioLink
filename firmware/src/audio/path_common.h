@@ -6,20 +6,20 @@
 #include "prop/radio_core.h"
 
 #define BYTES_PER_STEREO_SAMPLE      4U
-/* Audio bytes stored in prop_packet.payload. prop_packet.length adds PROP metadata. */
+/* Audio bytes stored in prop_packet.data. prop_packet.length adds PROP metadata. */
 #define PROP_SPK_PACKET_BYTES        192U
 #define PROP_MIC_PACKET_BYTES        96U
 
-BUILD_ASSERT(PROP_SPK_PACKET_BYTES <= PROP_PAYLOAD_MAX_LEN,
-	     "speaker PROP packet must fit payload");
-BUILD_ASSERT(PROP_MIC_PACKET_BYTES <= PROP_PAYLOAD_MAX_LEN,
-	     "mic PROP packet must fit payload");
+BUILD_ASSERT(PROP_SPK_PACKET_BYTES <= PROP_DATA_MAX_LEN,
+	     "speaker data doesnt fit prop packet data section");
+BUILD_ASSERT(PROP_MIC_PACKET_BYTES <= PROP_DATA_MAX_LEN,
+	     "mic data doesnt fit prop packet data section");
 BUILD_ASSERT((PROP_PACKET_METADATA_LEN + PROP_SPK_PACKET_BYTES) <=
 	     PROP_PACKET_MAX_LEN,
-	     "speaker PROP frame length must fit packet");
+	     "speaker frame length doesnt fit packet max length");
 BUILD_ASSERT((PROP_PACKET_METADATA_LEN + PROP_MIC_PACKET_BYTES) <=
 	     PROP_PACKET_MAX_LEN,
-	     "mic PROP frame length must fit packet");
+	     "mic frame length doesnt fit packet max length");
 
 #define FILTER_ALPHA_NUM             1
 #define FILTER_ALPHA_DEN             5

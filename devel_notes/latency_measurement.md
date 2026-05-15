@@ -7,7 +7,7 @@ sample spent in TinyUSB's EP OUT FIFO before `path_dongle.c` drained it.
 ## Firmware Marker
 
 `path_dongle.c` scans each 192-byte USB speaker packet immediately after
-`tu_fifo_read_n()` copies it into `packet.payload`. When it finds this signed
+`tu_fifo_read_n()` copies it into `packet.data`. When it finds this signed
 16-bit little-endian stereo pattern, it toggles P0.02:
 
 ```text

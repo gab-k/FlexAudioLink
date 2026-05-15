@@ -178,7 +178,7 @@ PROP audio payload map:
 
 - session queues `prop_packet` directly
 - `prop_packet.length` is metadata plus payload bytes
-- `prop_packet.payload` contains only the audio bytes after the 2-byte PROP metadata
+- `prop_packet.data` contains only the audio bytes after the 2-byte PROP metadata
 - audio producers add `PROP_PACKET_METADATA_LEN` when enqueueing frames
 - audio consumers subtract `PROP_PACKET_METADATA_LEN` after dequeueing frames
 
