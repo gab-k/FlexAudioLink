@@ -1,6 +1,7 @@
 #include "audio/path_common.h"
 #include <stdint.h>
 #include "audio/nau88l21.h"
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(path_cmn, LOG_LEVEL_INF);
 
@@ -41,6 +42,7 @@ int32_t codec_clock_controller(struct codec_path_status *status, uint32_t target
 	uint32_t level;
 	uint32_t warn_low;
 	uint32_t warn_high;
+	uint32_t now_ms;
 	static float i_sum;
 	int ret;
 
@@ -49,6 +51,7 @@ int32_t codec_clock_controller(struct codec_path_status *status, uint32_t target
 	}
 
 	level = status->spk_fifo_bytes + status->spk_pending_bytes;
+	now_ms = k_uptime_get_32();
 	warn_low = target_bytes * 20U / 100U;
 	warn_high = target_bytes * 180U / 100U;
 	status->spk_error_bytes = (int32_t)target_bytes - (int32_t)status->spk_filtered_level_bytes;
@@ -96,32 +99,38 @@ int32_t codec_clock_controller(struct codec_path_status *status, uint32_t target
 	status->spk_i_adjust_hz = i_out;
 
 	#ifdef CTRL_DEBUG_LOG
-	LOG_INF_RATELIMIT_RATE(CTRL_DEBUG_LOG_INTERVAL_MS,
-				"rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d P=%d I=%d out=%d",
-				status->spk_fll_target_rate_hz,
-				level,
-				status->spk_fifo_bytes,
-				status->spk_pending_bytes,
-				status->spk_filtered_level_bytes,
-				status->spk_error_bytes,
-				status->spk_p_adjust_hz,
-				status->spk_i_adjust_hz,
-				output);
+	static uint32_t last_debug_log_ms;
+	if (now_ms - last_debug_log_ms >= CTRL_DEBUG_LOG_INTERVAL_MS) {
+		last_debug_log_ms = now_ms;
+		LOG_INF("rate=%d lvl=%u fifo=%u pend=%u filt=%u err=%d P=%d I=%d out=%d",
+			status->spk_fll_target_rate_hz,
+			level,
+			status->spk_fifo_bytes,
+			status->spk_pending_bytes,
+			status->spk_filtered_level_bytes,
+			status->spk_error_bytes,
+			status->spk_p_adjust_hz,
+			status->spk_i_adjust_hz,
+			output);
+	}
 	#endif
 
 	#ifdef WARN_SPK_LVL
-	if (level <= warn_low) {
-		LOG_WRN_RATELIMIT_RATE(WARN_COOLDOWN_MS,
-					"speaker level LOW %u B (fifo=%u pending=%u)",
-					level,
-					status->spk_fifo_bytes,
-					status->spk_pending_bytes);
-	} else if (level >= warn_high) {
-		LOG_WRN_RATELIMIT_RATE(WARN_COOLDOWN_MS,
-					"speaker level HIGH %u B (fifo=%u pending=%u)",
-					level,
-					status->spk_fifo_bytes,
-					status->spk_pending_bytes);
+	static uint32_t last_warn_log_ms;
+	if (now_ms - last_warn_log_ms >= WARN_COOLDOWN_MS) {
+		if (level <= warn_low) {
+			last_warn_log_ms = now_ms;
+			LOG_WRN("speaker level LOW %u B (fifo=%u pending=%u)",
+				level,
+				status->spk_fifo_bytes,
+				status->spk_pending_bytes);
+		} else if (level >= warn_high) {
+			last_warn_log_ms = now_ms;
+			LOG_WRN("speaker level HIGH %u B (fifo=%u pending=%u)",
+				level,
+				status->spk_fifo_bytes,
+				status->spk_pending_bytes);
+		}
 	}
 	#endif
 
