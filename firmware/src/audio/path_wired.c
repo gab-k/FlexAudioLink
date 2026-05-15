@@ -16,6 +16,8 @@ LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
 
 static struct codec_path_status status;
 
+K_SEM_DEFINE(wired_usb_audio_rx_sem, 0, 1);
+
 static K_THREAD_STACK_DEFINE(wired_thread_stack, WIRED_THREAD_STACK_SIZE);
 static struct k_thread wired_thread_data;
 
@@ -44,6 +46,10 @@ void path_wired_get_status(struct codec_path_status *out)
 	}
 }
 
+void path_wired_wake_thread(void)
+{
+	k_sem_give(&wired_usb_audio_rx_sem);
+}
 
 static void wired_thread(void *a, void *b, void *c)
 {
@@ -102,6 +108,6 @@ static void wired_thread(void *a, void *b, void *c)
 			monitor_codec_level(&status, WIRED_WARN_LOW_BYTES, WIRED_WARN_HIGH_BYTES);
 		}
 
-		k_sleep(K_MSEC(WIRED_LOOP_SLEEP_MS));
+		k_sem_take(&wired_usb_audio_rx_sem, K_MSEC(WIRED_LOOP_SLEEP_MS));
 	}
 }

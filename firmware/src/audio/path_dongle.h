@@ -10,3 +10,4 @@ struct path_dongle_status {
 
 void path_dongle_init(void);
 void path_dongle_get_status(struct path_dongle_status *out);
+void path_dongle_wake_thread(void);

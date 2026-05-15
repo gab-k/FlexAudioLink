@@ -67,6 +67,8 @@ static inline bool latency_marker_payload_has_pattern(const uint8_t *payload, ui
 
 static struct path_dongle_status dongle_status;
 
+K_SEM_DEFINE(dongle_usb_audio_rx_sem, 0, 1);
+
 static K_THREAD_STACK_DEFINE(dongle_thread_stack, DONGLE_THREAD_STACK_SIZE);
 static struct k_thread dongle_thread_data;
 
@@ -85,6 +87,11 @@ void path_dongle_get_status(struct path_dongle_status *out)
 	if (out != NULL) {
 		*out = dongle_status;
 	}
+}
+
+void path_dongle_wake_thread(void)
+{
+	k_sem_give(&dongle_usb_audio_rx_sem);
 }
 
 static void dongle_thread(void *a, void *b, void *c)
@@ -162,6 +169,6 @@ static void dongle_thread(void *a, void *b, void *c)
 			}
 		}
 
-		k_sleep(K_MSEC(DONGLE_LOOP_SLEEP_MS));
+		k_sem_take(&dongle_usb_audio_rx_sem, K_MSEC(DONGLE_LOOP_SLEEP_MS));
 	}
 }

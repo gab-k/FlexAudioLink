@@ -6,6 +6,8 @@
 LOG_MODULE_REGISTER(usb_audio, LOG_LEVEL_INF);
 
 #include "app_control.h"
+#include "audio/path_dongle.h"
+#include "audio/path_wired.h"
 #include "tusb.h"
 #include "usb/usb_descriptors.h"
 
@@ -231,6 +233,24 @@ void usb_audio_reset(void)
 	if (ep_in_ff != NULL) {
 		tu_fifo_clear(ep_in_ff);
 	}
+}
+
+bool tud_audio_rx_done_isr(uint8_t rhport, uint16_t n_bytes_received, uint8_t func_id,
+			   uint8_t ep_out, uint8_t cur_alt_setting)
+{
+	(void)rhport;
+	(void)n_bytes_received;
+	(void)func_id;
+	(void)ep_out;
+	(void)cur_alt_setting;
+
+	enum app_mode mode = app_control_get_current_mode();
+	if (mode == APP_MODE_PROP_DONGLE) {
+		path_dongle_wake_thread();
+	} else if (mode == APP_MODE_USB) {
+		path_wired_wake_thread();
+	}
+	return true;
 }
 
 
