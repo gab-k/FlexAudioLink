@@ -493,8 +493,8 @@ int nau88l21_set_fll_target_rate_hz(int32_t target_rate_hz)
 		return -ENODEV;
 	}
 
-	if (target_rate_hz < (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - NAU88L21_FLL_MAX_RATE_ADJUST_HZ) ||
-	    target_rate_hz > (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + NAU88L21_FLL_MAX_RATE_ADJUST_HZ)) {
+	if (target_rate_hz < (int32_t)(AUDIO_SAMPLE_RATE_HZ - NAU88L21_FLL_MAX_RATE_ADJUST_HZ) ||
+	    target_rate_hz > (int32_t)(AUDIO_SAMPLE_RATE_HZ + NAU88L21_FLL_MAX_RATE_ADJUST_HZ)) {
 		return -EINVAL;
 	}
 

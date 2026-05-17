@@ -15,16 +15,10 @@ LOG_MODULE_REGISTER(path_headset, LOG_LEVEL_INF);
 #define HEADSET_THREAD_PRIORITY    6
 #define HEADSET_LOOP_SLEEP_MS      1
 
-#define HEADSET_TARGET_BYTES  	(HEADSET_SPK_FIFO_SIZE/2)
-#define HEADSET_START_BYTES  	(HEADSET_TARGET_BYTES)
-
-#define HEADSET_SPK_FIFO_SIZE      1920U
-#define HEADSET_MIC_FIFO_SIZE      960U
-
 static struct codec_path_status status;
 
-static uint8_t headset_spk_fifo_buf[HEADSET_SPK_FIFO_SIZE];
-static uint8_t headset_mic_fifo_buf[HEADSET_MIC_FIFO_SIZE];
+static uint8_t headset_spk_fifo_buf[AUDIO_SPK_BUFFER_BYTES];
+static uint8_t headset_mic_fifo_buf[AUDIO_MIC_BUFFER_BYTES];
 static tu_fifo_t headset_spk_fifo;
 static tu_fifo_t headset_mic_fifo;
 static OSAL_MUTEX_DEF(headset_spk_mutex_wr);
@@ -41,17 +35,17 @@ void path_headset_init(void)
 {
 	status = (struct codec_path_status){
 		.stream_state = PATH_STATE_BUFFERING,
-		.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ,
+		.spk_fll_target_rate_hz = (int32_t)AUDIO_SAMPLE_RATE_HZ,
 	};
 	fll_set_auto();
 
 	tu_fifo_config(&headset_spk_fifo, headset_spk_fifo_buf,
-		       HEADSET_SPK_FIFO_SIZE, true);
+		       AUDIO_SPK_BUFFER_BYTES, true);
 	tu_fifo_config_mutex(&headset_spk_fifo,
 			     osal_mutex_create(&headset_spk_mutex_wr),
 			     osal_mutex_create(&headset_spk_mutex_rd));
 	tu_fifo_config(&headset_mic_fifo, headset_mic_fifo_buf,
-		       HEADSET_MIC_FIFO_SIZE, true);
+		       AUDIO_MIC_BUFFER_BYTES, true);
 	tu_fifo_config_mutex(&headset_mic_fifo,
 			     osal_mutex_create(&headset_mic_mutex_wr),
 			     osal_mutex_create(&headset_mic_mutex_rd));
@@ -92,7 +86,7 @@ static void headset_thread(void *a, void *b, void *c)
 		status.spk_pending_bytes = pending;
 
 		if (status.stream_state == PATH_STATE_BUFFERING) {
-			if (level >= HEADSET_START_BYTES) {
+			if (level >= AUDIO_SPK_TARGET_BYTES) {
 				status.stream_state = PATH_STATE_PLAYING;
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
 				audio_i2s_activate(spk_ff, mic_ff);
@@ -171,8 +165,8 @@ static void headset_thread(void *a, void *b, void *c)
 
 			now_ms = k_uptime_get();
 			if (now_ms - last_controller_ms >= FLL_UPDATE_INTERVAL_MS && !fll.fixed) {
-				codec_clock_controller(&status, HEADSET_TARGET_BYTES,
-						       AUDIO_I2S_SAMPLE_RATE_HZ);
+				codec_clock_controller(&status, AUDIO_SPK_TARGET_BYTES,
+						       AUDIO_SAMPLE_RATE_HZ);
 				last_controller_ms = now_ms;
 			}
 		}

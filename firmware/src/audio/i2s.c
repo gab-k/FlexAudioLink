@@ -47,19 +47,19 @@ static const struct device *const codec_i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c
 static bool audio_i2s_running;
 static uint32_t audio_i2s_tx_pending_bytes;
 
-BUILD_ASSERT((AUDIO_I2S_SAMPLE_RATE_HZ % 1000U) == 0U,
-	     "AUDIO_I2S_SAMPLE_RATE_HZ must be divisible by 1000");
-BUILD_ASSERT((AUDIO_I2S_BLOCK_BYTES % AUDIO_I2S_BYTES_PER_STEREO_SAMPLE) == 0U,
+BUILD_ASSERT((AUDIO_SAMPLE_RATE_HZ % 1000U) == 0U,
+	     "AUDIO_SAMPLE_RATE_HZ must be divisible by 1000");
+BUILD_ASSERT((AUDIO_I2S_BLOCK_BYTES % AUDIO_I2S_BYTES_PER_FRAME) == 0U,
 	     "AUDIO_I2S_BLOCK_BYTES must map to whole stereo samples");
 
 static int audio_i2s_configure_direction(enum i2s_dir dir, struct k_mem_slab *slab, int32_t timeout_ms)
 {
 	struct i2s_config cfg = {
-		.word_size = AUDIO_I2S_WORD_SIZE_BITS,
+		.word_size = AUDIO_BITS_PER_SAMPLE,
 		.channels = AUDIO_I2S_CHANNELS,
 		.format = I2S_FMT_DATA_FORMAT_I2S,
 		.options = AUDIO_I2S_CLOCK_OPTIONS,
-		.frame_clk_freq = AUDIO_I2S_SAMPLE_RATE_HZ,
+		.frame_clk_freq = AUDIO_SAMPLE_RATE_HZ,
 		.mem_slab = slab,
 		.block_size = AUDIO_I2S_BLOCK_BYTES,
 		.timeout = timeout_ms,
@@ -145,7 +145,7 @@ static int audio_i2s_rx_block(tu_fifo_t *rx_fifo)
 
 	if (rx_fifo != NULL) {
 		uint8_t mono_bytes = extract_left_to_mono(slab_block,
-								AUDIO_I2S_STEREO_SAMPLES_PER_BLOCK,
+								AUDIO_I2S_SAMPLE_PAIRS_PER_BLOCK,
 								slab_block);
 		if (mono_bytes > 0U) {
 			tu_fifo_write_n(rx_fifo, slab_block, mono_bytes);

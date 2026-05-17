@@ -258,14 +258,14 @@ static void cli_print_device_group(void)
 static void cli_print_audio_group(void)
 {
 	cli_print("[audio]\n");
-	cli_print("sample_rate_spk=48000\n");
-	cli_print("bit_width_spk=16\n");
+	cli_print("sample_rate_spk=%u\n", AUDIO_SAMPLE_RATE_HZ);
+	cli_print("bit_width_spk=%u\n", AUDIO_BITS_PER_SAMPLE);
 	cli_print("channels_spk=stereo\n");
 	cli_print("codec_spk=pcm\n");
 	cli_print("volume=80\n");
 	cli_print("sidetone=0\n");
-	cli_print("sample_rate_mic=48000\n");
-	cli_print("bit_width_mic=16\n");
+	cli_print("sample_rate_mic=%u\n", AUDIO_SAMPLE_RATE_HZ);
+	cli_print("bit_width_mic=%u\n", AUDIO_BITS_PER_SAMPLE);
 	cli_print("channels_mic=mono\n");
 	cli_print("codec_mic=pcm\n");
 	cli_print("mic_gain=12\n");
@@ -493,8 +493,8 @@ static void cli_cmd_fll(char *args)
 		return;
 	}
 
-	lo = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ - FLL_ADJUST_MAX_HZ);
-	hi = (int32_t)(AUDIO_I2S_SAMPLE_RATE_HZ + FLL_ADJUST_MAX_HZ);
+	lo = (int32_t)(AUDIO_SAMPLE_RATE_HZ - FLL_ADJUST_MAX_HZ);
+	hi = (int32_t)(AUDIO_SAMPLE_RATE_HZ + FLL_ADJUST_MAX_HZ);
 
 	rate = strtol(args, NULL, 10);
 	if (rate < lo || rate > hi) {

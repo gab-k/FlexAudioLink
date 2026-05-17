@@ -3,13 +3,18 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/sys/util.h>
+#include "audio/audio_config.h"
 #include "prop/radio_core.h"
 
-#define BYTES_PER_STEREO_SAMPLE      4U
+#define BYTES_PER_STEREO_SAMPLE      AUDIO_SPK_BYTES_PER_FRAME
 /* Audio bytes stored in prop_packet.data. prop_packet.length adds PROP metadata. */
-#define PROP_SPK_PACKET_BYTES        192U
-#define PROP_MIC_PACKET_BYTES        96U
+#define PROP_SPK_PACKET_BYTES        (AUDIO_PROP_PACKET_MS * AUDIO_SPK_BYTES_PER_MS)
+#define PROP_MIC_PACKET_BYTES        (AUDIO_PROP_PACKET_MS * AUDIO_MIC_BYTES_PER_MS)
 
+BUILD_ASSERT((AUDIO_SAMPLE_RATE_HZ % 1000U) == 0U,
+	     "sample rate must support integer ms byte counts");
+BUILD_ASSERT(AUDIO_SPK_TARGET_MS * 2U == AUDIO_SPK_BUFFER_MS,
+	     "speaker target must be 50 percent of speaker buffer");
 BUILD_ASSERT(PROP_SPK_PACKET_BYTES <= PROP_DATA_MAX_LEN,
 	     "speaker data doesnt fit prop packet data section");
 BUILD_ASSERT(PROP_MIC_PACKET_BYTES <= PROP_DATA_MAX_LEN,

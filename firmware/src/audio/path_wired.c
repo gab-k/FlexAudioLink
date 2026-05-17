@@ -9,9 +9,6 @@ LOG_MODULE_REGISTER(path_wired, LOG_LEVEL_INF);
 #define WIRED_THREAD_PRIORITY          7
 #define WIRED_LOOP_SLEEP_MS            1
 
-#define WIRED_START_BYTES            480U
-#define WIRED_TARGET_BYTES           480U
-
 static struct codec_path_status status;
 
 K_SEM_DEFINE(wired_usb_audio_rx_sem, 0, 1);
@@ -24,7 +21,7 @@ static void wired_thread(void *a, void *b, void *c);
 void path_wired_init(void)
 {
 	status.stream_state = PATH_STATE_BUFFERING;
-	status.spk_fll_target_rate_hz = (int32_t)AUDIO_I2S_SAMPLE_RATE_HZ;
+	status.spk_fll_target_rate_hz = (int32_t)AUDIO_SAMPLE_RATE_HZ;
 
 	k_thread_create(&wired_thread_data, wired_thread_stack,
 			K_THREAD_STACK_SIZEOF(wired_thread_stack),
@@ -71,7 +68,7 @@ static void wired_thread(void *a, void *b, void *c)
 		uint32_t level = status.spk_fifo_bytes + status.spk_pending_bytes;
 
 		if (status.stream_state == PATH_STATE_BUFFERING) {
-			if (level >= WIRED_START_BYTES) {
+			if (level >= AUDIO_SPK_TARGET_BYTES) {
 				status.stream_state = PATH_STATE_PLAYING;
 				LOG_INF("switching to PLAYING, notifying i2s thread...");
 				audio_i2s_activate(ep_out_ff, ep_in_ff);
@@ -96,8 +93,8 @@ static void wired_thread(void *a, void *b, void *c)
 
 			now_ms = k_uptime_get();
 			if (now_ms - last_controller_ms >= FLL_UPDATE_INTERVAL_MS && !fll.fixed) {
-				codec_clock_controller(&status, WIRED_TARGET_BYTES,
-						       AUDIO_I2S_SAMPLE_RATE_HZ);
+				codec_clock_controller(&status, AUDIO_SPK_TARGET_BYTES,
+						       AUDIO_SAMPLE_RATE_HZ);
 				last_controller_ms = now_ms;
 			}
 		}

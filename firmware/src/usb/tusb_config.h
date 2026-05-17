@@ -24,6 +24,8 @@ extern "C" {
 #define CFG_TUSB_DEBUG        0
 #endif
 
+#include "audio/audio_config.h"
+
 #define CFG_TUD_ENABLED       1
 #define CFG_TUH_ENABLED       0
 
@@ -48,13 +50,13 @@ extern "C" {
 
 #define CFG_TUD_AUDIO_ENABLE_INTERRUPT_EP                            1
 #define CFG_TUD_AUDIO_FUNC_1_N_FORMATS                               1
-#define CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE                         48000
-#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX                           1
-#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX                           2
-#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX          2
-#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_TX                  16
-#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX          2
-#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX                  16
+#define CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE                         AUDIO_SAMPLE_RATE_HZ
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX                           AUDIO_MIC_CHANNELS
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX                           AUDIO_SPK_CHANNELS
+#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX          AUDIO_BYTES_PER_SAMPLE
+#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_TX                  AUDIO_BITS_PER_SAMPLE
+#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_RX          AUDIO_BYTES_PER_SAMPLE
+#define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX                  AUDIO_BITS_PER_SAMPLE
 
 #define CFG_TUD_AUDIO_ENABLE_EP_IN                                   1
 #define CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_IN                     \
@@ -85,8 +87,9 @@ extern "C" {
 	TU_MAX(CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT,             \
 	       CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT)
 #define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ                        \
-	TU_MAX(4 * CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT,         \
-	       32 * CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT)
+	TU_MAX(AUDIO_SPK_BUFFER_BYTES,                                 \
+	       TU_MAX(4 * CFG_TUD_AUDIO10_FUNC_1_FORMAT_1_EP_SZ_OUT,   \
+		      32 * CFG_TUD_AUDIO20_FUNC_1_FORMAT_1_EP_SZ_OUT))
 
 #define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP                             0
 
