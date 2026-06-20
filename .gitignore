@@ -8,6 +8,7 @@ temp
 **/__pycache__
 **/*.pyc
 **/*.pyo
+python/*.wav
 
 # firmware build outputs abd Kconfig backup
 /firmware/build

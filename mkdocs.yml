@@ -35,6 +35,7 @@ nav:
       - I2S/TDM: firmware/i2s-tdm.md
       - NAU88L21 Codec: firmware/nau88l21-codec.md
       - PROP TDD: firmware/prop-tdd.md
+      - Latency Measurement: firmware/latency_measurement.md
   - Hardware: hardware.md
   - Web UI: webui.md
   - CLI Reference: cli.md

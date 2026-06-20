@@ -21,6 +21,19 @@ and the active audio path.
 See [PROP TDD](prop-tdd.md) for radio turn timing, packet ownership, and
 `session.c` / `radio_core.c` coupling.
 
+## Firmware References
+
+- [Audio Path](audio-path.md) describes mode-specific routing, buffering, PROP
+  audio payloads, FLL control, USB audio integration, and CLI audio status.
+- [I2S/TDM](i2s-tdm.md) describes codec-facing PCM transport, DMA blocks,
+  pending-byte accounting, and the nRF TDM configuration.
+- [NAU88L21 Codec](nau88l21-codec.md) describes codec initialization, clock
+  master setup, headphone output bring-up, and FLL retuning.
+- [PROP TDD](prop-tdd.md) describes radio turn timing, packet ownership,
+  queueing, and loss accounting.
+- [Latency Measurement](latency_measurement.md) records the measured downstream
+  firmware/device latency from dongle marker GPIO to headset analog output.
+
 ## Boot Modes
 
 `app_control_boot()` initializes Zephyr settings, reads `mode/active`, defaults
