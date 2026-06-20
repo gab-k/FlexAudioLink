@@ -13,7 +13,7 @@ peripheral.
 | File | Role |
 |---|---|
 | `firmware/src/audio/i2s.c` | I2S thread, Zephyr I2S config, DMA slabs, active/inactive loop. |
-| `firmware/src/audio/i2s.h` | PCM constants and activation API. |
+| `firmware/src/audio/i2s.h` | I2S activation API; includes the shared PCM constants from `audio_config.h`. |
 | `firmware/prj.conf` | Enables I2S and sets TX/RX TDM block counts. |
 | `firmware/boards/nrf54lm20dk_nrf54lm20a_cpuapp.overlay` | TDM pins, DMA RAM region, 32 MHz reference clock output. |
 
@@ -41,13 +41,13 @@ endpoint FIFOs or local path buffers.
 
 | Symbol | Meaning |
 |---|---|
-| `AUDIO_I2S_SAMPLE_RATE_HZ` | Frame rate used for I2S config and codec FLL targeting. |
+| `AUDIO_SAMPLE_RATE_HZ` | Fixed PCM frame rate used by USB, I2S, PROP sizing, and codec FLL targeting. |
 | `AUDIO_I2S_CHANNELS` | Number of TDM/I2S slots. |
-| `AUDIO_I2S_WORD_SIZE_BITS` | Bits per channel sample. |
-| `AUDIO_I2S_BYTES_PER_STEREO_SAMPLE` | Bytes per interleaved stereo frame. |
+| `AUDIO_BITS_PER_SAMPLE` | Bits per channel sample. |
+| `AUDIO_I2S_BYTES_PER_FRAME` | Bytes per interleaved I2S stereo sample pair. |
 | `AUDIO_I2S_BYTES_PER_MS` | Derived byte rate for stereo PCM. |
 | `AUDIO_I2S_BLOCK_BYTES` | DMA block size and speaker FIFO transfer unit. |
-| `AUDIO_I2S_STEREO_SAMPLES_PER_BLOCK` | Stereo frames per DMA block. |
+| `AUDIO_I2S_SAMPLE_PAIRS_PER_BLOCK` | Interleaved L/R sample pairs per DMA block. |
 
 ## Stereo To Mono
 
@@ -89,10 +89,10 @@ Both directions use:
 
 | Field | Value |
 |---|---|
-| `word_size` | `AUDIO_I2S_WORD_SIZE_BITS` |
+| `word_size` | `AUDIO_BITS_PER_SAMPLE` |
 | `channels` | `AUDIO_I2S_CHANNELS` |
 | `format` | `I2S_FMT_DATA_FORMAT_I2S` |
-| `frame_clk_freq` | `AUDIO_I2S_SAMPLE_RATE_HZ` |
+| `frame_clk_freq` | `AUDIO_SAMPLE_RATE_HZ` |
 | `block_size` | `AUDIO_I2S_BLOCK_BYTES` |
 | `options` | `I2S_OPT_BIT_CLK_SLAVE \| I2S_OPT_FRAME_CLK_SLAVE` |
 

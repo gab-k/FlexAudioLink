@@ -74,57 +74,56 @@ Special case: changing between PROP modes resets the wireless path so role-speci
 
 ## Audio Units and Constants
 
-From `audio_path_common.h` and `i2s.h`:
+From `audio/audio_config.h`:
 
-- `AUDIO_BYTES_PER_STEREO_SAMPLE = 4`
-- `AUDIO_I2S_BYTES_PER_MS = 192` (48 kHz, 16-bit stereo)
-- `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / 2 = 96` (0.5 ms stereo)
-- `AUDIO_PROP_SPK_PACKET_BYTES = 192` (1 ms stereo speaker payload)
-- `AUDIO_PROP_MIC_PACKET_BYTES = 96` (1 ms mono mic payload)
-- `AUDIO_DMA_MAX_BYTES = 384`
-
-Watermarks:
-
-- `AUDIO_START_BYTES = 1152` (6 ms)
-- `AUDIO_TARGET_BYTES = 960` (5 ms)
-- `AUDIO_PANIC_LOW_BYTES = 384` (2 ms)
-- `AUDIO_PANIC_HIGH_BYTES = 1728` (9 ms)
+- `AUDIO_SAMPLE_RATE_HZ = 48000`
+- `AUDIO_BITS_PER_SAMPLE = 16`
+- `AUDIO_SPK_BYTES_PER_MS = 192` (48 kHz, 16-bit stereo)
+- `AUDIO_MIC_BYTES_PER_MS = 96` (48 kHz, 16-bit mono)
+- `AUDIO_SPK_TARGET_MS = 5`, `AUDIO_SPK_TARGET_BYTES = 960`
+- `AUDIO_SPK_BUFFER_MS = 10`, `AUDIO_SPK_BUFFER_BYTES = 1920`
+- `AUDIO_PROP_PACKET_MS = 1`
+- `PROP_SPK_PACKET_BYTES = 192` (1 ms stereo speaker data)
+- `PROP_MIC_PACKET_BYTES = 96` (1 ms mono mic data)
+- `AUDIO_I2S_BLOCKS_PER_MS = 2`
+- `AUDIO_I2S_BLOCK_BYTES = 96` (0.5 ms stereo)
+- `AUDIO_I2S_SAMPLE_PAIRS_PER_BLOCK = 24`
 
 Feedback/filter gains:
 
-- `AUDIO_FILTER_ALPHA = 1/20`
-- `AUDIO_P_GAIN_DIV = 8`
-- `AUDIO_P_ADJUST_MAX_HZ = 200`
+- `FILTER_ALPHA_NUM / FILTER_ALPHA_DEN = 1/5`
+- `P_GAIN = 1.25`
+- `P_TERM_MAX_HZ = 400`
+- `P_KI = 0.005`
+- `I_MAX_HZ = 400`
+- `FLL_ADJUST_MAX_HZ = 800`
 
 ## Shared Runtime Rules
 
 State machine (`audio_state_advance`):
 
 - start in `BUFFERING`
-- `BUFFERING -> PLAYING` when `level_bytes >= AUDIO_START_BYTES`
+- `BUFFERING -> PLAYING` when `level_bytes >= AUDIO_SPK_TARGET_BYTES`
 - `PLAYING -> BUFFERING` when `level_bytes == 0`
-
-Low panic does not leave `PLAYING`; it drives the feedback panic override and, in the wireless path only, lets route code insert/count silence when there is no full playback block ready. The wired path does not insert silence.
 
 Filter (`audio_filter_update`):
 
 - first sample initializes filter
-- then EMA with alpha `1/20`
+- then EMA with alpha `1/5`
 
-P-control (`audio_p_controller_step`):
+PI control (`codec_clock_controller`):
 
-- `error_bytes = AUDIO_TARGET_BYTES - filtered_level_bytes`
-- `adjust_hz = error_bytes / 8`
-- panic overrides:
-- if low panic: `+200 Hz`
-- if high panic: `-200 Hz`
-- clamp to `[-200, +200]`
+- `error_bytes = AUDIO_SPK_TARGET_BYTES - filtered_level_bytes`
+- `p_out = clamp(error_bytes * P_GAIN, -P_TERM_MAX_HZ, +P_TERM_MAX_HZ)`
+- `i_out` integrates `error_bytes * P_KI`, clamped to `[-I_MAX_HZ, +I_MAX_HZ]`
+- `adjust_hz = clamp(p_out + i_out, -FLL_ADJUST_MAX_HZ, +FLL_ADJUST_MAX_HZ)`
+- `target_rate = AUDIO_SAMPLE_RATE_HZ - adjust_hz`
 
 Stereo-to-mono extraction (`audio_extract_left_to_mono`):
 
 - capture uses left channel only
 - one `AUDIO_I2S_BLOCK_BYTES` stereo block (`96` bytes) -> `48` mono bytes
-- two `AUDIO_I2S_BLOCK_BYTES` stereo blocks (`192` bytes) -> one `AUDIO_PROP_MIC_PACKET_BYTES` mono wireless mic packet
+- two `AUDIO_I2S_BLOCK_BYTES` stereo blocks (`192` bytes) -> one `PROP_MIC_PACKET_BYTES` mono wireless mic packet
 
 ## Wired Path (`audio_path_wired.c`)
 
@@ -200,22 +199,22 @@ level. The dongle runs its USB feedback P-controller off that value so
 the loop closes around the actual consumer (the headset I2S output).
 The dongle's own local ring level is only used to gate the internal
 `BUFFERING -> PLAYING` transition and is not transmitted. Filtering is
-done on the sender side with the shared EMA (`AUDIO_FILTER_ALPHA = 1/20`),
+done on the sender side with the shared EMA (`FILTER_ALPHA_NUM / FILTER_ALPHA_DEN = 1/5`),
 so the receiver uses the value directly with no further smoothing.
 
 ### Dongle role behavior
 
-- ingest USB speaker bytes (up to `AUDIO_DMA_MAX_BYTES=384` per pull) into ring
+- read USB speaker data in `PROP_SPK_PACKET_BYTES` chunks for PROP TX
 - parse received capture frames, push audio to USB mic FIFO, latch peer ring level from `peer_meta`
-- once `PLAYING`, send playback from ring to PROP in `AUDIO_PROP_SPK_PACKET_BYTES` chunks; outbound `peer_meta` is zero (reserved)
+- once `PLAYING`, send playback from ring to PROP in `PROP_SPK_PACKET_BYTES` chunks; outbound `peer_meta` is zero (reserved)
 - update USB feedback from the latched peer (headset) ring level
 
 ### Headset role behavior
 
 - parse received playback frames, push audio to local ring (inbound `peer_meta` is currently unused)
 - send I2S capture to PROP as mono; outbound `peer_meta` carries the headset's filtered ring level
-- once `PLAYING`, send playback from ring to I2S in `AUDIO_I2S_BLOCK_BYTES` (`96-byte`) blocks
-- if low panic, inject one silence I2S block and count underrun/silence bytes
+- once `PLAYING`, feed playback to I2S in `AUDIO_I2S_BLOCK_BYTES` (`96-byte`) blocks
+- if pending I2S bytes drain and the speaker FIFO has less than one full block, return to `BUFFERING` and count an underrun event
 - no USB feedback update path in this role
 
 ### PROP test-mode interaction
@@ -238,7 +237,7 @@ Status fields (`audio_path_wireless_status`):
 - `spk_usb_level_bytes`
 - `mic_usb_level_bytes`
 - `peer_ring_level_bytes` (sender-filtered level decoded from last peer_meta)
-- `peer_ring_error_bytes` (`AUDIO_TARGET_BYTES - peer_ring_level_bytes`)
+- `peer_ring_error_bytes` (`AUDIO_SPK_TARGET_BYTES - peer_ring_level_bytes`)
 - `spk_p_adjust_hz` (USB feedback adjust, dongle-only nonzero)
 - `rx_malformed_frames`
 
@@ -261,9 +260,9 @@ Descriptor/channel configuration (`tusb_config.h` + descriptors):
 
 ## I2S Contract (`i2s.c/.h`)
 
-- `AUDIO_I2S_SAMPLE_RATE_HZ = 48000`
+- `AUDIO_SAMPLE_RATE_HZ = 48000`
 - `AUDIO_I2S_CHANNELS = 2`
-- `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / 2 = 96` (0.5 ms)
+- `AUDIO_I2S_BLOCK_BYTES = AUDIO_I2S_BYTES_PER_MS / AUDIO_I2S_BLOCKS_PER_MS = 96` (0.5 ms)
 - TX/RX msg queues depth: `12`
 
 Runtime behavior:

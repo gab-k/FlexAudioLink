@@ -103,9 +103,10 @@ controller when automatic FLL mode is active:
 | I2S pending level | Bytes already submitted to the I2S pipeline. |
 
 Each path periodically filters `fifo + pending` with
-`codec_level_filter_update()`. On the FLL update interval, it computes the
-buffer error and passes that error to `codec_clock_controller()`. The controller
-computes `target_rate = AUDIO_I2S_SAMPLE_RATE_HZ - adjust_hz` and calls
+`codec_level_filter_update()`. On the FLL update interval, it passes the
+speaker target to `codec_clock_controller()`. The controller computes the
+buffer error, derives warning levels from the target, and computes
+`target_rate = AUDIO_SAMPLE_RATE_HZ - adjust_hz` before calling
 `nau88l21_set_fll_target_rate_hz()`. `fll_set_fixed()` pauses automatic updates
 by setting a global fixed target; `fll_set_auto()` resumes automatic control.
 
